@@ -9,7 +9,7 @@ import com.amap.api.location.*
 import com.blindpath.base.common.Result
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.NavigationState
-import com.blindpath.app.ui.screens.NavigationInfo
+import com.blindpath.base.common.NavigationInfo
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
