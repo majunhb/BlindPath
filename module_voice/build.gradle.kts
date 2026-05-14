@@ -37,8 +37,8 @@ android {
 dependencies {
     implementation(project(":base"))
 
-    // 百度语音SDK
-    implementation("com.baidu.tts:baidu-tts-android:3.0.0.2")
+    // 百度语音SDK - 暂时注释掉（CI无法访问中国Maven仓库）
+    // implementation("com.baidu.tts:baidu-tts-android:3.0.0.2")
 
     // 协程
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
