@@ -72,13 +72,13 @@
         <!-- 百度TTS授权信息 -->
         <meta-data
             android:name="com.baidu.tts.appId"
-            android:value="YOUR_BAIDU_APP_ID" />
+            android:value="7746956" />
         <meta-data
             android:name="com.baidu.tts.appKey"
-            android:value="YOUR_BAIDU_APP_KEY" />
+            android:value="7bqc6ovRERcTumcd4h2dXhyj" />
         <meta-data
             android:name="com.baidu.tts.secretKey"
-            android:value="YOUR_BAIDU_SECRET_KEY" />
+            android:value="kuVbgAvSYkVPMcDWDjMkG5KlLjZBLts3" />
 
     </application>
 
