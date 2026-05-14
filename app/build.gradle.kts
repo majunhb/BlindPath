@@ -63,9 +63,6 @@ android {
     }
 }
 
-// 检查本地 SDK 文件是否存在
-val localLibs = fileTree("app/libs")
-
 dependencies {
     // 核心库
     implementation("androidx.core:core-ktx:1.12.0")
@@ -96,26 +93,19 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    // 高德地图SDK - 本地依赖
-    // 下载地址: https://lbs.amap.com/api/android-sdk/download
-    val amapFiles = localLibs.filter { it.name.contains("AMapLocation") || it.name.contains("maps") || it.name.contains("navi") }
-    if (amapFiles.isNotEmpty()) {
-        implementation(amapFiles)
-    }
+    // 高德地图SDK - 暂时注释掉（CI无法访问中国Maven仓库）
+    // 如需启用，请手动下载SDK文件放入app/libs/，并取消注释
+    // implementation("com.amap.api:location:6.1.0")
+    // implementation("com.amap.api:maps:3.3.0")
+    // implementation("com.amap.api:navi-3d:1.2.1")
 
-    // 百度语音TTS - 本地依赖
-    // 下载地址: https://ai.baidu.com/ai-doc/SPEECH/qkdy38h8z
-    val baiduTtsFiles = localLibs.filter { it.name.contains("baidu-tts") }
-    if (baiduTtsFiles.isNotEmpty()) {
-        implementation(baiduTtsFiles)
-    }
+    // 百度语音TTS - 暂时注释掉（CI无法访问中国Maven仓库）
+    // 如需启用，请手动下载SDK文件放入app/libs/
+    // implementation("com.baidu.tts:baidu-tts-android:3.0.0.2")
 
-    // 百度OCR - 本地依赖
-    // 下载地址: https://ai.baidu.com/ai-doc/OCR/3khq60mrn
-    val ocrFiles = localLibs.filter { it.name.contains("ocr") }
-    if (ocrFiles.isNotEmpty()) {
-        implementation(ocrFiles)
-    }
+    // 百度OCR - 暂时注释掉（CI无法访问中国Maven仓库）
+    // 如需启用，请手动下载SDK文件放入app/libs/
+    // implementation("com.baidu.ocr:ocr-sdk:5.7.0")
 
     // 权限库 - 使用 JitPack
     implementation("com.github.nickagas:permissions4m:1.0.7")
