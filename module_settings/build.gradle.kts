@@ -33,4 +33,8 @@ android {
 dependencies {
     implementation(project(":base"))
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // Hilt依赖
+    implementation("com.google.dagger:hilt-android:2.48.1")
+    ksp("com.google.dagger:hilt-android-compiler:2.48.1")
 }
