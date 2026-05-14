@@ -1,1 +1,1 @@
-# Consumer rules for module_voice
+# Consumer ProGuard Rules for BlindPath Modules
