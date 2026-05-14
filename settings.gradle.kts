@@ -12,13 +12,6 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url = uri("https://jitpack.io") }
-        // 高德地图 SDK 仓库
-        maven { url = uri("https://maven.amap.com/repository/public/") }
-        maven { url = uri("https://maven.amap.com/repository/android/")
-            // 高德本地仓库，仅包含高德 SDK
-        }
-        // 百度 AI 开放平台仓库 (TTS 和 OCR)
-        maven { url = uri("https://ai.baidu.com/ai-doc/OCR/zk6rih1kk") }
     }
 }
 
