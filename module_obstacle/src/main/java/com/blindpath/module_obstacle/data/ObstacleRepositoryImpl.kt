@@ -249,9 +249,9 @@ class ObstacleRepositoryImpl @Inject constructor(
             // 创建UI预警
             val uiAlert = com.blindpath.app.ui.screens.ObstacleAlert(
                 level = when (alertLevel) {
-                    AlertLevel.DANGER -> com.blindpath.app.ui.screens.AlertLevel.DANGER
-                    AlertLevel.WARNING -> com.blindpath.app.ui.screens.AlertLevel.WARNING
-                    AlertLevel.SAFE -> com.blindpath.app.ui.screens.AlertLevel.SAFE
+                    AlertLevel.DANGER -> AlertLevel.DANGER
+                    AlertLevel.WARNING -> AlertLevel.WARNING
+                    AlertLevel.SAFE -> AlertLevel.SAFE
                 },
                 description = message,
                 distance = obstacle.distance,
