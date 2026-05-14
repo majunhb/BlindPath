@@ -1,1 +1,1 @@
-# Consumer rules for base
+# Consumer ProGuard Rules for BlindPath Modules
