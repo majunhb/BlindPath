@@ -94,21 +94,18 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
     // 高德地图SDK - 暂时注释掉（CI无法访问中国Maven仓库）
-    // 如需启用，请手动下载SDK文件放入app/libs/，并取消注释
     // implementation("com.amap.api:location:6.1.0")
     // implementation("com.amap.api:maps:3.3.0")
     // implementation("com.amap.api:navi-3d:1.2.1")
 
     // 百度语音TTS - 暂时注释掉（CI无法访问中国Maven仓库）
-    // 如需启用，请手动下载SDK文件放入app/libs/
     // implementation("com.baidu.tts:baidu-tts-android:3.0.0.2")
 
     // 百度OCR - 暂时注释掉（CI无法访问中国Maven仓库）
-    // 如需启用，请手动下载SDK文件放入app/libs/
     // implementation("com.baidu.ocr:ocr-sdk:5.7.0")
 
-    // 权限库 - 使用 JitPack
-    implementation("com.github.nickagas:permissions4m:1.0.7")
+    // 权限库 - 暂时注释掉（JitPack上找不到）
+    // implementation("com.github.nickagas:permissions4m:1.0.7")
 
     // 协程
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
