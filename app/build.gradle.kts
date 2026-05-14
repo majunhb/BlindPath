@@ -93,14 +93,20 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    // 高德地图SDK
-    implementation("com.amap.api:location:6.1.0")
-    implementation("com.amap.api:maps:3.3.0")
-    implementation("com.amap.api:navi-3d:1.2.1")
+    // 高德地图SDK - 使用本地依赖
+    // 从 https://lbs.amap.com/api/android-sdk/download 下载并放到 app/libs/
+    implementation(fileTree("libs") { include("**/AMapLocation*.aar", "**/AMap*.aar", "**/maps*.aar") })
 
-    // 百度语音（ASR/TTS）
-    implementation("com.baidu.tts:baidu-tts-android:3.0.0.2")
-    implementation("com.baidu.ocr:ocr-sdk:5.7.0")
+    // 百度语音（ASR/TTS）- 使用本地依赖
+    // 从 https://ai.baidu.com/ai-doc/SPEECH/qkdy38h8z 下载并放到 app/libs/
+    implementation(fileTree("libs") { include("**/baidu-tts*.jar", "**/baidu-tts*.aar") })
+
+    // 百度OCR - 使用本地依赖
+    // 从 https://ai.baidu.com/ai-doc/OCR/3khq60mrn 下载并放到 app/libs/
+    implementation(fileTree("libs") { include("**/ocr*.jar", "**/ocr*.aar") })
+
+    // 权限库 - 使用 JitPack
+    implementation("com.github.nickagas:permissions4m:1.0.7")
 
     // 协程
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
@@ -119,9 +125,6 @@ dependencies {
 
     // 日志
     implementation("com.jakewharton.timber:timber:5.0.1")
-
-    // 权限
-    implementation("com.github.nickagas:permissions4m:1.0.7")
 
     // 测试
     testImplementation("junit:junit:4.13.2")
