@@ -1,1 +1,1 @@
-# Consumer rules for module_navigation
+# Consumer ProGuard Rules for BlindPath Modules
