@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_voice.domain.VoiceRepository
+import com.blindpath.base.common.ObstacleAlert
+import com.blindpath.base.common.NavigationInfo
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
