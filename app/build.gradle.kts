@@ -64,7 +64,7 @@ android {
 }
 
 // 检查本地 SDK 文件是否存在
-def localLibs = fileTree("app/libs")
+val localLibs = fileTree("app/libs")
 
 dependencies {
     // 核心库
@@ -98,20 +98,23 @@ dependencies {
 
     // 高德地图SDK - 本地依赖
     // 下载地址: https://lbs.amap.com/api/android-sdk/download
-    if (localLibs.files.any { it.name.contains("AMapLocation") || it.name.contains("maps") }) {
-        implementation(localLibs.filter { it.name.contains("AMapLocation") || it.name.contains("maps") || it.name.contains("navi") })
+    val amapFiles = localLibs.filter { it.name.contains("AMapLocation") || it.name.contains("maps") || it.name.contains("navi") }
+    if (amapFiles.isNotEmpty()) {
+        implementation(amapFiles)
     }
 
     // 百度语音TTS - 本地依赖
     // 下载地址: https://ai.baidu.com/ai-doc/SPEECH/qkdy38h8z
-    if (localLibs.files.any { it.name.contains("baidu-tts") }) {
-        implementation(localLibs.filter { it.name.contains("baidu-tts") })
+    val baiduTtsFiles = localLibs.filter { it.name.contains("baidu-tts") }
+    if (baiduTtsFiles.isNotEmpty()) {
+        implementation(baiduTtsFiles)
     }
 
     // 百度OCR - 本地依赖
     // 下载地址: https://ai.baidu.com/ai-doc/OCR/3khq60mrn
-    if (localLibs.files.any { it.name.contains("ocr") }) {
-        implementation(localLibs.filter { it.name.contains("ocr") })
+    val ocrFiles = localLibs.filter { it.name.contains("ocr") }
+    if (ocrFiles.isNotEmpty()) {
+        implementation(ocrFiles)
     }
 
     // 权限库 - 使用 JitPack
