@@ -18,6 +18,7 @@ import com.blindpath.base.common.formatDistance
 import com.blindpath.module_obstacle.data.detection.AIDetector
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.*
+import com.blindpath.base.common.ObstacleAlert
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -247,12 +248,8 @@ class ObstacleRepositoryImpl @Inject constructor(
             val message = obstacle.type.getAlertMessage(obstacle.distance)
 
             // 创建UI预警
-            val uiAlert = com.blindpath.app.ui.screens.ObstacleAlert(
-                level = when (alertLevel) {
-                    AlertLevel.DANGER -> AlertLevel.DANGER
-                    AlertLevel.WARNING -> AlertLevel.WARNING
-                    AlertLevel.SAFE -> AlertLevel.SAFE
-                },
+            val uiAlert = ObstacleAlert(
+                level = alertLevel,
                 description = message,
                 distance = obstacle.distance,
                 direction = obstacle.direction.name
