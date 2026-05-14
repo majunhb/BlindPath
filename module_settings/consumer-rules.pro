@@ -1,1 +1,1 @@
-# Consumer rules for module_settings
+# Consumer ProGuard Rules for BlindPath Modules
