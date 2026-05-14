@@ -4,7 +4,7 @@ import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp"
+import androidx.compose.ui.unit.sp
 
 // 视障用户需要更大的字体和更高的对比度
 val Typography = Typography(
