@@ -65,6 +65,11 @@ android {
 }
 
 dependencies {
+    // 内部模块依赖
+    implementation(project(":module_obstacle"))
+    implementation(project(":module_navigation"))
+    implementation(project(":module_voice"))
+
     // 核心库
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
@@ -94,19 +99,14 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    // 高德地图SDK - 暂时注释掉（CI无法访问中国Maven仓库）
-    // implementation("com.amap.api:location:6.1.0")
-    // implementation("com.amap.api:maps:3.3.0")
-    // implementation("com.amap.api:navi-3d:1.2.1")
+    // 高德地图SDK
+    implementation("com.amap.api:location:6.1.0")
+    implementation("com.amap.api:maps:3.3.0")
+    implementation("com.amap.api:navi-3d:1.2.1")
 
-    // 百度语音TTS - 暂时注释掉（CI无法访问中国Maven仓库）
-    // implementation("com.baidu.tts:baidu-tts-android:3.0.0.2")
-
-    // 百度OCR - 暂时注释掉（CI无法访问中国Maven仓库）
-    // implementation("com.baidu.ocr:ocr-sdk:5.7.0")
-
-    // 权限库 - 暂时注释掉（JitPack上找不到）
-    // implementation("com.github.nickagas:permissions4m:1.0.7")
+    // 百度语音（ASR/TTS）
+    implementation("com.baidu.tts:baidu-tts-android:3.0.0.2")
+    implementation("com.baidu.ocr:ocr-sdk:5.7.0")
 
     // 协程
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
@@ -125,6 +125,9 @@ dependencies {
 
     // 日志
     implementation("com.jakewharton.timber:timber:5.0.1")
+
+    // 权限
+    implementation("com.github.nickagas:permissions4m:1.0.7")
 
     // 测试
     testImplementation("junit:junit:4.13.2")
