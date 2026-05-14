@@ -37,10 +37,10 @@ android {
 dependencies {
     implementation(project(":base"))
 
-    // 高德地图SDK
-    implementation("com.amap.api:location:6.1.0")
-    implementation("com.amap.api:maps:3.3.0")
-    implementation("com.amap.api:navi-3d:1.2.1")
+    // 高德地图SDK - 暂时注释掉（CI无法访问中国Maven仓库）
+    // implementation("com.amap.api:location:6.1.0")
+    // implementation("com.amap.api:maps:3.3.0")
+    // implementation("com.amap.api:navi-3d:1.2.1")
 
     // 协程
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
