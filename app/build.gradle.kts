@@ -63,6 +63,9 @@ android {
     }
 }
 
+// 检查本地 SDK 文件是否存在
+def localLibs = fileTree("app/libs")
+
 dependencies {
     // 核心库
     implementation("androidx.core:core-ktx:1.12.0")
@@ -93,17 +96,23 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    // 高德地图SDK - 使用本地依赖
-    // 从 https://lbs.amap.com/api/android-sdk/download 下载并放到 app/libs/
-    implementation(fileTree("libs") { include("**/AMapLocation*.aar", "**/AMap*.aar", "**/maps*.aar") })
+    // 高德地图SDK - 本地依赖
+    // 下载地址: https://lbs.amap.com/api/android-sdk/download
+    if (localLibs.files.any { it.name.contains("AMapLocation") || it.name.contains("maps") }) {
+        implementation(localLibs.filter { it.name.contains("AMapLocation") || it.name.contains("maps") || it.name.contains("navi") })
+    }
 
-    // 百度语音（ASR/TTS）- 使用本地依赖
-    // 从 https://ai.baidu.com/ai-doc/SPEECH/qkdy38h8z 下载并放到 app/libs/
-    implementation(fileTree("libs") { include("**/baidu-tts*.jar", "**/baidu-tts*.aar") })
+    // 百度语音TTS - 本地依赖
+    // 下载地址: https://ai.baidu.com/ai-doc/SPEECH/qkdy38h8z
+    if (localLibs.files.any { it.name.contains("baidu-tts") }) {
+        implementation(localLibs.filter { it.name.contains("baidu-tts") })
+    }
 
-    // 百度OCR - 使用本地依赖
-    // 从 https://ai.baidu.com/ai-doc/OCR/3khq60mrn 下载并放到 app/libs/
-    implementation(fileTree("libs") { include("**/ocr*.jar", "**/ocr*.aar") })
+    // 百度OCR - 本地依赖
+    // 下载地址: https://ai.baidu.com/ai-doc/OCR/3khq60mrn
+    if (localLibs.files.any { it.name.contains("ocr") }) {
+        implementation(localLibs.filter { it.name.contains("ocr") })
+    }
 
     // 权限库 - 使用 JitPack
     implementation("com.github.nickagas:permissions4m:1.0.7")
