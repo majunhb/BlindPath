@@ -1,1 +1,1 @@
-# Consumer rules for module_obstacle
+# Consumer ProGuard Rules for BlindPath Modules
