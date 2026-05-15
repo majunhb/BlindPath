@@ -1,7 +1,6 @@
 package com.blindpath.app.ui.theme
 
 import android.app.Activity
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -13,35 +12,20 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Primary,
-    onPrimary = TextHighEmphasis,
-    secondary = Secondary,
-    onSecondary = TextHighEmphasis,
-    background = DarkBackground,
-    onBackground = TextHighEmphasis,
-    surface = DarkSurface,
-    onSurface = TextHighEmphasis,
-    surfaceVariant = DarkSurfaceVariant,
-    error = DangerColor,
-    onError = TextHighEmphasis
+    primary = Purple80,
+    secondary = PurpleGrey80,
+    tertiary = Pink80
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Primary,
-    onPrimary = TextHighEmphasis,
-    secondary = Secondary,
-    onSecondary = TextHighEmphasis,
-    background = LightBackground,
-    onBackground = DarkSurface,
-    surface = LightSurface,
-    onSurface = DarkSurface,
-    error = DangerColor,
-    onError = TextHighEmphasis
+    primary = Purple40,
+    secondary = PurpleGrey40,
+    tertiary = Pink40
 )
 
 @Composable
 fun BlindPathTheme(
-    darkTheme: Boolean = true, // 默认深色主题，省电+护眼
+    darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
@@ -50,9 +34,8 @@ fun BlindPathTheme(
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = PrimaryDark.toArgb()
-            window.navigationBarColor = DarkBackground.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = false
+            window.statusBarColor = colorScheme.primary.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
 
