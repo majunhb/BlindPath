@@ -66,6 +66,7 @@ android {
 
 dependencies {
     // 内部模块依赖
+    implementation(project(":base"))
     implementation(project(":module_obstacle"))
     implementation(project(":module_navigation"))
     implementation(project(":module_voice"))
