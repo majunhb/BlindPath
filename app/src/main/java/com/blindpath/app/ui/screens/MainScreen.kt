@@ -12,9 +12,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * 涓荤晫闈?- 瑙嗛殰鍙嬪ソ璁捐
- * - 澶ф寜閽紙渚夸簬瑙︽懜锛? * - 楂樺姣斿害棰滆壊
- * - 鎵€鏈夊厓绱犳湁璇煶鏍囩
+ * 主界面 - 视障友好设计
+ * - 大按钮（便于触摸）
+ * - 高对比度颜色
+ * - 所有元素有语音标签
  */
 @Composable
 fun MainScreen(
@@ -29,13 +30,13 @@ fun MainScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // 搴旂敤鏍囬
+        // 应用标题
         Text(
-            text = "鏅鸿鍔╃洸",
+            text = "智行助盲",
             style = MaterialTheme.typography.displayMedium,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.semantics {
-                contentDescription = "鏅鸿鍔╃洸锛岃闅滀汉澹嚭琛岃緟鍔╁簲鐢?
+                contentDescription = "智行助盲，视障人士出行辅助应用"
             }
         )
 
@@ -46,16 +47,16 @@ fun MainScreen(
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.semantics {
-                contentDescription = "BlindPath 鐗堟湰 1.0"
+                contentDescription = "BlindPath 版本 1.0"
             }
         )
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        // 鍔熻兘鎸夐挳鍖哄煙
+        // 功能按钮区域
         FeatureButton(
-            label = "闅滅鐗╂娴?,
-            description = "寮€鍚憚鍍忓ご锛屽疄鏃舵娴嬪墠鏂归殰纰嶇墿",
+            label = "障碍物检测",
+            description = "开启摄像头，实时检测前方障碍物",
             onClick = onObstacleDetectionClick,
             containerColor = MaterialTheme.colorScheme.primary
         )
@@ -63,8 +64,8 @@ fun MainScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         FeatureButton(
-            label = "浣嶇疆鎾姤",
-            description = "鎾姤褰撳墠浣嶇疆鍜屽懆杈瑰湴鏍?,
+            label = "位置播报",
+            description = "播报当前位置和周边地标",
             onClick = onLocationClick,
             containerColor = MaterialTheme.colorScheme.secondary
         )
@@ -72,28 +73,29 @@ fun MainScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         FeatureButton(
-            label = "绱ф€ユ眰鍔?,
-            description = "涓€閿仈绯荤揣鎬ヨ仈绯讳汉",
+            label = "紧急求助",
+            description = "一键联系紧急联系人",
             onClick = onSosClick,
             containerColor = MaterialTheme.colorScheme.error
         )
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        // 鐘舵€佹彁绀?        Text(
-            text = "杞昏Е鎸夐挳鑾峰彇璇煶鎻愮ず",
+        // 状态提示
+        Text(
+            text = "轻触按钮获取语音提示",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
             modifier = Modifier.semantics {
-                contentDescription = "鎻愮ず锛氳交瑙︽寜閽幏鍙栬闊虫彁绀?
+                contentDescription = "提示：轻触按钮获取语音提示"
             }
         )
     }
 }
 
 /**
- * 鍔熻兘鎸夐挳缁勪欢 - 瑙嗛殰鍙嬪ソ璁捐
+ * 功能按钮组件 - 视障友好设计
  */
 @Composable
 fun FeatureButton(
@@ -102,7 +104,7 @@ fun FeatureButton(
     onClick: () -> Unit,
     containerColor: androidx.compose.ui.graphics.Color
 ) {
-    val combinedDescription = "$label锛?description"
+    val combinedDescription = "$label，$description"
 
     Button(
         onClick = onClick,
