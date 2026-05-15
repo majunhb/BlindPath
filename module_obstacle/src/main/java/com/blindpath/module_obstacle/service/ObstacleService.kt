@@ -6,8 +6,6 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.blindpath.app.BlindPathApp
-import com.blindpath.app.MainActivity
 import com.blindpath.module_obstacle.data.ObstacleRepositoryImpl
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -32,6 +30,9 @@ class ObstacleService : Service() {
         const val ACTION_START = "com.blindpath.action.START_OBSTACLE"
         const val ACTION_STOP = "com.blindpath.action.STOP_OBSTACLE"
         private const val NOTIFICATION_ID = 1001
+
+        // 通知渠道ID（需要与 Application 中定义的保持一致）
+        const val CHANNEL_OBSTACLE = "channel_obstacle"
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -54,6 +55,9 @@ class ObstacleService : Service() {
 
         isRunning = true
         Timber.d("Starting obstacle service")
+
+        // 创建通知渠道（如果尚未创建）
+        createNotificationChannel()
 
         // 启动前台服务
         val notification = createNotification()
@@ -92,11 +96,11 @@ class ObstacleService : Service() {
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            packageManager.getLaunchIntentForPackage(packageName),
             PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, BlindPathApp.CHANNEL_OBSTACLE)
+        return NotificationCompat.Builder(this, CHANNEL_OBSTACLE)
             .setContentTitle("避障功能运行中")
             .setContentText("正在为您检测周围障碍物")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
@@ -108,7 +112,7 @@ class ObstacleService : Service() {
     }
 
     private fun updateNotification(text: String) {
-        val notification = NotificationCompat.Builder(this, BlindPathApp.CHANNEL_OBSTACLE)
+        val notification = NotificationCompat.Builder(this, CHANNEL_OBSTACLE)
             .setContentTitle("避障功能运行中")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
@@ -118,6 +122,23 @@ class ObstacleService : Service() {
 
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as android.app.NotificationManager
         notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun createNotificationChannel() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                CHANNEL_OBSTACLE,
+                "避障预警",
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "视障人士避障预警信息"
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 500, 200, 500)
+            }
+
+            val notificationManager = getSystemService(android.app.NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+        }
     }
 
     override fun onDestroy() {
