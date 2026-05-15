@@ -4,8 +4,10 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Bundle
 import androidx.core.content.ContextCompat
-import com.amap.api.location.*
 import com.blindpath.base.common.NavigationInfo
 import com.blindpath.base.common.Result
 import com.blindpath.module_navigation.domain.NavigationRepository
@@ -27,9 +29,9 @@ class NavigationRepositoryImpl @Inject constructor(
     private val _state = MutableStateFlow(NavigationState())
     override val navigationState: StateFlow<NavigationState> = _state.asStateFlow()
 
-    private var aMapLocationClient: AMapLocationClient? = null
-    private var aMapLocationListener: AMapLocationListener? = null
-    private var currentLocation: AMapLocation? = null
+    private var locationManager: LocationManager? = null
+    private var currentLocation: Location? = null
+    private var locationListener: LocationListener? = null
 
     // 目的地（示例）
     private var destination: LatLonPoint? = null
@@ -42,16 +44,13 @@ class NavigationRepositoryImpl @Inject constructor(
                 return Result.Error(message = "缺少定位权限")
             }
 
-            // 初始化高德定位
+            // 初始化定位
             initLocation()
-
-            // 启动定位
-            aMapLocationClient?.startLocation()
 
             _state.update {
                 it.copy(
                     isRunning = true,
-                    isLocationAvailable = true,
+                    isLocationAvailable = currentLocation != null,
                     lastError = null
                 )
             }
@@ -67,7 +66,7 @@ class NavigationRepositoryImpl @Inject constructor(
 
     override suspend fun stopNavigation(): Result<Boolean> {
         return try {
-            aMapLocationClient?.stopLocation()
+            stopLocationUpdates()
             _state.update {
                 it.copy(
                     isRunning = false,
@@ -114,9 +113,11 @@ class NavigationRepositoryImpl @Inject constructor(
     }
 
     private fun initLocation() {
-        aMapLocationClient = AMapLocationClient(context).apply {
-            aMapLocationListener = AMapLocationListener { location ->
-                if (location != null && location.errorCode == 0) {
+        try {
+            locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+
+            locationListener = object : LocationListener {
+                override fun onLocationChanged(location: Location) {
                     currentLocation = location
 
                     // 更新状态
@@ -140,44 +141,53 @@ class NavigationRepositoryImpl @Inject constructor(
                     }
 
                     Timber.d("Location updated: ${location.latitude}, ${location.longitude}")
-                } else {
-                    Timber.w("Location error: ${location?.errorInfo}")
-                    _state.update {
-                        it.copy(
-                            isLocationAvailable = false,
-                            lastError = location?.errorInfo
-                        )
-                    }
                 }
+
+                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                override fun onProviderEnabled(provider: String) {}
+                override fun onProviderDisabled(provider: String) {}
             }
 
-            locationOption = AMapLocationClientOption().apply {
-                locationMode = AMapLocationMode.Hight_Accuracy
-                isNeedAddress = false
-                isOnceLocation = false
-                interval = 2000 // 2秒更新一次
-                isOpenGps = true
-                isMockEnable = false
+            // 请求位置更新
+            if (hasLocationPermission()) {
+                locationManager?.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    2000L, // 2秒更新一次
+                    1f,
+                    locationListener!!
+                )
             }
-
-            setLocationListener(aMapLocationListener)
+        } catch (e: SecurityException) {
+            Timber.e(e, "Location permission denied")
+            _state.update { it.copy(lastError = "定位权限被拒绝") }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to initialize location")
+            _state.update { it.copy(lastError = e.message) }
         }
     }
 
-    private fun updateNavigationInfo(location: AMapLocation, destination: LatLonPoint) {
+    private fun stopLocationUpdates() {
+        locationListener?.let {
+            locationManager?.removeUpdates(it)
+        }
+        locationListener = null
+    }
+
+    private fun updateNavigationInfo(location: Location, destination: LatLonPoint) {
         // 计算距离和方向
         val results = FloatArray(2)
         LocationUtils.calculateLineDistance(
             LatLonPoint(location.latitude, location.longitude),
-            destination
+            destination,
+            results
         )
 
-        // 简化计算（实际应该用高德路径规划API）
+        // 简化计算
         val distance = results[0]
         val bearing = results[1]
 
         // 估算剩余时间（假设步行速度1.2m/s）
-        val remainingSeconds = (distance / 1.2f).toInt()
+        val remainingSeconds = if (distance > 0) (distance / 1.2f).toInt() else 0
 
         // 生成导航指令
         val instruction = generateInstruction(location.bearing, bearing, distance)
@@ -212,13 +222,11 @@ class LatLonPoint(val latitude: Double, val longitude: Double)
 
 // 距离计算工具
 object LocationUtils {
-    fun calculateLineDistance(from: LatLonPoint, to: LatLonPoint): Float {
-        val results = FloatArray(1)
+    fun calculateLineDistance(from: LatLonPoint, to: LatLonPoint, results: FloatArray) {
         android.location.Location.distanceBetween(
             from.latitude, from.longitude,
             to.latitude, to.longitude,
             results
         )
-        return results[0]
     }
 }
