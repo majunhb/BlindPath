@@ -2,11 +2,11 @@ package com.blindpath.app.ui.screens
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.blindpath.module_obstacle.domain.ObstacleRepository
-import com.blindpath.module_navigation.domain.NavigationRepository
-import com.blindpath.module_voice.domain.VoiceRepository
-import com.blindpath.base.common.ObstacleAlert
+import com.blindpath.app.module_obstacle.domain.ObstacleRepository
+import com.blindpath.app.module_navigation.domain.NavigationRepository
+import com.blindpath.app.module_voice.domain.VoiceRepository
 import com.blindpath.base.common.NavigationInfo
+import com.blindpath.base.common.ObstacleAlert
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
