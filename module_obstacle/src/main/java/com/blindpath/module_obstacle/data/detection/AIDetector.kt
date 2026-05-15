@@ -7,7 +7,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.support.common.FileUtil
-import org.tensorflow.lite.support.image.ImageUtils
 import timber.log.Timber
 import java.io.File
 import java.nio.ByteBuffer
@@ -16,6 +15,7 @@ import java.nio.MappedByteBuffer
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * 基于TensorFlow Lite的AI目标检测器
@@ -82,7 +82,7 @@ class AIDetector @Inject constructor(
                 createDummyModel()
             }
 
-            interpreter = Interpreter(modelBuffer, options)
+            interpreter = Interpreter(modelBuffer!!.asReadOnlyBuffer(), options)
             isLoaded = true
             Timber.d("YOLOv8 model loaded successfully")
             true
@@ -302,10 +302,10 @@ class AIDetector @Inject constructor(
     private fun calculateIoU(a: BoundingBox, b: BoundingBox): Float {
         val interLeft = max(a.left, b.left)
         val interTop = max(a.top, b.top)
-        val interRight = min(a.right, b.right)
-        val interBottom = min(a.bottom, b.bottom)
+        val interRight = kotlin.math.min(a.right, b.right)
+        val interBottom = kotlin.math.min(a.bottom, b.bottom)
 
-        val interArea = max(0f, interRight - interLeft) * max(0f, interBottom - interTop)
+        val interArea = kotlin.math.max(0f, interRight - interLeft) * kotlin.math.max(0f, interBottom - interTop)
         val aArea = (a.right - a.left) * (a.bottom - a.top)
         val bArea = (b.right - b.left) * (b.bottom - b.top)
 
