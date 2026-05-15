@@ -12,8 +12,8 @@ import com.blindpath.app.ui.theme.DangerColor
 import com.blindpath.app.ui.theme.SafeColor
 import com.blindpath.app.ui.theme.WarningColor
 import com.blindpath.base.common.AlertLevel
-import com.blindpath.base.common.ObstacleAlert
 import com.blindpath.base.common.NavigationInfo
+import com.blindpath.base.common.ObstacleAlert
 
 @Composable
 fun MainScreen(
@@ -253,23 +253,3 @@ private fun NavigationDisplay(info: NavigationInfo) {
         }
     }
 }
-
-// 数据类定义（放在合适的位置）
-enum class AlertLevel(val displayName: String) {
-    DANGER("危险"),
-    WARNING("提醒"),
-    SAFE("安全")
-}
-
-data class ObstacleAlert(
-    val level: AlertLevel,
-    val description: String,
-    val distance: Float,
-    val direction: String
-)
-
-data class NavigationInfo(
-    val instruction: String,
-    val remainingDistance: Int,
-    val remainingTime: Int
-)
