@@ -37,6 +37,9 @@ android {
 dependencies {
     implementation(project(":base"))
 
+    // 日志
+    implementation("com.jakewharton.timber:timber:5.0.1")
+
     // CameraX
     val cameraxVersion = "1.3.1"
     implementation("androidx.camera:camera-core:$cameraxVersion")
@@ -53,12 +56,12 @@ dependencies {
     implementation("com.google.mlkit:object-detection:17.0.1")
     implementation("com.google.mlkit:pose-detection:18.0.0-beta4")
 
-    // 协程
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-
     // Hilt依赖
     implementation("com.google.dagger:hilt-android:2.48.1")
     ksp("com.google.dagger:hilt-android-compiler:2.48.1")
+
+    // 协程
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // 测试
     testImplementation("junit:junit:4.13.2")
