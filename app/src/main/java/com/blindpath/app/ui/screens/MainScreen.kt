@@ -2,13 +2,10 @@ package com.blindpath.app.ui.screens
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -57,7 +54,6 @@ fun MainScreen(
 
         // 鍔熻兘鎸夐挳鍖哄煙
         FeatureButton(
-            icon = Icons.Default.Visibility,
             label = "闅滅鐗╂娴?,
             description = "寮€鍚憚鍍忓ご锛屽疄鏃舵娴嬪墠鏂归殰纰嶇墿",
             onClick = onObstacleDetectionClick,
@@ -67,7 +63,6 @@ fun MainScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         FeatureButton(
-            icon = Icons.Default.LocationOn,
             label = "浣嶇疆鎾姤",
             description = "鎾姤褰撳墠浣嶇疆鍜屽懆杈瑰湴鏍?,
             onClick = onLocationClick,
@@ -77,7 +72,6 @@ fun MainScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         FeatureButton(
-            icon = Icons.Default.Warning,
             label = "绱ф€ユ眰鍔?,
             description = "涓€閿仈绯荤揣鎬ヨ仈绯讳汉",
             onClick = onSosClick,
@@ -103,7 +97,6 @@ fun MainScreen(
  */
 @Composable
 fun FeatureButton(
-    icon: ImageVector,
     label: String,
     description: String,
     onClick: () -> Unit,
@@ -125,11 +118,6 @@ fun FeatureButton(
         ),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 16.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null, // 鍥炬爣璇存槑鐢卞灞傛寜閽彁渚?            modifier = Modifier.size(32.dp)
-        )
-        Spacer(modifier = Modifier.width(16.dp))
         Column {
             Text(
                 text = label,
