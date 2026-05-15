@@ -13,12 +13,13 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.blindpath.base.common.AlertLevel
+import com.blindpath.base.common.ObstacleAlert
 import com.blindpath.base.common.Result
 import com.blindpath.base.common.formatDistance
 import com.blindpath.module_obstacle.data.detection.AIDetector
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.*
-import com.blindpath.base.common.ObstacleAlert
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
