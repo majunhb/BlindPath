@@ -1,5 +1,7 @@
 package com.blindpath.module_navigation.domain.model
 
+import com.blindpath.base.common.NavigationInfo
+
 /**
  * 位置信息
  */
@@ -20,6 +22,6 @@ data class NavigationState(
     val isLocationAvailable: Boolean = false,
     val currentLocation: LocationInfo? = null,
     val destinationName: String? = null,
-    val currentInfo: com.blindpath.app.ui.screens.NavigationInfo? = null,
+    val currentInfo: NavigationInfo? = null,
     val lastError: String? = null
 )
