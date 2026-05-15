@@ -1,5 +1,6 @@
 package com.blindpath.module_obstacle.domain
 
+import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.common.Result
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_obstacle.domain.model.ObstacleState
@@ -53,11 +54,11 @@ interface ObstacleRepository {
     /**
      * 获取预警级别
      */
-    fun getAlertLevel(distance: Float): com.blindpath.module_obstacle.domain.model.AlertLevel {
+    fun getAlertLevel(distance: Float): AlertLevel {
         return when {
-            distance < 0.5f -> com.blindpath.module_obstacle.domain.model.AlertLevel.DANGER
-            distance < 1.0f -> com.blindpath.module_obstacle.domain.model.AlertLevel.WARNING
-            else -> com.blindpath.module_obstacle.domain.model.AlertLevel.SAFE
+            distance < 0.5f -> AlertLevel.DANGER
+            distance < 1.0f -> AlertLevel.WARNING
+            else -> AlertLevel.SAFE
         }
     }
 }

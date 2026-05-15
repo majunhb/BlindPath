@@ -115,6 +115,14 @@ class ObstacleRepositoryImpl @Inject constructor(
 
     override fun getLatestObstacles(): List<DetectedObstacle> = latestObstacles
 
+    override fun getAlertLevel(distance: Float): AlertLevel {
+        return when {
+            distance < 0.5f -> AlertLevel.DANGER
+            distance < 1.0f -> AlertLevel.WARNING
+            else -> AlertLevel.SAFE
+        }
+    }
+
     override suspend fun loadModel(): Result<Boolean> {
         return if (aiDetector.loadModel()) {
             _state.update { it.copy(isModelLoaded = true) }
@@ -260,14 +268,6 @@ class ObstacleRepositoryImpl @Inject constructor(
             lastAlertTime = currentTime
 
             Timber.d("Alert: ${alertLevel.name} - $message (${obstacle.distance}m)")
-        }
-    }
-
-    private fun getAlertLevel(distance: Float): AlertLevel {
-        return when {
-            distance < 0.5f -> AlertLevel.DANGER
-            distance < 1.0f -> AlertLevel.WARNING
-            else -> AlertLevel.SAFE
         }
     }
 
