@@ -1,7 +1,7 @@
 package com.blindpath.base.common
 
 /**
- * Alert level for obstacle warnings
+ * 预警级别
  */
 enum class AlertLevel(val displayName: String) {
     DANGER("危险"),
@@ -10,7 +10,7 @@ enum class AlertLevel(val displayName: String) {
 }
 
 /**
- * Obstacle alert data
+ * 障碍物预警信息（用于UI展示）
  */
 data class ObstacleAlert(
     val level: AlertLevel,
@@ -20,7 +20,7 @@ data class ObstacleAlert(
 )
 
 /**
- * Navigation info data
+ * 导航信息（用于UI展示）
  */
 data class NavigationInfo(
     val instruction: String,
