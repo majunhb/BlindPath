@@ -101,12 +101,13 @@ dependencies {
 
     // 高德地图SDK
     implementation("com.amap.api:location:6.1.0")
-    implementation("com.amap.api:maps:3.3.0")
-    implementation("com.amap.api:navi-3d:1.2.1")
+    implementation("com.amap.api:map3d:6.8.0")
+    implementation("com.amap.api:navi:1.9.4")
 
-    // 百度语音（ASR/TTS）
-    implementation("com.baidu.tts:baidu-tts-android:3.0.0.2")
-    implementation("com.baidu.ocr:ocr-sdk:5.7.0")
+    // 百度语音（需要手动下载SDK）
+    // 百度TTS和OCR不在公开Maven仓库中，需要手动集成
+    // implementation("com.baidu.tts:baidu-tts-android:3.0.0.2")
+    // implementation("com.baidu.ocr:ocr-sdk:5.7.0")
 
     // 协程
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
@@ -126,8 +127,8 @@ dependencies {
     // 日志
     implementation("com.jakewharton.timber:timber:5.0.1")
 
-    // 权限
-    implementation("com.github.nickagas:permissions4m:1.0.7")
+    // 权限（使用系统API替代 permissions4m）
+    // implementation("com.github.jokermonn:permissions4m:1.0.3-lib")
 
     // 测试
     testImplementation("junit:junit:4.13.2")
