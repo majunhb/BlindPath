@@ -1,9 +1,8 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-    id("com.google.dagger.hilt.android")
-    id("com.google.devtools.ksp")
 }
+
 android {
     namespace = "com.blindpath.app"
     compileSdk = 34
@@ -65,13 +64,7 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     
-    // Hilt
-    implementation("com.google.dagger:hilt-android:2.48")
-    ksp("com.google.dagger:hilt-android-compiler:2.48")
-    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
-    
     // Debug
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
-
