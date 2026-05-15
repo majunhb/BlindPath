@@ -99,9 +99,7 @@ dependencies {
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
 
-    // 高德地图SDK（navi已包含location）
-    // implementation("com.amap.api:location:6.1.0")
-    implementation("com.amap.api:map3d:6.8.0")
+    // 高德SDK（navi已包含地图和定位）
     implementation("com.amap.api:navi:1.9.4")
 
     // 百度语音（需要手动下载SDK）
