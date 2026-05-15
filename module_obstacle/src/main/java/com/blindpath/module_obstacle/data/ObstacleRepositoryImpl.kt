@@ -263,6 +263,14 @@ class ObstacleRepositoryImpl @Inject constructor(
         }
     }
 
+    private fun getAlertLevel(distance: Float): AlertLevel {
+        return when {
+            distance < 0.5f -> AlertLevel.DANGER
+            distance < 1.0f -> AlertLevel.WARNING
+            else -> AlertLevel.SAFE
+        }
+    }
+
     private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
         return try {
             val yBuffer = imageProxy.planes[0].buffer
