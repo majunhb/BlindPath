@@ -1,5 +1,7 @@
 package com.blindpath.module_obstacle.domain.model
 
+import com.blindpath.base.common.AlertLevel
+
 /**
  * 障碍物类型枚举
  */
@@ -13,9 +15,10 @@ enum class ObstacleType(
     PILLAR("石墩/柱子", 3),
     ELECTRIC_POLE("电线杆", 2),
     VEHICLE("非机动车", 3),
-    PIT("坑洼", 3),
     OBSTACLE("障碍物", 3),
     PERSON("行人", 2),
+    TRUCK("卡车", 3),
+    PIT("坑洼", 3),
     UNKNOWN("未知", 1);
 
     fun getAlertMessage(distance: Float): String {
@@ -26,6 +29,7 @@ enum class ObstacleType(
             PILLAR -> "前方${distance.toInt()}米有石墩，请绕行"
             ELECTRIC_POLE -> "前方${distance.toInt()}米有电线杆"
             VEHICLE -> "注意，前方${distance.toInt()}米有车辆"
+            TRUCK -> "注意，前方${distance.toInt()}米有卡车"
             PIT -> "注意，前方${distance.toInt()}米有坑洼"
             OBSTACLE -> "注意，前方${distance.toInt()}米有障碍物"
             PERSON -> "前方${distance.toInt()}米有行人"
@@ -46,15 +50,6 @@ enum class Direction {
     RIGHT_FRONT,
     FRONT_RIGHT,
     BACK        // 后方（一般不播报）
-}
-
-/**
- * 预警等级
- */
-enum class AlertLevel {
-    DANGER,  // 危险（<0.5m），急促报警
-    WARNING, // 提醒（0.5-1m），温和提示
-    SAFE    // 安全（>1m），不播报
 }
 
 /**
@@ -103,7 +98,7 @@ data class ObstacleState(
     val isRunning: Boolean = false,
     val isCameraReady: Boolean = false,
     val isModelLoaded: Boolean = false,
-    val currentAlert: com.blindpath.app.ui.screens.ObstacleAlert? = null,
+    val currentAlert: com.blindpath.base.common.ObstacleAlert? = null,
     val detectedObstacles: List<DetectedObstacle> = emptyList(),
     val fps: Int = 0,
     val lastError: String? = null
