@@ -37,15 +37,15 @@ android {
 dependencies {
     implementation(project(":base"))
 
-    // 百度语音SDK - 暂时注释掉（CI无法访问中国Maven仓库）
-    // implementation("com.baidu.tts:baidu-tts-android:3.0.0.2")
-
-    // 协程
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    // 日志
+    implementation("com.jakewharton.timber:timber:5.0.1")
 
     // Hilt依赖
     implementation("com.google.dagger:hilt-android:2.48.1")
     ksp("com.google.dagger:hilt-android-compiler:2.48.1")
+
+    // 协程
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // 测试
     testImplementation("junit:junit:4.13.2")
