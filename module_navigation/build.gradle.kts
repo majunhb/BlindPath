@@ -37,17 +37,18 @@ android {
 dependencies {
     implementation(project(":base"))
 
-    // 高德地图SDK - 暂时注释掉（CI无法访问中国Maven仓库）
-    // implementation("com.amap.api:location:6.1.0")
-    // implementation("com.amap.api:maps:3.3.0")
-    // implementation("com.amap.api:navi-3d:1.2.1")
+    // 高德SDK（navi已包含地图和定位）
+    implementation("com.amap.api:navi:1.9.4")
 
-    // 协程
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    // 日志
+    implementation("com.jakewharton.timber:timber:5.0.1")
 
     // Hilt依赖
     implementation("com.google.dagger:hilt-android:2.48.1")
     ksp("com.google.dagger:hilt-android-compiler:2.48.1")
+
+    // 协程
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 
     // 测试
     testImplementation("junit:junit:4.13.2")
