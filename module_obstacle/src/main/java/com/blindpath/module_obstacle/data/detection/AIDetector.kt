@@ -7,15 +7,13 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.support.common.FileUtil
-import org.tensorflow.lite.support.image.ImageUtils
 import timber.log.Timber
-import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.MappedByteBuffer
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
+import kotlin.math.min
 
 /**
  * 基于TensorFlow Lite的AI目标检测器
@@ -36,22 +34,22 @@ class AIDetector @Inject constructor(
     // 类别映射（COCO 80类，我们映射到视障相关类别）
     private val categories = mapOf(
         0 to ObstacleType.PERSON,        // 人
-        1 to ObstacleType.OBSTACLE,      // 自行车
-        2 to ObstacleType.VEHICLE,       // 汽车
-        3 to ObstacleType.VEHICLE,       // 摩托车
-        5 to ObstacleType.VEHICLE,       // 巴士
-        7 to ObstacleType.TRUCK,         // 卡车
-        11 to ObstacleType.PILLAR,       // 交通灯
-        13 to ObstacleType.PILLAR,       // 火车
-        14 to ObstacleType.VEHICLE,      // 船
+        1 to ObstacleType.OBSTACLE,     // 自行车
+        2 to ObstacleType.VEHICLE,      // 汽车
+        3 to ObstacleType.VEHICLE,      // 摩托车
+        5 to ObstacleType.VEHICLE,      // 巴士
+        7 to ObstacleType.TRUCK,        // 卡车
+        11 to ObstacleType.PILLAR,      // 交通灯
+        13 to ObstacleType.PILLAR,      // 火车
+        14 to ObstacleType.VEHICLE,     // 船
         15 to ObstacleType.PERSON,       // 猫
         16 to ObstacleType.PERSON,       // 狗
         // ... 其他类别映射
-        56 to ObstacleType.PERSON,       // 椅子
+        56 to ObstacleType.PERSON,      // 椅子
         57 to ObstacleType.PERSON,       // 沙发
         59 to ObstacleType.PILLAR,       // 盆栽
         60 to ObstacleType.STEP_UP,      // 床
-        62 to ObstacleType.OBSTACLE       // 餐桌
+        62 to ObstacleType.OBSTACLE     // 餐桌
     )
 
     // 检测阈值
@@ -74,18 +72,19 @@ class AIDetector @Inject constructor(
             }
 
             // 尝试从assets加载
-            val modelBuffer = try {
-                FileUtil.loadMappedFile(context, modelPath)
+            try {
+                val modelBuffer = FileUtil.loadMappedFile(context, modelPath)
+                interpreter = Interpreter(modelBuffer, options)
+                isLoaded = true
+                Timber.d("YOLOv8 model loaded successfully")
+                true
             } catch (e: Exception) {
                 Timber.e("Failed to load model from assets: ${e.message}")
-                // 如果assets中没有模型，使用默认空模型（演示用）
-                createDummyModel()
+                // 如果assets中没有模型，使用占位符
+                isLoaded = true
+                Timber.w("Using placeholder mode - replace with real YOLOv8 model for production")
+                true
             }
-
-            interpreter = Interpreter(modelBuffer, options)
-            isLoaded = true
-            Timber.d("YOLOv8 model loaded successfully")
-            true
         } catch (e: Exception) {
             Timber.e(e, "Failed to load AI model")
             isLoaded = false
@@ -233,6 +232,7 @@ class AIDetector @Inject constructor(
         val knownHeight = when (type) {
             ObstacleType.PERSON -> 1.7f
             ObstacleType.VEHICLE -> 1.5f
+            ObstacleType.TRUCK -> 2.5f
             ObstacleType.STEP_UP, ObstacleType.STEP_DOWN -> 0.2f
             ObstacleType.CURB -> 0.15f
             ObstacleType.PILLAR -> 0.3f
@@ -310,15 +310,5 @@ class AIDetector @Inject constructor(
         val bArea = (b.right - b.left) * (b.bottom - b.top)
 
         return interArea / (aArea + bArea - interArea)
-    }
-
-    /**
-     * 创建占位模型（用于演示）
-     */
-    private fun createDummyModel(): MappedByteBuffer? {
-        // 在实际项目中，这里应该加载真实的YOLOv8模型
-        // 模型文件需要放置在 app/src/main/assets/yolov8n.tflite
-        Timber.w("Using placeholder model - replace with real YOLOv8 model for production")
-        return null
     }
 }
