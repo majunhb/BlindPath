@@ -66,10 +66,11 @@ class ObstacleRepositoryImpl @Inject constructor(
             try {
                 Timber.d("Starting obstacle detection")
 
-                // 加载模型
-                if (!aiDetector.loadModel()) {
-                    _state.update { it.copy(lastError = "AI模型加载失败") }
-                    return@withContext Result.Error(message = "AI模型加载失败")
+                // 加载模型（失败也继续，使用演示模式）
+                val modelLoaded = aiDetector.loadModel()
+                if (!modelLoaded) {
+                    Timber.w("AI模型加载失败，将使用演示模式")
+                    _state.update { it.copy(lastError = "AI模型加载失败，将使用演示模式") }
                 }
 
                 _state.update { it.copy(isModelLoaded = true) }
@@ -78,7 +79,7 @@ class ObstacleRepositoryImpl @Inject constructor(
                 val cameraStarted = startCameraSync()
 
                 if (!cameraStarted) {
-                    _state.update { it.copy(lastError = "摄像头启动失败，请检查摄像头权限") }
+                    _state.update { it.copy(lastError = "摄像头启动失败，请检查摄像头权限并确保其他应用未占用摄像头") }
                     return@withContext Result.Error(message = "摄像头启动失败")
                 }
 
@@ -88,6 +89,7 @@ class ObstacleRepositoryImpl @Inject constructor(
                 _state.update {
                     it.copy(
                         isRunning = true,
+                        isCameraReady = true,
                         lastError = null
                     )
                 }
@@ -95,7 +97,7 @@ class ObstacleRepositoryImpl @Inject constructor(
                 Result.Success(true)
             } catch (e: Exception) {
                 Timber.e(e, "Failed to start detection")
-                _state.update { it.copy(lastError = e.message) }
+                _state.update { it.copy(lastError = "启动失败: ${e.message}") }
                 Result.Error(message = e.message ?: "启动失败")
             }
         }
@@ -262,6 +264,9 @@ class ObstacleRepositoryImpl @Inject constructor(
 
                 // 使用 ProcessLifecycleOwner 绑定生命周期
                 try {
+                    // 先解绑所有之前的绑定
+                    cameraProvider?.unbindAll()
+                    
                     cameraProvider?.bindToLifecycle(
                         androidx.lifecycle.ProcessLifecycleOwner.get(),
                         cameraSelector,
@@ -274,7 +279,7 @@ class ObstacleRepositoryImpl @Inject constructor(
                     Timber.d("Camera started successfully")
                     true
                 } catch (e: Exception) {
-                    Timber.e(e, "Camera binding failed")
+                    Timber.e(e, "Camera binding failed: ${e.javaClass.simpleName}: ${e.message}")
                     _state.update { it.copy(lastError = "摄像头启动失败: ${e.message}") }
                     isCameraStarting = false
                     false
