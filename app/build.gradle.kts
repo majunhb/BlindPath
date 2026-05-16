@@ -56,6 +56,8 @@ dependencies {
     implementation(project(":module_obstacle"))
     implementation(project(":module_navigation"))
     implementation(project(":module_voice"))
+    implementation(project(":module_settings"))
+    implementation(project(":module_community"))
     
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")
