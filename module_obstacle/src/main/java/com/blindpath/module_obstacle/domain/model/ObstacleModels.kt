@@ -15,6 +15,7 @@ enum class ObstacleType(
     PILLAR("石墩/柱子", 3),
     ELECTRIC_POLE("电线杆", 2),
     VEHICLE("非机动车", 3),
+    TRUCK("卡车", 3),
     PIT("坑洼", 3),
     OBSTACLE("障碍物", 3),
     PERSON("行人", 2),
@@ -28,6 +29,7 @@ enum class ObstacleType(
             PILLAR -> "前方${distance.toInt()}米有石墩，请绕行"
             ELECTRIC_POLE -> "前方${distance.toInt()}米有电线杆"
             VEHICLE -> "注意，前方${distance.toInt()}米有车辆"
+            TRUCK -> "注意，前方${distance.toInt()}米有卡车"
             PIT -> "注意，前方${distance.toInt()}米有坑洼"
             OBSTACLE -> "注意，前方${distance.toInt()}米有障碍物"
             PERSON -> "前方${distance.toInt()}米有行人"

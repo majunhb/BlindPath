@@ -52,7 +52,6 @@ dependencies {
     
     // TensorFlow Lite
     implementation("org.tensorflow:tensorflow-lite:2.13.0")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.13.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.3")
 
     // Timber

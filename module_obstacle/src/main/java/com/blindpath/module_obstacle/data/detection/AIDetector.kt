@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import com.blindpath.module_obstacle.domain.model.*
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.support.common.FileUtil
 import timber.log.Timber
 import java.io.File
@@ -65,12 +64,6 @@ class AIDetector @Inject constructor(
         return try {
             val options = Interpreter.Options().apply {
                 numThreads = numThreads
-                // 尝试启用GPU加速
-                try {
-                    addDelegate(GpuDelegate())
-                } catch (e: Exception) {
-                    Timber.w("GPU delegate not available, using CPU: ${e.message}")
-                }
             }
 
             // 尝试从assets加载
@@ -233,6 +226,7 @@ class AIDetector @Inject constructor(
         val knownHeight = when (type) {
             ObstacleType.PERSON -> 1.7f
             ObstacleType.VEHICLE -> 1.5f
+            ObstacleType.TRUCK -> 3.5f
             ObstacleType.STEP_UP, ObstacleType.STEP_DOWN -> 0.2f
             ObstacleType.CURB -> 0.15f
             ObstacleType.PILLAR -> 0.3f
