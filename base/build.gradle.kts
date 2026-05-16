@@ -44,4 +44,10 @@ dependencies {
     
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    
+    // TTS & Vibration (基础能力)
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    
+    // Logging
+    implementation("com.jakewharton.timber:timber:5.0.1")
 }

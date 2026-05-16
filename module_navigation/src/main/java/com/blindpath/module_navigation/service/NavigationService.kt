@@ -7,6 +7,7 @@ import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.blindpath.module_navigation.data.NavigationRepositoryImpl
+import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
@@ -14,6 +15,7 @@ import javax.inject.Inject
 
 /**
  * 导航前台服务
+ * 持续定位并通过语音播报导航指令
  */
 @AndroidEntryPoint
 class NavigationService : Service() {
@@ -21,15 +23,21 @@ class NavigationService : Service() {
     @Inject
     lateinit var navigationRepository: NavigationRepositoryImpl
 
+    @Inject
+    lateinit var voiceRepository: VoiceRepository
+
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var isRunning = false
+
+    private var lastInstruction: String? = null
+    private var lastKnownDistance = Int.MAX_VALUE
+    private var lastLocationUpdate = 0L
 
     companion object {
         const val ACTION_START = "com.blindpath.action.START_NAVIGATION"
         const val ACTION_STOP = "com.blindpath.action.STOP_NAVIGATION"
         private const val NOTIFICATION_ID = 1002
 
-        // 通知渠道ID（需要与 Application 中定义的保持一致）
         const val CHANNEL_NAVIGATION = "channel_navigation"
     }
 
@@ -37,6 +45,9 @@ class NavigationService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        serviceScope.launch {
+            voiceRepository.initialize()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -52,19 +63,28 @@ class NavigationService : Service() {
 
         isRunning = true
 
-        val notification = createNotification("正在规划路线")
+        val notification = createNotification("正在定位...")
         startForeground(NOTIFICATION_ID, notification)
 
         serviceScope.launch {
             navigationRepository.startNavigation()
 
             navigationRepository.navigationState.collectLatest { state ->
-                if (!state.isRunning) {
-                    stopSelf()
-                }
-
                 val navText = state.currentInfo?.instruction ?: "定位中..."
                 updateNotification(navText)
+
+                state.currentInfo?.let { info ->
+                    speakNavigation(info.instruction, info.remainingDistance)
+                }
+
+                if (state.currentLocation != null && state.isLocationAvailable) {
+                    val currentTime = System.currentTimeMillis()
+                    if (currentTime - lastLocationUpdate > 10000) {
+                        lastLocationUpdate = currentTime
+                        val accuracy = state.currentLocation.accuracy.toInt()
+                        voiceRepository.speak("当前位置已定位，精度${accuracy}米", queueMode = true)
+                    }
+                }
             }
         }
     }
@@ -74,14 +94,29 @@ class NavigationService : Service() {
 
         serviceScope.launch {
             navigationRepository.stopNavigation()
+            voiceRepository.speak("导航已关闭", queueMode = false)
         }
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
+    /**
+     * 播报导航指令（防重复）
+     */
+    private fun speakNavigation(instruction: String, remainingDistance: Int) {
+        val distanceChanged = kotlin.math.abs(remainingDistance - lastKnownDistance) >= 5
+
+        if (lastInstruction != instruction || distanceChanged) {
+            lastInstruction = instruction
+            lastKnownDistance = remainingDistance
+            serviceScope.launch {
+                voiceRepository.speakNavigation(instruction)
+            }
+        }
+    }
+
     private fun createNotification(text: String): Notification {
-        // 创建通知渠道（如果尚未创建）
         createNotificationChannel()
 
         val pendingIntent = PendingIntent.getActivity(

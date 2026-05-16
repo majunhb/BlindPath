@@ -6,7 +6,10 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.blindpath.base.common.AlertLevel
+import com.blindpath.base.tts.VibrationHelper
 import com.blindpath.module_obstacle.data.ObstacleRepositoryImpl
+import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
@@ -14,7 +17,7 @@ import javax.inject.Inject
 
 /**
  * 避障前台服务
- * 在后台持续运行摄像头和AI检测
+ * 在后台持续运行摄像头和AI检测，发现障碍物时通过语音+振动提醒视障用户
  */
 @AndroidEntryPoint
 class ObstacleService : Service() {
@@ -22,15 +25,21 @@ class ObstacleService : Service() {
     @Inject
     lateinit var obstacleRepository: ObstacleRepositoryImpl
 
+    @Inject
+    lateinit var voiceRepository: VoiceRepository
+
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var isRunning = false
+
+    private var lastAlertMessage: String? = null
+    private var lastAlertTime = 0L
+    private val alertRepeatMinInterval = 3000L
 
     companion object {
         const val ACTION_START = "com.blindpath.action.START_OBSTACLE"
         const val ACTION_STOP = "com.blindpath.action.STOP_OBSTACLE"
         private const val NOTIFICATION_ID = 1001
 
-        // 通知渠道ID（需要与 Application 中定义的保持一致）
         const val CHANNEL_OBSTACLE = "channel_obstacle"
     }
 
@@ -38,6 +47,10 @@ class ObstacleService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        serviceScope.launch {
+            voiceRepository.initialize()
+            voiceRepository.speak("障碍物检测已开启", queueMode = false)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -53,39 +66,58 @@ class ObstacleService : Service() {
 
         isRunning = true
 
-        // 创建通知渠道（如果尚未创建）
         createNotificationChannel()
-
-        // 启动前台服务
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
 
-        // 启动避障检测
         serviceScope.launch {
             obstacleRepository.startDetection()
 
-            // 监听状态变化
             obstacleRepository.obstacleState.collectLatest { state ->
-                if (!state.isRunning) {
-                    stopSelf()
-                }
-
-                // 更新通知
                 val alertText = state.currentAlert?.description ?: "正在检测障碍物"
                 updateNotification(alertText)
+
+                state.currentAlert?.let { alert ->
+                    handleAlert(alert.level, alert.description)
+                }
             }
         }
     }
 
     private fun stopObstacle() {
         isRunning = false
+        VibrationHelper.cancel(this)
 
         serviceScope.launch {
             obstacleRepository.stopDetection()
+            voiceRepository.speak("障碍物检测已关闭", queueMode = false)
         }
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    /**
+     * 处理障碍物预警：语音播报 + 振动反馈
+     */
+    private fun handleAlert(level: AlertLevel, description: String) {
+        val currentTime = System.currentTimeMillis()
+
+        if (description == lastAlertMessage && currentTime - lastAlertTime < alertRepeatMinInterval) {
+            return
+        }
+
+        lastAlertMessage = description
+        lastAlertTime = currentTime
+
+        // 立即停止当前播报，播报预警
+        serviceScope.launch {
+            voiceRepository.speakObstacleAlert(description)
+        }
+
+        if (level != AlertLevel.SAFE) {
+            VibrationHelper.vibrate(this, level)
+        }
     }
 
     private fun createNotification(): Notification {
@@ -140,5 +172,6 @@ class ObstacleService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
+        VibrationHelper.cancel(this)
     }
 }

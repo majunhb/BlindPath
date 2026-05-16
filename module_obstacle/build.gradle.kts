@@ -35,6 +35,7 @@ android {
 
 dependencies {
     implementation(project(":base"))
+    implementation(project(":module_voice"))
     
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")

@@ -1,12 +1,14 @@
-package com.blindpath.app.service
+package com.blindpath.base.tts
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import java.util.*
 
 /**
  * 语音播报服务 - 为视障用户提供语音反馈
+ * 已下沉到 base 模块，供所有服务直接使用
  */
 class TtsManager(private val context: Context) {
 
@@ -27,7 +29,7 @@ class TtsManager(private val context: Context) {
                 // 设置中文语音
                 val result = tts?.setLanguage(Locale.CHINESE)
                 isInitialized = result != TextToSpeech.LANG_MISSING_DATA &&
-                                 result != TextToSpeech.LANG_NOT_SUPPORTED
+                        result != TextToSpeech.LANG_NOT_SUPPORTED
 
                 if (!isInitialized) {
                     // 回退到英文
@@ -55,6 +57,10 @@ class TtsManager(private val context: Context) {
                     speak(it)
                     pendingText = null
                 }
+
+                Log.d(TAG, "TTS initialized successfully")
+            } else {
+                Log.e(TAG, "TTS initialization failed: $status")
             }
         }
     }
@@ -107,6 +113,8 @@ class TtsManager(private val context: Context) {
     }
 
     companion object {
+        private const val TAG = "TtsManager"
+
         // 常用播报文本
         const val MSG_APP_READY = "智行助盲应用已启动"
         const val MSG_OBSTACLE_DETECTED = "注意，前方有障碍物"
