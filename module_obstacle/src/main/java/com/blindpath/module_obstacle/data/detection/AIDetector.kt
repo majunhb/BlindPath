@@ -117,8 +117,9 @@ class AIDetector @Inject constructor(
             val outputBuffer = Array(1) { Array(84) { FloatArray(8400) } }
 
             // 推理
-            val inputs = arrayOf<Any>(inputBuffer)
-            val outputs = mapOf<Int, Any>(0 to outputBuffer)
+            val inputs = arrayOf(inputBuffer)
+            val outputs = mutableMapOf<Int, Any>()
+            outputs[0] = outputBuffer
             interpreter?.runForMultipleInputsOutputs(inputs, outputs)
 
             // 后处理

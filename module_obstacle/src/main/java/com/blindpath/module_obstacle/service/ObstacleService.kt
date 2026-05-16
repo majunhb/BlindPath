@@ -71,15 +71,30 @@ class ObstacleService : Service() {
         startForeground(NOTIFICATION_ID, notification)
 
         serviceScope.launch {
-            obstacleRepository.startDetection()
-
-            obstacleRepository.obstacleState.collectLatest { state ->
-                val alertText = state.currentAlert?.description ?: "正在检测障碍物"
-                updateNotification(alertText)
-
-                state.currentAlert?.let { alert ->
-                    handleAlert(alert.level, alert.description)
+            try {
+                val result = obstacleRepository.startDetection()
+                if (result !is com.blindpath.base.common.Result.Success) {
+                    voiceRepository.speak("摄像头启动失败，请检查权限", queueMode = false)
+                    stopObstacle()
+                    return@launch
                 }
+
+                obstacleRepository.obstacleState.collectLatest { state ->
+                    try {
+                        val alertText = state.currentAlert?.description ?: "正在检测障碍物"
+                        updateNotification(alertText)
+
+                        state.currentAlert?.let { alert ->
+                            handleAlert(alert.level, alert.description)
+                        }
+                    } catch (e: Exception) {
+                        timber.log.Timber.e(e, "Error processing obstacle state")
+                    }
+                }
+            } catch (e: Exception) {
+                timber.log.Timber.e(e, "Obstacle detection failed")
+                voiceRepository.speak("障碍物检测异常", queueMode = false)
+                stopObstacle()
             }
         }
     }

@@ -7,6 +7,8 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.blindpath.base.common.NavigationInfo
 import com.blindpath.base.common.Result
@@ -32,30 +34,35 @@ class NavigationRepositoryImpl @Inject constructor(
     private var locationManager: LocationManager? = null
     private var currentLocation: Location? = null
     private var locationListener: LocationListener? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     // 目的地（示例）
     private var destination: LatLonPoint? = null
+    
+    private var isInitialized = false
 
     override suspend fun startNavigation(): Result<Boolean> {
         return try {
+            Timber.d("Starting navigation...")
+            
             // 检查定位权限
             if (!hasLocationPermission()) {
-                _state.update { it.copy(lastError = "缺少定位权限") }
+                _state.update { it.copy(lastError = "缺少定位权限，请在设置中授权") }
                 return Result.Error(message = "缺少定位权限")
             }
 
             // 初始化定位
-            initLocation()
-
+            val initSuccess = initLocationSafe()
+            
             _state.update {
                 it.copy(
                     isRunning = true,
                     isLocationAvailable = currentLocation != null,
-                    lastError = null
+                    lastError = if (initSuccess) null else "定位服务启动失败"
                 )
             }
 
-            Timber.d("Navigation started")
+            Timber.d("Navigation started, location available: ${currentLocation != null}")
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "Failed to start navigation")
@@ -112,162 +119,217 @@ class NavigationRepositoryImpl @Inject constructor(
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    private fun initLocation() {
+    /**
+     * 安全初始化定位服务
+     */
+    private fun initLocationSafe(): Boolean {
+        if (isInitialized) {
+            Timber.d("Location already initialized")
+            return true
+        }
+        
         try {
-            locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-
-            if (locationManager == null) {
+            // 获取LocationManager
+            val lm = context.getSystemService(Context.LOCATION_SERVICE)
+            if (lm == null || lm !is LocationManager) {
+                Timber.e("Failed to get LocationManager")
                 _state.update { it.copy(lastError = "无法获取定位服务") }
-                Timber.e("LocationManager is null")
-                return
+                return false
             }
+            locationManager = lm
 
             // 检查 GPS 是否开启
             val gpsEnabled = try {
-                locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) ?: false
+                lm.isProviderEnabled(LocationManager.GPS_PROVIDER)
             } catch (e: Exception) {
-                Timber.w(e, "Failed to check GPS provider")
+                Timber.w(e, "GPS provider not available")
                 false
             }
 
             val networkEnabled = try {
-                locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ?: false
+                lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
             } catch (e: Exception) {
-                Timber.w(e, "Failed to check Network provider")
+                Timber.w(e, "Network provider not available")
                 false
             }
 
             if (!gpsEnabled && !networkEnabled) {
                 Timber.w("GPS and Network providers are disabled")
                 _state.update { it.copy(lastError = "请开启定位服务（设置 > 位置信息）") }
-                // 不返回，继续尝试注册监听
+                // 继续尝试，不返回
             }
 
-            locationListener = object : LocationListener {
-                override fun onLocationChanged(location: Location) {
-                    currentLocation = location
+            // 创建位置监听器
+            locationListener = createLocationListener()
 
-                    // 更新状态
-                    _state.update {
-                        it.copy(
-                            currentLocation = com.blindpath.module_navigation.domain.model.LocationInfo(
-                                latitude = location.latitude,
-                                longitude = location.longitude,
-                                accuracy = location.accuracy,
-                                speed = location.speed,
-                                bearing = location.bearing,
-                                timestamp = location.time
-                            ),
-                            isLocationAvailable = true,
-                            lastError = null
-                        )
-                    }
-
-                    // 如果有目的地，计算导航信息
-                    destination?.let { dest ->
-                        updateNavigationInfo(location, dest)
-                    }
-
-                    Timber.d("Location updated: ${location.latitude}, ${location.longitude}")
-                }
-
-                override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-                override fun onProviderEnabled(provider: String) {
-                    Timber.d("Provider enabled: $provider")
-                }
-                override fun onProviderDisabled(provider: String) {
-                    Timber.w("Provider disabled: $provider")
-                }
-            }
-
-            // 请求位置更新 - 优先使用 GPS，如果没有则使用网络定位
+            // 请求位置更新
+            var registered = false
+            
             if (hasLocationPermission()) {
-                var registered = false
-
+                // 尝试GPS
                 if (gpsEnabled) {
                     try {
-                        locationManager?.requestLocationUpdates(
+                        lm.requestLocationUpdates(
                             LocationManager.GPS_PROVIDER,
                             2000L, // 2秒更新一次
                             1f,
-                            locationListener!!
+                            locationListener!!,
+                            Looper.getMainLooper()
                         )
                         registered = true
                         Timber.d("GPS provider registered")
                     } catch (e: SecurityException) {
-                        Timber.e(e, "SecurityException when registering GPS")
+                        Timber.e(e, "SecurityException registering GPS")
                     } catch (e: Exception) {
-                        Timber.w(e, "Failed to register GPS provider")
+                        Timber.w(e, "Failed to register GPS")
                     }
                 }
 
+                // 尝试网络定位
                 if (networkEnabled) {
                     try {
-                        locationManager?.requestLocationUpdates(
+                        lm.requestLocationUpdates(
                             LocationManager.NETWORK_PROVIDER,
                             2000L,
                             1f,
-                            locationListener!!
+                            locationListener!!,
+                            Looper.getMainLooper()
                         )
                         registered = true
                         Timber.d("Network provider registered")
                     } catch (e: SecurityException) {
-                        Timber.e(e, "SecurityException when registering Network")
+                        Timber.e(e, "SecurityException registering Network")
                     } catch (e: Exception) {
-                        Timber.w(e, "Failed to register Network provider")
+                        Timber.w(e, "Failed to register Network")
                     }
                 }
 
+                // 如果都没成功，尝试手动获取上次已知位置
                 if (!registered) {
-                    _state.update { it.copy(lastError = "无法注册定位服务，请检查权限和设置") }
-                    Timber.w("No location provider could be registered")
+                    try {
+                        val lastLocation = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                            ?: lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                        
+                        if (lastLocation != null) {
+                            onLocationReceived(lastLocation)
+                            registered = true
+                            Timber.d("Using last known location")
+                        }
+                    } catch (e: Exception) {
+                        Timber.w(e, "Failed to get last known location")
+                    }
                 }
-            } else {
-                _state.update { it.copy(lastError = "缺少定位权限，请在设置中授权") }
             }
+
+            isInitialized = true
+            return registered
         } catch (e: SecurityException) {
             Timber.e(e, "Location permission denied")
-            _state.update { it.copy(lastError = "定位权限被拒绝") }
+            _state.update { it.copy(lastError = "定位权限被拒绝，请在设置中授权") }
+            return false
         } catch (e: Exception) {
-            Timber.e(e, "Failed to initialize location: ${e.javaClass.simpleName}")
+            Timber.e(e, "Failed to initialize location")
             _state.update { it.copy(lastError = "定位初始化失败: ${e.message}") }
+            return false
         }
     }
 
-    private fun stopLocationUpdates() {
-        locationListener?.let {
-            locationManager?.removeUpdates(it)
+    private fun createLocationListener(): LocationListener {
+        return object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                try {
+                    onLocationReceived(location)
+                } catch (e: Exception) {
+                    Timber.e(e, "Error processing location update")
+                }
+            }
+
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
+                Timber.d("Provider status changed: $provider, status: $status")
+            }
+
+            override fun onProviderEnabled(provider: String) {
+                Timber.d("Provider enabled: $provider")
+                _state.update { it.copy(lastError = null) }
+            }
+
+            override fun onProviderDisabled(provider: String) {
+                Timber.w("Provider disabled: $provider")
+            }
         }
-        locationListener = null
     }
 
-    private fun updateNavigationInfo(location: Location, destination: LatLonPoint) {
-        // 计算距离和方向
-        val results = FloatArray(2)
-        LocationUtils.calculateLineDistance(
-            LatLonPoint(location.latitude, location.longitude),
-            destination,
-            results
+    private fun onLocationReceived(location: Location) {
+        currentLocation = location
+        
+        val locationInfo = com.blindpath.module_navigation.domain.model.LocationInfo(
+            latitude = location.latitude,
+            longitude = location.longitude,
+            accuracy = location.accuracy,
+            speed = location.speed,
+            bearing = location.bearing,
+            timestamp = location.time
         )
-
-        // 简化计算
-        val distance = results[0]
-        val bearing = results[1]
-
-        // 估算剩余时间（假设步行速度1.2m/s）
-        val remainingSeconds = if (distance > 0) (distance / 1.2f).toInt() else 0
-
-        // 生成导航指令
-        val instruction = generateInstruction(location.bearing, bearing, distance)
 
         _state.update {
             it.copy(
-                currentInfo = NavigationInfo(
-                    instruction = instruction,
-                    remainingDistance = distance.toInt(),
-                    remainingTime = remainingSeconds
-                )
+                currentLocation = locationInfo,
+                isLocationAvailable = true,
+                lastError = null
             )
+        }
+
+        // 如果有目的地，计算导航信息
+        destination?.let { dest ->
+            updateNavigationInfo(location, dest)
+        }
+
+        Timber.d("Location updated: ${location.latitude}, ${location.longitude}, accuracy: ${location.accuracy}m")
+    }
+
+    private fun stopLocationUpdates() {
+        try {
+            locationListener?.let { listener ->
+                locationManager?.removeUpdates(listener)
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "Error stopping location updates")
+        }
+        locationListener = null
+        isInitialized = false
+    }
+
+    private fun updateNavigationInfo(location: Location, destination: LatLonPoint) {
+        try {
+            // 计算距离和方向
+            val results = FloatArray(2)
+            LocationUtils.calculateLineDistance(
+                LatLonPoint(location.latitude, location.longitude),
+                destination,
+                results
+            )
+
+            // 简化计算
+            val distance = results[0]
+            val bearing = results[1]
+
+            // 估算剩余时间（假设步行速度1.2m/s）
+            val remainingSeconds = if (distance > 0) (distance / 1.2f).toInt() else 0
+
+            // 生成导航指令
+            val instruction = generateInstruction(location.bearing, bearing, distance)
+
+            _state.update {
+                it.copy(
+                    currentInfo = NavigationInfo(
+                        instruction = instruction,
+                        remainingDistance = distance.toInt(),
+                        remainingTime = remainingSeconds
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Error updating navigation info")
         }
     }
 

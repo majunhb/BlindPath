@@ -67,24 +67,41 @@ class NavigationService : Service() {
         startForeground(NOTIFICATION_ID, notification)
 
         serviceScope.launch {
-            navigationRepository.startNavigation()
-
-            navigationRepository.navigationState.collectLatest { state ->
-                val navText = state.currentInfo?.instruction ?: "定位中..."
-                updateNotification(navText)
-
-                state.currentInfo?.let { info ->
-                    speakNavigation(info.instruction, info.remainingDistance)
+            try {
+                val result = navigationRepository.startNavigation()
+                if (result !is com.blindpath.base.common.Result.Success) {
+                    voiceRepository.speak("定位启动失败，请检查定位权限", queueMode = false)
+                    stopNavigation()
+                    return@launch
                 }
 
-                if (state.currentLocation != null && state.isLocationAvailable) {
-                    val currentTime = System.currentTimeMillis()
-                    if (currentTime - lastLocationUpdate > 10000) {
-                        lastLocationUpdate = currentTime
-                        val accuracy = state.currentLocation.accuracy.toInt()
-                        voiceRepository.speak("当前位置已定位，精度${accuracy}米", queueMode = true)
+                navigationRepository.navigationState.collectLatest { state ->
+                    try {
+                        val navText = state.currentInfo?.instruction ?: "定位中..."
+
+                        // 更新通知（限流）
+                        val currentTime = System.currentTimeMillis()
+                        if (currentTime - lastLocationUpdate > 5000) {
+                            updateNotification(navText)
+                            lastLocationUpdate = currentTime
+                        }
+
+                        state.currentInfo?.let { info ->
+                            speakNavigation(info.instruction, info.remainingDistance)
+                        }
+
+                        if (state.currentLocation != null && state.isLocationAvailable) {
+                            val accuracy = state.currentLocation.accuracy.toInt()
+                            voiceRepository.speak("当前定位精度${accuracy}米", queueMode = true)
+                        }
+                    } catch (e: Exception) {
+                        timber.log.Timber.e(e, "Error processing navigation state")
                     }
                 }
+            } catch (e: Exception) {
+                timber.log.Timber.e(e, "Navigation failed")
+                voiceRepository.speak("导航异常", queueMode = false)
+                stopNavigation()
             }
         }
     }
