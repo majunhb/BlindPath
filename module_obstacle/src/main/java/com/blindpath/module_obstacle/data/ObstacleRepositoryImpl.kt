@@ -205,14 +205,8 @@ class ObstacleRepositoryImpl @Inject constructor(
                 
                 // 等待CameraProvider准备完成
                 val provider = try {
-                    suspendCancellableCoroutine<ProcessCameraProvider> { continuation ->
-                        cameraProviderFuture.addListener({
-                            try {
-                                continuation.resume(cameraProviderFuture.get())
-                            } catch (e: Exception) {
-                                continuation.resumeWithException(e)
-                            }
-                        }, ContextCompat.getMainExecutor(context))
+                    withContext(Dispatchers.IO) {
+                        cameraProviderFuture.get(5, java.util.concurrent.TimeUnit.SECONDS)
                     }
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to get camera provider")
