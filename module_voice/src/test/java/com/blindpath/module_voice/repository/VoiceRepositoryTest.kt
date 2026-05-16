@@ -3,26 +3,13 @@ package com.blindpath.module_voice.repository
 import com.blindpath.base.common.Result
 import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.domain.model.VoiceState
-import io.mockk.*
-import io.mockk.impl.annotations.MockK
-import io.mockk.impl.annotations.SpyK
-import io.mockk.junit5.MockKExtension
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.extension.ExtendWith
-
-import org.junit.jupiter.api.Assertions.*
+import org.junit.Test
+import org.junit.Assert.*
 
 /**
  * VoiceRepository 接口测试
  * 验证语音播报的核心业务逻辑
  */
-@ExtendWith(MockKExtension::class)
 class VoiceRepositoryTest {
 
     // 测试 VoiceState 的状态转换
@@ -79,7 +66,7 @@ class VoiceRepositoryTest {
 
         // Then
         assertEquals("前方有障碍物", lastText)
-        assertFalse(lastQueueMode!!) { "避障预警应该使用 FLUSH 模式" }
+        assertFalse("避障预警应该使用 FLUSH 模式", lastQueueMode!!)
     }
 
     @Test
@@ -95,7 +82,7 @@ class VoiceRepositoryTest {
         simulateSpeak("前方左转", queueMode = true)
 
         // Then
-        assertTrue(lastQueueMode!!) { "导航播报应该使用 ADD 模式" }
+        assertTrue("导航播报应该使用 ADD 模式", lastQueueMode!!)
     }
 
     @Test
@@ -110,7 +97,7 @@ class VoiceRepositoryTest {
         }
 
         // Then
-        assertFalse(shouldSpeak) { "避障播报时不应播报导航" }
+        assertFalse("避障播报时不应播报导航", shouldSpeak)
     }
 
     @Test
@@ -125,7 +112,7 @@ class VoiceRepositoryTest {
         }
 
         // Then
-        assertTrue(shouldSpeak) { "没有播报时应该可以播报导航" }
+        assertTrue("没有播报时应该可以播报导航", shouldSpeak)
     }
 }
 
@@ -148,7 +135,7 @@ class VoiceInterruptionTest {
         onObstacleAlert()
 
         // Then
-        assertTrue(isInterrupted) { "避障预警应该打断当前播报" }
+        assertTrue("避障预警应该打断当前播报", isInterrupted)
     }
 
     @Test
@@ -246,7 +233,7 @@ class TTSErrorHandlingTest {
         val isSuccess = status == 0 // TextToSpeech.SUCCESS == 0
 
         // Then
-        assertFalse(isSuccess) { "初始化应该失败" }
+        assertFalse("初始化应该失败", isSuccess)
     }
 }
 

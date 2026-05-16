@@ -4,23 +4,18 @@ import com.blindpath.module_navigation.data.NavigationRepositoryImpl
 import com.blindpath.module_voice.domain.VoiceRepository
 import io.mockk.*
 import io.mockk.impl.annotations.MockK
-import io.mockk.impl.annotations.SpyK
-import io.mockk.junit5.MockKExtension
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.extension.ExtendWith
-
-import org.junit.jupiter.api.Assertions.*
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
+import org.junit.Assert.*
 
 /**
  * MainViewModel 单元测试
  */
 @OptIn(ExperimentalCoroutinesApi::class)
-@ExtendWith(MockKExtension::class)
 class MainViewModelTest {
 
     @MockK
@@ -32,7 +27,7 @@ class MainViewModelTest {
     private lateinit var viewModel: MainViewModel
     private val testDispatcher = StandardTestDispatcher()
 
-    @BeforeEach
+    @Before
     fun setup() {
         MockKAnnotations.init(this)
         Dispatchers.setMain(testDispatcher)
@@ -45,7 +40,7 @@ class MainViewModelTest {
         viewModel = MainViewModel(voiceRepository, navigationRepository)
     }
 
-    @AfterEach
+    @After
     fun tearDown() {
         Dispatchers.resetMain()
     }
@@ -189,8 +184,8 @@ class MainUiStateTest {
 
         val copied = original.copy(isNavigationRunning = true)
 
-        assertTrue(copied.isObstacleRunning) { "isObstacleRunning should be preserved" }
+        assertTrue("isObstacleRunning should be preserved", copied.isObstacleRunning)
         assertTrue(copied.isNavigationRunning)
-        assertEquals("测试错误", copied.errorMessage) { "errorMessage should be preserved" }
+        assertEquals("errorMessage should be preserved", "测试错误", copied.errorMessage)
     }
 }

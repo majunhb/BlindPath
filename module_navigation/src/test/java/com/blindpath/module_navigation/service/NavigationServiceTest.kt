@@ -1,10 +1,8 @@
 package com.blindpath.module_navigation.service
 
-import io.mockk.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
+import org.junit.Test
 import kotlin.math.abs
 
 /**

@@ -6,19 +6,16 @@ import com.blindpath.base.common.ObstacleState
 import com.blindpath.module_obstacle.data.ObstacleRepositoryImpl
 import com.blindpath.module_voice.domain.VoiceRepository
 import io.mockk.*
-import io.mockk.impl.annotations.InjectMockKs
 import io.mockk.impl.annotations.MockK
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.extension.ExtendWith
+import org.junit.After
+import org.junit.Before
+import org.junit.Test
 
 /**
  * ObstacleService 单元测试
  */
-@ExtendWith(MockKExtension::class)
 class ObstacleServiceTest {
 
     @MockK
@@ -30,13 +27,13 @@ class ObstacleServiceTest {
     private lateinit var service: ObstacleService
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    @BeforeEach
+    @Before
     fun setup() {
         MockKAnnotations.init(this)
         service = spyk(ObstacleService())
     }
 
-    @AfterEach
+    @After
     fun tearDown() {
         serviceScope.cancel()
     }
