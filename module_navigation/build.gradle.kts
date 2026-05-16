@@ -42,7 +42,10 @@ dependencies {
     
     // Location
     implementation("com.google.android.gms:play-services-location:21.0.1")
-    
+
+    // Timber
+    implementation("com.jakewharton.timber:timber:5.0.1")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
