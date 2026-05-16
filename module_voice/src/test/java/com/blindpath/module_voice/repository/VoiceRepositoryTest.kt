@@ -3,6 +3,7 @@ package com.blindpath.module_voice.repository
 import com.blindpath.base.common.Result
 import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.domain.model.VoiceState
+import kotlinx.coroutines.flow.MutableStateFlow
 import org.junit.Test
 import org.junit.Assert.*
 
@@ -272,6 +273,7 @@ class ResultTypeTest {
         val value = when (success) {
             is Result.Success -> success.data
             is Result.Error -> null
+            else -> null
         }
 
         // Then
