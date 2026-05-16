@@ -68,7 +68,7 @@ data class AccompanyRequest(
  */
 data class CommunityUser(
     val id: String = UUID.randomUUID().toString(),
-    val role: UserRole = UserRole.BIND_USER,
+    val role: UserRole = UserRole.BLIND_USER,
     val name: String = "",
     val phone: String = "",
     val city: String = "",
@@ -110,7 +110,7 @@ class CommunityRepository @Inject constructor(
             val role = try {
                 UserRole.valueOf(preferences[Keys.USER_ROLE] ?: "BLIND_USER")
             } catch (e: Exception) {
-                UserRole.BIND_USER
+                UserRole.BLIND_USER
             }
 
             val volunteerInfo = if (role == UserRole.VOLUNTEER || preferences[Keys.IS_VOLUNTEER_REGISTERED] == true) {
@@ -150,7 +150,7 @@ class CommunityRepository @Inject constructor(
 
     suspend fun switchToBlindUser() {
         context.dataStore.edit { preferences ->
-            preferences[Keys.USER_ROLE] = UserRole.BIND_USER.name
+            preferences[Keys.USER_ROLE] = UserRole.BLIND_USER.name
         }
     }
 

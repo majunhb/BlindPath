@@ -419,7 +419,7 @@ fun VolunteerCard(volunteer: Volunteer) {
         modifier = Modifier
             .fillMaxWidth()
             .semantics {
-                contentDescription = "志愿者：${voliver.name}，${volunteer.city}，已服务${volunteer.serviceCount}次，评分${volunteer.rating}星"
+                contentDescription = "志愿者：${volunteer.name}，${volunteer.city}，已服务${volunteer.serviceCount}次，评分${volunteer.rating}星"
             },
         shape = RoundedCornerShape(16.dp)
     ) {
