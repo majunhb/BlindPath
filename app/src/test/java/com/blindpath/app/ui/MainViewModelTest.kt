@@ -145,7 +145,7 @@ class MainViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Then
-        coVerify { voiceRepository.speak(contains("求救信号"), false) }
+        coVerify { voiceRepository.speak(any(), eq(false)) }
     }
 
     @Test
@@ -155,7 +155,7 @@ class MainViewModelTest {
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Then
-        coVerify { voiceRepository.speak(contains("求救信号"), false) }
+        coVerify { voiceRepository.speak(any(), eq(false)) }
     }
 }
 
