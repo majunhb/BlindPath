@@ -4,11 +4,17 @@ import android.content.Context
 import android.graphics.Bitmap
 import com.blindpath.module_obstacle.domain.model.*
 import dagger.hilt.android.qualifiers.ApplicationContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.common.FileUtil
 import timber.log.Timber
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
@@ -35,8 +41,9 @@ class AIDetector @Inject constructor(
     private var isLoaded = false
 
     // 模型配置
-    private val modelPath = "yolov8n.tflite" // 需要放置模型文件到assets目录
-    private val inputSize = 640 // YOLOv8输入尺寸
+    private val modelPath = "yolov8n.tflite"
+    private val modelUrl = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite"
+    private val inputSize = 640
     private val numThreads = 4
 
     // ============ COCO 80类 到 视障障碍物类型 的映射 ============
@@ -123,36 +130,66 @@ class AIDetector @Inject constructor(
     private var calibratedFocalLength: Float? = null
 
     /**
-     * 加载模型
+     * 加载模型（支持自动下载）
      */
     suspend fun loadModel(): Boolean {
         return try {
             val options = Interpreter.Options().apply {
                 numThreads = numThreads
-                // 注意：GPU加速需要添加 tensorflow-lite-gpu 依赖
-                // 如需启用GPU加速，请在 build.gradle.kts 中添加:
-                // implementation("org.tensorflow:tensorflow-lite-gpu:2.13.0")
             }
 
-            // 尝试从assets加载
-            val modelBuffer = try {
-                FileUtil.loadMappedFile(context, modelPath)
-            } catch (e: Exception) {
-                Timber.w("AI模型文件不存在，使用模拟模式: ${e.message}")
-                // 模型不存在时返回true，允许应用在没有真实模型时运行
+            // 1. 先尝试从内部存储加载
+            val modelFile = getModelFile()
+            
+            if (modelFile != null && modelFile.exists()) {
+                // 从文件系统加载
+                val modelBuffer = FileInputStream(modelFile).channel.map(
+                    java.nio.channels.FileChannel.MapMode.READ_ONLY,
+                    0,
+                    modelFile.length()
+                )
+                interpreter = Interpreter(modelBuffer, options)
                 isLoaded = true
+                Timber.d("YOLOv8 model loaded from file: ${modelFile.absolutePath}")
                 return true
             }
 
-            interpreter = Interpreter(modelBuffer.asReadOnlyBuffer(), options)
+            // 2. 尝试从assets加载
+            try {
+                val assetBuffer = FileUtil.loadMappedFile(context, modelPath)
+                interpreter = Interpreter(assetBuffer.asReadOnlyBuffer(), options)
+                isLoaded = true
+                Timber.d("YOLOv8 model loaded from assets")
+                return true
+            } catch (e: Exception) {
+                Timber.w("Model not found in assets, will try to download: ${e.message}")
+            }
+
+            // 3. 自动从网络下载
+            Timber.d("Downloading model from: $modelUrl")
+            val downloadedFile = downloadModel()
+            
+            if (downloadedFile != null && downloadedFile.exists()) {
+                val modelBuffer = FileInputStream(downloadedFile).channel.map(
+                    java.nio.channels.FileChannel.MapMode.READ_ONLY,
+                    0,
+                    downloadedFile.length()
+                )
+                interpreter = Interpreter(modelBuffer, options)
+                isLoaded = true
+                Timber.d("YOLOv8 model downloaded and loaded successfully")
+                return true
+            }
+
+            // 4. 所有方法都失败，使用模拟模式
+            Timber.w("AI模型文件无法加载，使用模拟模式")
             isLoaded = true
-            Timber.d("YOLOv8 model loaded successfully")
-            true
+            return true
+            
         } catch (e: Exception) {
             Timber.e(e, "Failed to load AI model, using simulation mode")
-            // 即使模型加载失败，也允许应用继续运行（模拟模式）
             isLoaded = true
-            true
+            return true
         }
     }
 
@@ -164,6 +201,99 @@ class AIDetector @Inject constructor(
         interpreter = null
         isLoaded = false
         Timber.d("AI model unloaded")
+    }
+
+    /**
+     * 获取模型文件（优先从文件系统，备选assets）
+     */
+    private fun getModelFile(): File? {
+        // 1. 检查内部存储
+        val internalFile = File(context.filesDir, modelPath)
+        if (internalFile.exists() && internalFile.length() > 0) {
+            Timber.d("Found model in internal storage: ${internalFile.absolutePath}")
+            return internalFile
+        }
+
+        // 2. 检查外部存储
+        val externalDir = context.getExternalFilesDir(null)
+        if (externalDir != null) {
+            val externalFile = File(externalDir, modelPath)
+            if (externalFile.exists() && externalFile.length() > 0) {
+                Timber.d("Found model in external storage: ${externalFile.absolutePath}")
+                return externalFile
+            }
+        }
+
+        // 3. 检查缓存目录
+        val cacheFile = File(context.cacheDir, modelPath)
+        if (cacheFile.exists() && cacheFile.length() > 0) {
+            Timber.d("Found model in cache: ${cacheFile.absolutePath}")
+            return cacheFile
+        }
+
+        Timber.d("Model file not found in file system")
+        return null
+    }
+
+    /**
+     * 从网络下载模型文件
+     */
+    private suspend fun downloadModel(): File? {
+        return withContext(Dispatchers.IO) {
+            var outputFile: File? = null
+            try {
+                Timber.d("Starting model download from: $modelUrl")
+
+                val client = OkHttpClient.Builder()
+                    .connectTimeout(60, TimeUnit.SECONDS)
+                    .readTimeout(60, TimeUnit.SECONDS)
+                    .build()
+
+                val request = Request.Builder()
+                    .url(modelUrl)
+                    .build()
+
+                val response = client.newCall(request).execute()
+
+                if (!response.isSuccessful) {
+                    Timber.e("Download failed with code: ${response.code}")
+                    return@withContext null
+                }
+
+                // 保存到内部存储
+                outputFile = File(context.filesDir, modelPath)
+                val inputStream = response.body?.byteStream()
+                val outputStream = FileOutputStream(outputFile)
+
+                val buffer = ByteArray(4096)
+                var bytesRead: Int
+                var totalBytes: Long = 0
+                val fileSize = response.body?.contentLength() ?: -1
+
+                while (true) {
+                    bytesRead = inputStream?.read(buffer) ?: -1
+                    if (bytesRead == -1) break
+                    outputStream.write(buffer, 0, bytesRead)
+                    totalBytes += bytesRead
+                    if (fileSize > 0) {
+                        val progress = (totalBytes * 100 / fileSize).toInt()
+                        Timber.d("Download progress: $progress%")
+                    }
+                }
+
+                outputStream.close()
+                inputStream?.close()
+
+                Timber.d("Model downloaded successfully: ${outputFile.absolutePath} (${outputFile.length()} bytes)")
+                return@withContext outputFile
+
+            } catch (e: Exception) {
+                Timber.e(e, "Model download failed")
+                // 清理不完整的文件
+                outputFile?.delete()
+                return@withContext null
+            }
+        }
     }
 
     /**
