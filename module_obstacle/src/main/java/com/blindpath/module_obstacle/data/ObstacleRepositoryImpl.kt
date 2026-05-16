@@ -7,12 +7,14 @@ import android.graphics.ImageFormat
 import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.YuvImage
+import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.Lifecycle
 import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.common.ObstacleAlert
 import com.blindpath.base.common.Result
@@ -196,8 +198,9 @@ class ObstacleRepositoryImpl @Inject constructor(
                     processImage(imageProxy)
                 }
 
-                cameraProvider?.bindToLifecycle(
-                    context as LifecycleOwner,
+                // 使用 unbound 方式，不绑定到 lifecycle
+                val camera = cameraProvider?.bindToLifecycle(
+                    androidx.lifecycle.ProcessLifecycleOwner.get(),
                     cameraSelector,
                     imageAnalysis
                 )
