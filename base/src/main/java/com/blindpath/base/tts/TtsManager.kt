@@ -49,6 +49,7 @@ class TtsManager(private val context: Context) {
                     override fun onDone(utteranceId: String?) {
                         onSpeakComplete?.invoke()
                     }
+                    @Suppress("DEPRECATION")
                     override fun onError(utteranceId: String?) {}
                 })
 
