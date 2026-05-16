@@ -205,7 +205,15 @@ class ObstacleRepositoryImpl @Inject constructor(
                 
                 // 等待CameraProvider准备完成
                 val provider = try {
-                    kotlinx.coroutines.guava.await(cameraProviderFuture)
+                    suspendCancellableCoroutine<ProcessCameraProvider> { continuation ->
+                        cameraProviderFuture.addListener({
+                            try {
+                                continuation.resume(cameraProviderFuture.get())
+                            } catch (e: Exception) {
+                                continuation.resumeWithException(e)
+                            }
+                        }, ContextCompat.getMainExecutor(context))
+                    }
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to get camera provider")
                     _state.update { it.copy(lastError = "无法获取摄像头: ${e.message}") }
