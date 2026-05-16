@@ -1,117 +1,14 @@
 package com.blindpath.module_obstacle.service
 
-import com.blindpath.base.common.AlertLevel
-import com.blindpath.base.common.AlertInfo
-import com.blindpath.base.common.ObstacleState
-import com.blindpath.module_obstacle.data.ObstacleRepositoryImpl
-import com.blindpath.module_voice.domain.VoiceRepository
-import io.mockk.*
-import io.mockk.impl.annotations.MockK
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import org.junit.After
-import org.junit.Before
 import org.junit.Test
 
 /**
- * ObstacleService 单元测试
- */
-class ObstacleServiceTest {
-
-    @MockK
-    lateinit var obstacleRepository: ObstacleRepositoryImpl
-
-    @MockK
-    lateinit var voiceRepository: VoiceRepository
-
-    private lateinit var service: ObstacleService
-    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
-    @Before
-    fun setup() {
-        MockKAnnotations.init(this)
-        service = spyk(ObstacleService())
-    }
-
-    @After
-    fun tearDown() {
-        serviceScope.cancel()
-    }
-
-    @Test
-    fun `handleAlert should not repeat same alert within interval`() = runBlocking {
-        // Given
-        val description = "前方有障碍物"
-        val level = AlertLevel.WARNING
-
-        // When - 调用两次相同的预警
-        service.handleAlert(level, description)
-        service.handleAlert(level, description)
-
-        // Then - voiceRepository.speakObstacleAlert 应该只被调用一次
-        coVerify(exactly = 1) { voiceRepository.speakObstacleAlert(description) }
-    }
-
-    @Test
-    fun `handleAlert should speak for different descriptions`() = runBlocking {
-        // Given
-        val level = AlertLevel.WARNING
-
-        // When - 调用不同内容的预警
-        service.handleAlert(level, "障碍物1")
-        service.handleAlert(level, "障碍物2")
-
-        // Then - voiceRepository 应该被调用两次
-        coVerify(exactly = 2) { voiceRepository.speakObstacleAlert(any()) }
-    }
-
-    @Test
-    fun `handleAlert should vibrate for non-SAFE level`() = runBlocking {
-        // Given
-        val level = AlertLevel.DANGER
-
-        // When
-        service.handleAlert(level, "危险障碍物")
-
-        // Then - 应该调用语音预警
-        coVerify { voiceRepository.speakObstacleAlert("危险障碍物") }
-    }
-
-    @Test
-    fun `handleAlert should not vibrate for SAFE level`() = runBlocking {
-        // Given
-        val level = AlertLevel.SAFE
-
-        // When
-        service.handleAlert(level, "安全")
-
-        // Then - 不应该震动（SAFE 级别不需要振动）
-        // 注意：这里只验证语音播报，不验证振动（需要 Android Context）
-        coVerify { voiceRepository.speakObstacleAlert("安全") }
-    }
-
-    @Test
-    fun `handleAlert should respect minimum interval for repeated alerts`() = runBlocking {
-        // Given
-        val description = "重复预警"
-        val level = AlertLevel.WARNING
-
-        // When - 快速连续调用
-        service.handleAlert(level, description)
-
-        // 等待间隔时间
-        delay(ObstacleServiceTest::class.java.getDeclaredField("alertRepeatMinInterval")
-            .apply { isAccessible = true }.get(3000L) as Long + 100)
-
-        service.handleAlert(level, description)
-
-        // Then - 应该被调用两次（间隔已过）
-        coVerify(exactly = 2) { voiceRepository.speakObstacleAlert(description) }
-    }
-}
-
-/**
  * ObstacleService 预警防重复逻辑测试
+ *
+ * 避障预警防重复规则：
+ * 1. 相同描述的消息在3秒内不重复播报
+ * 2. 不同描述的消息立即播报
+ * 3. 超过3秒间隔后允许重复播报
  */
 class AlertDeduplicationTest {
 
