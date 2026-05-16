@@ -1,0 +1,78 @@
+# BlindPath EditorConfig
+# 代码风格统一配置文件
+
+root = true
+
+# ============================================
+# 通用设置
+# ============================================
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+# ============================================
+# Kotlin 文件
+# ============================================
+[*.kt]
+indent_size = 4
+max_line_length = 120
+
+# Kotlin 特定
+ij_kotlin_imports_layout = android,|,javax,|,kotlin,|,^
+ij_kotlin_name_count_to_use_star_import = 5
+ij_kotlin_name_count_to_use_star_import_for_members = 3
+ij_kotlin_packages_to_use_import_on_demand_threshold = 10
+
+# ============================================
+# XML 文件
+# ============================================
+[*.xml]
+indent_size = 4
+
+# ============================================
+# Gradle 文件
+# ============================================
+[*.gradle.kts]
+indent_size = 4
+max_line_length = off
+
+[*.gradle]
+indent_size = 4
+
+# ============================================
+# Markdown 文件
+# ============================================
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# ============================================
+# JSON 文件
+# ============================================
+[*.json]
+indent_size = 2
+
+# ============================================
+# YAML 文件
+# ============================================
+[*.yml]
+indent_size = 2
+
+[*.yaml]
+indent_size = 2
+
+# ============================================
+# Shell 脚本
+# ============================================
+[*.sh]
+indent_size = 4
+end_of_line = lf
+
+# ============================================
+# Properties 文件
+# ============================================
+[*.properties]
+indent_size = 4

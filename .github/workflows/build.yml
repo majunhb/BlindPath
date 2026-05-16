@@ -37,6 +37,41 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # ============================================
+      # 测试阶段
+      # ============================================
+      - name: Run unit tests
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/testDebugUnitTest/
+            **/build/test-results/testDebugUnitTest/
+          retention-days: 14
+
+      # ============================================
+      # 代码质量检查阶段
+      # ============================================
+      - name: Run Android Lint
+        run: ./gradlew lintDebug --no-daemon
+
+      - name: Upload Lint reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-reports
+          path: |
+            **/build/reports/lint-results*.html
+            **/build/reports/lint-results*.xml
+          retention-days: 14
+
+      # ============================================
+      # 构建阶段
+      # ============================================
       - name: Build with Gradle
         run: ./gradlew assembleDebug --no-daemon
 
@@ -46,3 +81,12 @@ jobs:
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+
+      # ============================================
+      # 构建失败通知
+      # ============================================
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "Build failed! Check the test reports and lint reports for details."
