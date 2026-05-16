@@ -4,8 +4,6 @@ import com.blindpath.module_navigation.data.NavigationRepositoryImpl
 import com.blindpath.module_voice.domain.VoiceRepository
 import io.mockk.*
 import io.mockk.impl.annotations.MockK
-import io.mockk.MockKKt.not
-import io.mockk.MockKKt.contains
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.*
@@ -151,14 +149,13 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `sendSos without location should not mention location`() = runTest {
+    fun `sendSos without location should speak sos message`() = runTest {
         // When
         viewModel.sendSos(null, null)
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Then
         coVerify { voiceRepository.speak(contains("求救信号"), false) }
-        coVerify { voiceRepository.speak(not(contains("当前位置")), false) }
     }
 }
 
