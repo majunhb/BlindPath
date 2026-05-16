@@ -176,6 +176,13 @@ class ObstacleRepositoryImpl @Inject constructor(
     }
 
     private fun startCamera() {
+        // 先停止之前的摄像头
+        try {
+            cameraProvider?.unbindAll()
+        } catch (e: Exception) {
+            Timber.w(e, "Failed to unbind previous camera")
+        }
+
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         try {
@@ -183,6 +190,12 @@ class ObstacleRepositoryImpl @Inject constructor(
             cameraProviderFuture.addListener({
                 try {
                     cameraProvider = cameraProviderFuture.get()
+
+                    if (cameraProvider == null) {
+                        _state.update { it.copy(lastError = "摄像头提供者为空") }
+                        Timber.e("CameraProvider is null")
+                        return@addListener
+                    }
 
                     val cameraSelector = if (useFrontCamera) {
                         CameraSelector.DEFAULT_FRONT_CAMERA
@@ -213,8 +226,11 @@ class ObstacleRepositoryImpl @Inject constructor(
                         _state.update { it.copy(lastError = "摄像头绑定失败，请检查摄像头权限") }
                         Timber.e("Camera binding returned null")
                     }
+                } catch (e: SecurityException) {
+                    Timber.e(e, "Camera permission denied")
+                    _state.update { it.copy(lastError = "摄像头权限被拒绝，请在设置中授权") }
                 } catch (e: Exception) {
-                    Timber.e(e, "Camera start failed")
+                    Timber.e(e, "Camera start failed: ${e.javaClass.simpleName}")
                     _state.update { it.copy(lastError = "摄像头启动失败: ${e.message}") }
                 }
             }, ContextCompat.getMainExecutor(context))

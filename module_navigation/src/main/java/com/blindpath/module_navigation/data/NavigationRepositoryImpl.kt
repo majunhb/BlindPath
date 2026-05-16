@@ -116,14 +116,31 @@ class NavigationRepositoryImpl @Inject constructor(
         try {
             locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
+            if (locationManager == null) {
+                _state.update { it.copy(lastError = "无法获取定位服务") }
+                Timber.e("LocationManager is null")
+                return
+            }
+
             // 检查 GPS 是否开启
-            val gpsEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) ?: false
-            val networkEnabled = locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ?: false
+            val gpsEnabled = try {
+                locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) ?: false
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to check GPS provider")
+                false
+            }
+
+            val networkEnabled = try {
+                locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ?: false
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to check Network provider")
+                false
+            }
 
             if (!gpsEnabled && !networkEnabled) {
                 Timber.w("GPS and Network providers are disabled")
                 _state.update { it.copy(lastError = "请开启定位服务（设置 > 位置信息）") }
-                // 仍然继续，让系统处理
+                // 不返回，继续尝试注册监听
             }
 
             locationListener = object : LocationListener {
@@ -155,51 +172,64 @@ class NavigationRepositoryImpl @Inject constructor(
                 }
 
                 override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
-                override fun onProviderEnabled(provider: String) {}
-                override fun onProviderDisabled(provider: String) {}
+                override fun onProviderEnabled(provider: String) {
+                    Timber.d("Provider enabled: $provider")
+                }
+                override fun onProviderDisabled(provider: String) {
+                    Timber.w("Provider disabled: $provider")
+                }
             }
 
             // 请求位置更新 - 优先使用 GPS，如果没有则使用网络定位
             if (hasLocationPermission()) {
+                var registered = false
+
                 if (gpsEnabled) {
-                    locationManager?.requestLocationUpdates(
-                        LocationManager.GPS_PROVIDER,
-                        2000L, // 2秒更新一次
-                        1f,
-                        locationListener!!
-                    )
-                } else if (networkEnabled) {
-                    locationManager?.requestLocationUpdates(
-                        LocationManager.NETWORK_PROVIDER,
-                        2000L,
-                        1f,
-                        locationListener!!
-                    )
-                } else {
-                    // 尝试两个都注册
                     try {
                         locationManager?.requestLocationUpdates(
                             LocationManager.GPS_PROVIDER,
-                            2000L, 1f, locationListener!!
+                            2000L, // 2秒更新一次
+                            1f,
+                            locationListener!!
                         )
+                        registered = true
+                        Timber.d("GPS provider registered")
+                    } catch (e: SecurityException) {
+                        Timber.e(e, "SecurityException when registering GPS")
                     } catch (e: Exception) {
-                        Timber.w("GPS provider not available: ${e.message}")
+                        Timber.w(e, "Failed to register GPS provider")
                     }
+                }
+
+                if (networkEnabled) {
                     try {
                         locationManager?.requestLocationUpdates(
                             LocationManager.NETWORK_PROVIDER,
-                            2000L, 1f, locationListener!!
+                            2000L,
+                            1f,
+                            locationListener!!
                         )
+                        registered = true
+                        Timber.d("Network provider registered")
+                    } catch (e: SecurityException) {
+                        Timber.e(e, "SecurityException when registering Network")
                     } catch (e: Exception) {
-                        Timber.w("Network provider not available: ${e.message}")
+                        Timber.w(e, "Failed to register Network provider")
                     }
                 }
+
+                if (!registered) {
+                    _state.update { it.copy(lastError = "无法注册定位服务，请检查权限和设置") }
+                    Timber.w("No location provider could be registered")
+                }
+            } else {
+                _state.update { it.copy(lastError = "缺少定位权限，请在设置中授权") }
             }
         } catch (e: SecurityException) {
             Timber.e(e, "Location permission denied")
             _state.update { it.copy(lastError = "定位权限被拒绝") }
         } catch (e: Exception) {
-            Timber.e(e, "Failed to initialize location")
+            Timber.e(e, "Failed to initialize location: ${e.javaClass.simpleName}")
             _state.update { it.copy(lastError = "定位初始化失败: ${e.message}") }
         }
     }
