@@ -49,7 +49,7 @@ class TtsManager(private val context: Context) {
                     override fun onDone(utteranceId: String?) {
                         onSpeakComplete?.invoke()
                     }
-                    @Suppress("DEPRECATION")
+                    @Deprecated("Deprecated in Java", ReplaceWith(""))
                     override fun onError(utteranceId: String?) {}
                 })
 

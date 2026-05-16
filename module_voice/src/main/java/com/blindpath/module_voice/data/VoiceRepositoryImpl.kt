@@ -150,7 +150,7 @@ class VoiceRepositoryImpl @Inject constructor(
     /**
      * 播报避障预警（高优先级）
      */
-    suspend fun speakObstacleAlert(text: String) {
+    override suspend fun speakObstacleAlert(text: String) {
         // 停止当前播报，立即播报预警
         tts?.stop()
         speak(text, queueMode = false)
@@ -159,7 +159,7 @@ class VoiceRepositoryImpl @Inject constructor(
     /**
      * 播报导航指令（低优先级）
      */
-    suspend fun speakNavigation(text: String) {
+    override suspend fun speakNavigation(text: String) {
         // 排队播报，不打断避障
         if (_state.value.isSpeaking) {
             return // 正在播报避障，不播导航
