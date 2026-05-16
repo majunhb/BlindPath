@@ -10,7 +10,6 @@ import com.blindpath.module_obstacle.data.ObstacleRepositoryImpl
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
-import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -39,7 +38,6 @@ class ObstacleService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        Timber.d("ObstacleService created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -54,7 +52,6 @@ class ObstacleService : Service() {
         if (isRunning) return
 
         isRunning = true
-        Timber.d("Starting obstacle service")
 
         // 创建通知渠道（如果尚未创建）
         createNotificationChannel()
@@ -81,7 +78,6 @@ class ObstacleService : Service() {
     }
 
     private fun stopObstacle() {
-        Timber.d("Stopping obstacle service")
         isRunning = false
 
         serviceScope.launch {
@@ -144,6 +140,5 @@ class ObstacleService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        Timber.d("ObstacleService destroyed")
     }
 }

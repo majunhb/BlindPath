@@ -10,7 +10,6 @@ import com.blindpath.module_navigation.data.NavigationRepositoryImpl
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
-import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -38,7 +37,6 @@ class NavigationService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        Timber.d("NavigationService created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -53,7 +51,6 @@ class NavigationService : Service() {
         if (isRunning) return
 
         isRunning = true
-        Timber.d("Starting navigation service")
 
         val notification = createNotification("正在规划路线")
         startForeground(NOTIFICATION_ID, notification)
@@ -73,7 +70,6 @@ class NavigationService : Service() {
     }
 
     private fun stopNavigation() {
-        Timber.d("Stopping navigation service")
         isRunning = false
 
         serviceScope.launch {
@@ -138,6 +134,5 @@ class NavigationService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         serviceScope.cancel()
-        Timber.d("NavigationService destroyed")
     }
 }

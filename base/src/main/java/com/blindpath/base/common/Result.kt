@@ -45,3 +45,14 @@ suspend inline fun <T> safeApiCall(
         Result.Error(message = e.message ?: "Unknown error")
     }
 }
+
+/**
+ * 格式化距离显示
+ */
+fun Float.formatDistance(): String {
+    return when {
+        this < 1f -> "${(this * 100).toInt()}厘米"
+        this < 1000f -> "${this.toInt()}米"
+        else -> String.format("%.1f公里", this / 1000)
+    }
+}
