@@ -41,7 +41,7 @@ fun MainScreen(
             CommunityScreen(onBackClick = { showCommunity = false })
         }
         else -> {
-        Column(
+            Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(24.dp),
