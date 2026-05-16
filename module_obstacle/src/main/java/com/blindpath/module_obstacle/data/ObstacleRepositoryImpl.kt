@@ -178,40 +178,50 @@ class ObstacleRepositoryImpl @Inject constructor(
     private fun startCamera() {
         cameraExecutor = Executors.newSingleThreadExecutor()
 
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-        cameraProviderFuture.addListener({
-            try {
-                cameraProvider = cameraProviderFuture.get()
+        try {
+            val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+            cameraProviderFuture.addListener({
+                try {
+                    cameraProvider = cameraProviderFuture.get()
 
-                val cameraSelector = if (useFrontCamera) {
-                    CameraSelector.DEFAULT_FRONT_CAMERA
-                } else {
-                    CameraSelector.DEFAULT_BACK_CAMERA
+                    val cameraSelector = if (useFrontCamera) {
+                        CameraSelector.DEFAULT_FRONT_CAMERA
+                    } else {
+                        CameraSelector.DEFAULT_BACK_CAMERA
+                    }
+
+                    val imageAnalysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                        .build()
+
+                    imageAnalysis.setAnalyzer(cameraExecutor!!) { imageProxy ->
+                        processImage(imageProxy)
+                    }
+
+                    // 使用 ProcessLifecycleOwner 绑定生命周期
+                    val camera = cameraProvider?.bindToLifecycle(
+                        androidx.lifecycle.ProcessLifecycleOwner.get(),
+                        cameraSelector,
+                        imageAnalysis
+                    )
+
+                    if (camera != null) {
+                        _state.update { it.copy(isCameraReady = true) }
+                        Timber.d("Camera started successfully")
+                    } else {
+                        _state.update { it.copy(lastError = "摄像头绑定失败，请检查摄像头权限") }
+                        Timber.e("Camera binding returned null")
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Camera start failed")
+                    _state.update { it.copy(lastError = "摄像头启动失败: ${e.message}") }
                 }
-
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                    .build()
-
-                imageAnalysis.setAnalyzer(cameraExecutor!!) { imageProxy ->
-                    processImage(imageProxy)
-                }
-
-                // 使用 unbound 方式，不绑定到 lifecycle
-                val camera = cameraProvider?.bindToLifecycle(
-                    androidx.lifecycle.ProcessLifecycleOwner.get(),
-                    cameraSelector,
-                    imageAnalysis
-                )
-
-                _state.update { it.copy(isCameraReady = true) }
-                Timber.d("Camera started successfully")
-            } catch (e: Exception) {
-                Timber.e(e, "Camera start failed")
-                _state.update { it.copy(lastError = "摄像头启动失败: ${e.message}") }
-            }
-        }, ContextCompat.getMainExecutor(context))
+            }, ContextCompat.getMainExecutor(context))
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to get camera provider")
+            _state.update { it.copy(lastError = "无法访问摄像头: ${e.message}") }
+        }
     }
 
     private fun processImage(imageProxy: ImageProxy) {

@@ -116,6 +116,16 @@ class NavigationRepositoryImpl @Inject constructor(
         try {
             locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
 
+            // 检查 GPS 是否开启
+            val gpsEnabled = locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) ?: false
+            val networkEnabled = locationManager?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) ?: false
+
+            if (!gpsEnabled && !networkEnabled) {
+                Timber.w("GPS and Network providers are disabled")
+                _state.update { it.copy(lastError = "请开启定位服务（设置 > 位置信息）") }
+                // 仍然继续，让系统处理
+            }
+
             locationListener = object : LocationListener {
                 override fun onLocationChanged(location: Location) {
                     currentLocation = location
@@ -131,7 +141,8 @@ class NavigationRepositoryImpl @Inject constructor(
                                 bearing = location.bearing,
                                 timestamp = location.time
                             ),
-                            isLocationAvailable = true
+                            isLocationAvailable = true,
+                            lastError = null
                         )
                     }
 
@@ -148,21 +159,48 @@ class NavigationRepositoryImpl @Inject constructor(
                 override fun onProviderDisabled(provider: String) {}
             }
 
-            // 请求位置更新
+            // 请求位置更新 - 优先使用 GPS，如果没有则使用网络定位
             if (hasLocationPermission()) {
-                locationManager?.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    2000L, // 2秒更新一次
-                    1f,
-                    locationListener!!
-                )
+                if (gpsEnabled) {
+                    locationManager?.requestLocationUpdates(
+                        LocationManager.GPS_PROVIDER,
+                        2000L, // 2秒更新一次
+                        1f,
+                        locationListener!!
+                    )
+                } else if (networkEnabled) {
+                    locationManager?.requestLocationUpdates(
+                        LocationManager.NETWORK_PROVIDER,
+                        2000L,
+                        1f,
+                        locationListener!!
+                    )
+                } else {
+                    // 尝试两个都注册
+                    try {
+                        locationManager?.requestLocationUpdates(
+                            LocationManager.GPS_PROVIDER,
+                            2000L, 1f, locationListener!!
+                        )
+                    } catch (e: Exception) {
+                        Timber.w("GPS provider not available: ${e.message}")
+                    }
+                    try {
+                        locationManager?.requestLocationUpdates(
+                            LocationManager.NETWORK_PROVIDER,
+                            2000L, 1f, locationListener!!
+                        )
+                    } catch (e: Exception) {
+                        Timber.w("Network provider not available: ${e.message}")
+                    }
+                }
             }
         } catch (e: SecurityException) {
             Timber.e(e, "Location permission denied")
             _state.update { it.copy(lastError = "定位权限被拒绝") }
         } catch (e: Exception) {
             Timber.e(e, "Failed to initialize location")
-            _state.update { it.copy(lastError = e.message) }
+            _state.update { it.copy(lastError = "定位初始化失败: ${e.message}") }
         }
     }
 
