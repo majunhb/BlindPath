@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import com.blindpath.module_obstacle.domain.model.*
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.support.common.FileUtil
 import timber.log.Timber
 import java.nio.ByteBuffer
@@ -130,12 +129,9 @@ class AIDetector @Inject constructor(
         return try {
             val options = Interpreter.Options().apply {
                 numThreads = numThreads
-                // 尝试启用GPU加速
-                try {
-                    addDelegate(GpuDelegate())
-                } catch (e: Exception) {
-                    Timber.w("GPU delegate not available, using CPU: ${e.message}")
-                }
+                // 注意：GPU加速需要添加 tensorflow-lite-gpu 依赖
+                // 如需启用GPU加速，请在 build.gradle.kts 中添加:
+                // implementation("org.tensorflow:tensorflow-lite-gpu:2.13.0")
             }
 
             // 尝试从assets加载

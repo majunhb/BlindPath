@@ -247,7 +247,7 @@ class SceneClassifier @Inject constructor(
 
                     // 判断是否为灰色（人行道特征）
                     val isGray = abs(r - g) < 25 && abs(r - b) < 25 && abs(g - b) < 25
-                    val brightness = (r + g + b) / 3
+                    val brightness = (r + g + b) / 3f
 
                     if (isGray && brightness in 80f..180f) {
                         grayPixelCount++
