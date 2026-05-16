@@ -13,6 +13,7 @@ import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -88,11 +89,11 @@ class ObstacleService : Service() {
                             handleAlert(alert.level, alert.description)
                         }
                     } catch (e: Exception) {
-                        timber.log.Timber.e(e, "Error processing obstacle state")
+                        Timber.e(e, "Error processing obstacle state")
                     }
                 }
             } catch (e: Exception) {
-                timber.log.Timber.e(e, "Obstacle detection failed")
+                Timber.e(e, "Obstacle detection failed")
                 voiceRepository.speak("障碍物检测异常", queueMode = false)
                 stopObstacle()
             }

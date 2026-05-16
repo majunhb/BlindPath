@@ -11,6 +11,7 @@ import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
+import timber.log.Timber
 import javax.inject.Inject
 
 /**
@@ -95,11 +96,11 @@ class NavigationService : Service() {
                             voiceRepository.speak("当前定位精度${accuracy}米", queueMode = true)
                         }
                     } catch (e: Exception) {
-                        timber.log.Timber.e(e, "Error processing navigation state")
+                        Timber.e(e, "Error processing navigation state")
                     }
                 }
             } catch (e: Exception) {
-                timber.log.Timber.e(e, "Navigation failed")
+                Timber.e(e, "Navigation failed")
                 voiceRepository.speak("导航异常", queueMode = false)
                 stopNavigation()
             }
