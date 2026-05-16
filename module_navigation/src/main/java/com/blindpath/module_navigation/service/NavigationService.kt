@@ -146,15 +146,10 @@ class NavigationService : Service() {
     }
 
     /**
-     * ★ GPS 质量分级评估（与 NavigationRepositoryImpl 保持一致）
+     * ★ GPS 质量分级评估（使用 GpsQuality.fromAccuracy() 静态方法）
      */
     private fun evaluateGpsQuality(accuracy: Float): GpsQuality {
-        return when {
-            accuracy <= 1f -> GpsQuality.EXCELLENT
-            accuracy <= 3f -> GpsQuality.GOOD
-            accuracy <= 10f -> GpsQuality.FAIR
-            else -> GpsQuality.POOR
-        }
+        return GpsQuality.fromAccuracy(accuracy)
     }
 
     /**

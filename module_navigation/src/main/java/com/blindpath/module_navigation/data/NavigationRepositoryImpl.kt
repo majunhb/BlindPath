@@ -59,9 +59,6 @@ class NavigationRepositoryImpl @Inject constructor(
     /** 目的地 */
     private var destination: LatLonPoint? = null
 
-    /** GPS 状态分级（用于语音播报） */
-    enum class GpsQuality { EXCELLENT, GOOD, FAIR, POOR }
-
     override suspend fun startNavigation(): Result<Boolean> {
         return try {
             Timber.d("Starting high-accuracy navigation...")
@@ -208,11 +205,6 @@ class NavigationRepositoryImpl @Inject constructor(
                 }
             }
 
-            @Deprecated("Deprecated in Java")
-            override fun onLocationChanged(location: Location) {
-                onLocationReceived(location)
-            }
-
             override fun onLocationAvailability(availability: com.google.android.gms.location.LocationAvailability) {
                 if (!availability.isLocationAvailable) {
                     Timber.w("Location not available")
@@ -259,15 +251,10 @@ class NavigationRepositoryImpl @Inject constructor(
 
     /**
      * 评估 GPS 信号质量
-     * 用于给视障用户提供清晰的语音反馈
+     * 使用 GpsQuality.fromAccuracy() 静态方法进行分级
      */
     private fun evaluateGpsQuality(accuracy: Float): GpsQuality {
-        return when {
-            accuracy <= 1f -> GpsQuality.EXCELLENT   // ≤1米：优秀
-            accuracy <= 3f -> GpsQuality.GOOD        // 1~3米：良好
-            accuracy <= 10f -> GpsQuality.FAIR       // 3~10米：一般
-            else -> GpsQuality.POOR                   // >10米：弱
-        }
+        return GpsQuality.fromAccuracy(accuracy)
     }
 
     /**
