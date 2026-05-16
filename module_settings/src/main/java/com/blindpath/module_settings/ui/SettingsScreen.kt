@@ -18,6 +18,7 @@ import com.blindpath.module_settings.data.*
 /**
  * 设置页面 - 视障友好设计
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),

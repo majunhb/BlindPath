@@ -22,6 +22,7 @@ import com.blindpath.module_community.data.*
  * 社区页面 - 视障友好设计
  * 简化操作，突出核心功能
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CommunityScreen(
     viewModel: CommunityViewModel = hiltViewModel(),
