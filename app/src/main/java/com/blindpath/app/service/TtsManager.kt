@@ -6,14 +6,15 @@ import android.speech.tts.UtteranceProgressListener
 import java.util.*
 
 /**
- * 璇煶鎾姤鏈嶅姟 - 涓鸿闅滅敤鎴锋彁渚涜闊冲弽棣? */
+ * 语音播报服务 - 为视障用户提供语音反馈
+ */
 class TtsManager(private val context: Context) {
 
     private var tts: TextToSpeech? = null
     private var isInitialized = false
     private var pendingText: String? = null
 
-    // 璇煶鍚堟垚瀹屾垚鍥炶皟
+    // 语音合成完成回调
     var onSpeakComplete: (() -> Unit)? = null
 
     init {
@@ -23,23 +24,25 @@ class TtsManager(private val context: Context) {
     private fun initTts() {
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                // 璁剧疆涓枃璇煶
+                // 设置中文语音
                 val result = tts?.setLanguage(Locale.CHINESE)
                 isInitialized = result != TextToSpeech.LANG_MISSING_DATA &&
                                  result != TextToSpeech.LANG_NOT_SUPPORTED
 
                 if (!isInitialized) {
-                    // 鍥為€€鍒拌嫳鏂?                    tts?.setLanguage(Locale.US)
+                    // 回退到英文
+                    tts?.setLanguage(Locale.US)
                     isInitialized = true
                 }
 
-                // 璁剧疆璇€燂紙绋嶆參锛屾柟渚胯闅滅敤鎴风悊瑙ｏ級
+                // 设置语速（稍慢，方便视障用户理解）
                 tts?.setSpeechRate(0.9f)
 
-                // 璁剧疆闊宠皟
+                // 设置音调
                 tts?.setPitch(1.0f)
 
-                // 璁剧疆鐩戝惉鍣?                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                // 设置监听器
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {}
                     override fun onDone(utteranceId: String?) {
                         onSpeakComplete?.invoke()
@@ -47,7 +50,7 @@ class TtsManager(private val context: Context) {
                     override fun onError(utteranceId: String?) {}
                 })
 
-                // 濡傛灉鏈夌瓑寰呮挱鎶ョ殑鏂囨湰
+                // 如果有等待播报的文本
                 pendingText?.let {
                     speak(it)
                     pendingText = null
@@ -57,7 +60,7 @@ class TtsManager(private val context: Context) {
     }
 
     /**
-     * 鎾姤鏂囨湰
+     * 播报文本
      */
     fun speak(text: String, flush: Boolean = false) {
         if (!isInitialized) {
@@ -73,20 +76,21 @@ class TtsManager(private val context: Context) {
     }
 
     /**
-     * 鎾姤骞剁瓑寰呭畬鎴?     */
+     * 播报并等待完成
+     */
     fun speakAndWait(text: String) {
         speak(text, flush = true)
     }
 
     /**
-     * 鍋滄鎾姤
+     * 停止播报
      */
     fun stop() {
         tts?.stop()
     }
 
     /**
-     * 閲婃斁璧勬簮
+     * 释放资源
      */
     fun shutdown() {
         tts?.stop()
@@ -96,20 +100,21 @@ class TtsManager(private val context: Context) {
     }
 
     /**
-     * 妫€鏌ユ槸鍚︽鍦ㄦ挱鎶?     */
+     * 检查是否正在播报
+     */
     fun isSpeaking(): Boolean {
         return tts?.isSpeaking == true
     }
 
     companion object {
-        // 甯哥敤鎾姤鏂囨湰
-        const val MSG_APP_READY = "鏅鸿鍔╃洸搴旂敤宸插惎鍔?
-        const val MSG_OBSTACLE_DETECTED = "娉ㄦ剰锛屽墠鏂规湁闅滅鐗?
-        const val MSG_SAFE_TO_GO = "鍓嶆柟瀹夊叏锛屽彲浠ョ户缁墠琛?
-        const val MSG_CAMERA_STARTED = "闅滅鐗╂娴嬪凡寮€鍚?
-        const val MSG_CAMERA_STOPPED = "闅滅鐗╂娴嬪凡鍏抽棴"
-        const val MSG_LOCATION_UPDATED = "浣嶇疆宸叉洿鏂?
-        const val MSG_SOS_SENT = "绱ф€ユ眰鍔╁凡鍙戦€?
-        const val MSG_CALLING = "姝ｅ湪鎷ㄦ墦"
+        // 常用播报文本
+        const val MSG_APP_READY = "智行助盲应用已启动"
+        const val MSG_OBSTACLE_DETECTED = "注意，前方有障碍物"
+        const val MSG_SAFE_TO_GO = "前方安全，可以继续前行"
+        const val MSG_CAMERA_STARTED = "障碍物检测已开启"
+        const val MSG_CAMERA_STOPPED = "障碍物检测已关闭"
+        const val MSG_LOCATION_UPDATED = "位置已更新"
+        const val MSG_SOS_SENT = "紧急求助已发送"
+        const val MSG_CALLING = "正在拨打"
     }
 }
