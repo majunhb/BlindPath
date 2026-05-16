@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // 搴旂敤鍚姩鍚庡欢杩熸挱鎶ユ杩庤
+        // 搴旂敤鍚姩鍚庡欢杩濆播鎶ユ杩庤垂
         android.os.Handler(mainLooper).postDelayed({
             ttsManager.speak(TtsManager.MSG_APP_READY)
         }, 1000)
