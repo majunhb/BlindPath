@@ -116,8 +116,8 @@ class AIDetector @Inject constructor(
     )
 
     // 检测阈值
-    private val confidenceThreshold = 0.5f
-    private val iouThreshold = 0.45f
+    private val confidenceThreshold = 0.4f  // 降低阈值，提高召回率，适合盲人导航场景
+    private val iouThreshold = 0.5f      // 提高IoU阈值，减少重叠框合并
 
     // 焦距（需根据实际摄像头参数校准）
     private var calibratedFocalLength: Float? = null
