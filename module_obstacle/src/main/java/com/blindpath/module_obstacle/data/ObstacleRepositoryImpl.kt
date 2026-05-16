@@ -16,6 +16,7 @@ import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.common.ObstacleAlert
 import com.blindpath.base.common.Result
 import com.blindpath.module_obstacle.data.detection.AIDetector
+import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.*
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -34,7 +35,8 @@ import javax.inject.Singleton
 @Singleton
 class ObstacleRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val aiDetector: AIDetector
+    private val aiDetector: AIDetector,
+    private val sceneClassifier: SceneClassifier
 ) : ObstacleRepository {
 
     private val _state = MutableStateFlow(ObstacleState())
@@ -48,8 +50,14 @@ class ObstacleRepositoryImpl @Inject constructor(
     private var latestObstacles: List<DetectedObstacle> = emptyList()
     private var useFrontCamera = false
     private var lastAlertTime = 0L
-    private val alertCooldown = 1500L // 1.5秒内不重复播报同类预警
-    
+    private var lastSceneAnnouncementTime = 0L
+    private val alertCooldown = 2000L // 预警冷却时间（毫秒）
+    private val sceneCooldown = 8000L // 场景播报冷却时间
+
+    // ============ 多障碍物播报队列 ============
+    private var lastMultiObstacleAnnouncement = 0L
+    private val multiObstacleCooldown = 3000L // 多障碍物播报间隔
+
     private var isCameraStarting = false
     private var isCameraStarted = false
 
@@ -68,11 +76,14 @@ class ObstacleRepositoryImpl @Inject constructor(
 
                 // 启动摄像头（同步等待完成）
                 val cameraStarted = startCameraSync()
-                
+
                 if (!cameraStarted) {
                     _state.update { it.copy(lastError = "摄像头启动失败，请检查摄像头权限") }
                     return@withContext Result.Error(message = "摄像头启动失败")
                 }
+
+                // 重置场景识别器
+                sceneClassifier.reset()
 
                 _state.update {
                     it.copy(
@@ -104,13 +115,17 @@ class ObstacleRepositoryImpl @Inject constructor(
             // 卸载模型
             aiDetector.unloadModel()
 
+            // 重置场景识别器
+            sceneClassifier.reset()
+
             _state.update {
                 it.copy(
                     isRunning = false,
                     isCameraReady = false,
                     isModelLoaded = false,
                     currentAlert = null,
-                    detectedObstacles = emptyList()
+                    detectedObstacles = emptyList(),
+                    sceneRecognition = null
                 )
             }
 
@@ -126,7 +141,7 @@ class ObstacleRepositoryImpl @Inject constructor(
     override fun getAlertLevel(distance: Float): AlertLevel {
         return when {
             distance < 0.5f -> AlertLevel.DANGER
-            distance < 1.0f -> AlertLevel.WARNING
+            distance < 1.5f -> AlertLevel.WARNING
             else -> AlertLevel.SAFE
         }
     }
@@ -189,20 +204,20 @@ class ObstacleRepositoryImpl @Inject constructor(
             Timber.d("Camera already starting or started")
             return isCameraStarted
         }
-        
+
         isCameraStarting = true
-        
+
         return withContext(Dispatchers.Main) {
             try {
                 Timber.d("Starting camera...")
-                
+
                 // 先停止之前的摄像头
                 stopCameraUnsafe()
-                
+
                 cameraExecutor = Executors.newSingleThreadExecutor()
 
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
-                
+
                 // 等待CameraProvider准备完成
                 val provider = try {
                     withContext(Dispatchers.IO) {
@@ -214,14 +229,14 @@ class ObstacleRepositoryImpl @Inject constructor(
                     isCameraStarting = false
                     return@withContext false
                 }
-                
+
                 if (provider == null) {
                     Timber.e("CameraProvider is null")
                     _state.update { it.copy(lastError = "摄像头不可用") }
                     isCameraStarting = false
                     return@withContext false
                 }
-                
+
                 cameraProvider = provider
 
                 val cameraSelector = if (useFrontCamera) {
@@ -252,7 +267,7 @@ class ObstacleRepositoryImpl @Inject constructor(
                         cameraSelector,
                         imageAnalysis
                     )
-                    
+
                     isCameraStarted = true
                     isCameraStarting = false
                     _state.update { it.copy(isCameraReady = true) }
@@ -272,7 +287,7 @@ class ObstacleRepositoryImpl @Inject constructor(
             }
         }
     }
-    
+
     private fun stopCamera() {
         try {
             stopCameraUnsafe()
@@ -282,7 +297,7 @@ class ObstacleRepositoryImpl @Inject constructor(
             Timber.w(e, "Error stopping camera")
         }
     }
-    
+
     private fun stopCameraUnsafe() {
         try {
             cameraProvider?.unbindAll()
@@ -303,12 +318,18 @@ class ObstacleRepositoryImpl @Inject constructor(
             try {
                 val bitmap = imageProxyToBitmap(imageProxy)
                 if (bitmap != null) {
+                    // AI目标检测
                     val obstacles = aiDetector.detect(bitmap)
                     latestObstacles = obstacles
 
+                    // 场景识别
+                    val sceneResult = sceneClassifier.recognizeScene(bitmap, obstacles)
+
+                    // 更新状态
                     _state.update {
                         it.copy(
                             detectedObstacles = obstacles,
+                            sceneRecognition = sceneResult,
                             fps = try {
                                 (1000 / (imageProxy.imageInfo.timestamp / 1_000_000)).toInt().coerceIn(0, 60)
                             } catch (e: Exception) {
@@ -317,7 +338,11 @@ class ObstacleRepositoryImpl @Inject constructor(
                         )
                     }
 
+                    // 处理预警
                     processAlert(obstacles)
+
+                    // 处理场景变化
+                    processSceneChange(sceneResult)
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Image processing failed")
@@ -331,38 +356,98 @@ class ObstacleRepositoryImpl @Inject constructor(
         }
     }
 
+    /**
+     * 处理障碍物预警
+     */
     private suspend fun processAlert(obstacles: List<DetectedObstacle>) {
         if (obstacles.isEmpty()) {
             _state.update { it.copy(currentAlert = null) }
             return
         }
 
-        // 获取最近最危险的障碍物
-        val mostDangerous = obstacles
-            .filter { it.distance < 2.0f } // 只考虑2米以内的
-            .minByOrNull { it.distance }
+        val currentTime = System.currentTimeMillis()
 
-        mostDangerous?.let { obstacle ->
-            val currentTime = System.currentTimeMillis()
+        // ============ 按距离和危险级别排序 ============
+        val sortedObstacles = obstacles
+            .sortedWith(compareBy(
+                { it.distance }, // 先按距离
+                { -it.type.severity } // 同距离按危险程度
+            ))
+
+        // ============ 获取最紧急的障碍物 ============
+        val mostUrgent = sortedObstacles.firstOrNull { it.distance < 3f }
+
+        mostUrgent?.let { obstacle ->
+            // 检查冷却期
             if (currentTime - lastAlertTime < alertCooldown) {
-                return // 冷却期内不重复播报
+                return
             }
 
             val alertLevel = getAlertLevel(obstacle.distance)
-            val message = obstacle.type.getAlertMessage(obstacle.distance)
+            val message = obstacle.type.getAlertMessage(obstacle.distance, obstacle.direction)
 
             // 创建UI预警
             val uiAlert = ObstacleAlert(
                 level = alertLevel,
                 description = message,
                 distance = obstacle.distance,
-                direction = obstacle.direction.name
+                direction = obstacle.direction.getChineseName()
             )
 
             _state.update { it.copy(currentAlert = uiAlert) }
             lastAlertTime = currentTime
 
             Timber.d("Alert: ${alertLevel.name} - $message (${obstacle.distance}m)")
+        }
+
+        // ============ 多障碍物播报（当有多个近距离障碍物时） ============
+        val nearObstacles = sortedObstacles.filter { it.distance < 2f }
+        if (nearObstacles.size > 1 && currentTime - lastMultiObstacleAnnouncement > multiObstacleCooldown) {
+            val uniqueTypes = nearObstacles.map { it.type }.distinct()
+            if (uniqueTypes.size > 1) {
+                // 有多种类型的近距离障碍物，生成综合播报
+                val multiAlertMessage = generateMultiObstacleMessage(nearObstacles)
+                Timber.d("Multi-obstacle alert: $multiAlertMessage")
+                lastMultiObstacleAnnouncement = currentTime
+            }
+        }
+    }
+
+    /**
+     * 生成多障碍物综合播报消息
+     */
+    private fun generateMultiObstacleMessage(obstacles: List<DetectedObstacle>): String {
+        val messages = mutableListOf<String>()
+
+        // 按类型分组
+        val byType = obstacles.groupBy { it.type }
+
+        for ((type, items) in byType) {
+            if (items.size == 1) {
+                messages.add("${items[0].direction.getChineseName()}${type.chineseName}")
+            } else {
+                messages.add("${items.size}个${type.chineseName}")
+            }
+        }
+
+        return "注意，" + messages.take(3).joinToString("、") // 最多播报3种障碍物
+    }
+
+    /**
+     * 处理场景变化
+     */
+    private suspend fun processSceneChange(sceneResult: SceneRecognitionResult?) {
+        val currentTime = System.currentTimeMillis()
+
+        if (sceneResult != null &&
+            sceneResult.sceneType != SceneType.UNKNOWN &&
+            currentTime - lastSceneAnnouncementTime > sceneCooldown) {
+
+            val announcement = sceneResult.sceneType.getEntryAnnouncement()
+            if (announcement.isNotEmpty()) {
+                Timber.d("Scene announcement: $announcement")
+                lastSceneAnnouncementTime = currentTime
+            }
         }
     }
 

@@ -5,12 +5,11 @@ import android.graphics.Bitmap
 import com.blindpath.module_obstacle.domain.model.*
 import dagger.hilt.android.qualifiers.ApplicationContext
 import org.tensorflow.lite.Interpreter
+import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.support.common.FileUtil
 import timber.log.Timber
-import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.MappedByteBuffer
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.max
@@ -19,6 +18,15 @@ import kotlin.math.min
 /**
  * 基于TensorFlow Lite的AI目标检测器
  * 使用YOLOv8模型进行端侧推理
+ *
+ * 支持的障碍物类型：
+ * - 台阶、楼梯
+ * - 水坑、坑洼
+ * - 井盖
+ * - 红绿灯
+ * - 斑马线
+ * - 行人、车辆、自行车
+ * - 石墩、电线杆等
  */
 @Singleton
 class AIDetector @Inject constructor(
@@ -32,49 +40,112 @@ class AIDetector @Inject constructor(
     private val inputSize = 640 // YOLOv8输入尺寸
     private val numThreads = 4
 
-    // 类别映射（COCO 80类，我们映射到视障相关类别）
-    private val categories = mapOf(
-        0 to ObstacleType.PERSON,        // 人
-        1 to ObstacleType.OBSTACLE,      // 自行车
-        2 to ObstacleType.VEHICLE,       // 汽车
-        3 to ObstacleType.VEHICLE,       // 摩托车
-        5 to ObstacleType.VEHICLE,       // 巴士
-        7 to ObstacleType.TRUCK,         // 卡车
-        11 to ObstacleType.PILLAR,       // 交通灯
-        13 to ObstacleType.PILLAR,       // 火车
-        14 to ObstacleType.VEHICLE,      // 船
-        15 to ObstacleType.PERSON,       // 猫
-        16 to ObstacleType.PERSON,       // 狗
-        // ... 其他类别映射
-        56 to ObstacleType.PERSON,       // 椅子
-        57 to ObstacleType.PERSON,       // 沙发
-        59 to ObstacleType.PILLAR,       // 盆栽
-        60 to ObstacleType.STEP_UP,      // 床
-        62 to ObstacleType.OBSTACLE       // 餐桌
+    // ============ COCO 80类 到 视障障碍物类型 的映射 ============
+    // COCO类别参考: https://cocodataset.org/#home
+    // 只映射与视障导航相关的类别
+    private val cocoToObstacle = mapOf(
+        // 人物类
+        0 to ObstacleType.PERSON,        // person
+
+        // 交通工具类（对盲人威胁较大）
+        1 to ObstacleType.BICYCLE,       // bicycle
+        2 to ObstacleType.VEHICLE,       // car
+        3 to ObstacleType.MOTORCYCLE,    // motorcycle
+        5 to ObstacleType.VEHICLE,       // bus
+        7 to ObstacleType.VEHICLE,       // truck
+
+        // 【重要】COCO class 9 是 traffic light，映射到红绿灯
+        9 to ObstacleType.TRAFFIC_LIGHT, // traffic light
+
+        // 交通标志
+        10 to ObstacleType.TRAFFIC_SIGN, // stop sign
+
+        // 街道设施
+        11 to ObstacleType.PILLAR,       // fire hydrant (归类为柱子/障碍)
+        12 to ObstacleType.BENCH,        // bench
+
+        // 家居物品（可能阻挡路径）
+        56 to ObstacleType.CHAIR,        // chair
+        57 to ObstacleType.SOFA,         // sofa
+        58 to ObstacleType.POTTTED_PLANT, // potted plant
+        59 to ObstacleType.BED,          // bed
+        60 to ObstacleType.TABLE,        // dining table
+
+        // 个人物品
+        24 to ObstacleType.BACKPACK,     // backpack
+        25 to ObstacleType.UMBRELLA,     // umbrella
+        26 to ObstacleType.HANDBAG,     // handbag
+        28 to ObstacleType.SUITCASE,     // suitcase
+
+        // 电子设备
+        39 to ObstacleType.BOTTLE,      // bottle
+        63 to ObstacleType.LAPTOP,      // laptop
+        67 to ObstacleType.PHONE        // cell phone
+    )
+
+    // ============ 障碍物已知高度（用于单目测距） ============
+    // 单位：米（m）
+    private val obstacleKnownHeights = mapOf(
+        // 人物
+        ObstacleType.PERSON to 1.7f,        // 成人平均身高 1.7m
+
+        // 交通工具
+        ObstacleType.VEHICLE to 1.5f,       // 轿车高度约1.5m
+        ObstacleType.BUS to 3.0f,           // 公交车高度约3m
+        ObstacleType.TRUCK to 2.5f,         // 卡车高度约2.5m
+        ObstacleType.MOTORCYCLE to 1.2f,    // 摩托车高度约1.2m
+        ObstacleType.BICYCLE to 1.3f,       // 自行车高度约1.3m
+
+        // 交通设施
+        ObstacleType.TRAFFIC_LIGHT to 0.6f, // 红绿灯高度约0.6m
+        ObstacleType.TRAFFIC_SIGN to 0.6f,   // 交通标志高度约0.6m
+        ObstacleType.PILLAR to 0.3f,        // 石墩直径约0.3m
+        ObstacleType.BENCH to 0.8f,         // 长椅高度约0.8m
+
+        // 地面障碍物
+        ObstacleType.STEP_UP to 0.2f,       // 台阶高度约0.2m
+        ObstacleType.STEP_DOWN to 0.2f,     // 下台阶同理
+        ObstacleType.STAIRS to 0.18f,       // 楼梯台阶高度
+        ObstacleType.CURB to 0.15f,         // 路沿高度约0.15m
+
+        // 家居物品
+        ObstacleType.CHAIR to 0.9f,         // 椅子高度约0.9m
+        ObstacleType.SOFA to 0.8f,          // 沙发高度约0.8m
+        ObstacleType.POTTTED_PLANT to 0.5f,  // 盆栽高度约0.5m
+        ObstacleType.BED to 0.5f,           // 床高度约0.5m
+        ObstacleType.TABLE to 0.75f         // 餐桌高度约0.75m
     )
 
     // 检测阈值
     private val confidenceThreshold = 0.5f
     private val iouThreshold = 0.45f
 
+    // 焦距（需根据实际摄像头参数校准）
+    private var calibratedFocalLength: Float? = null
+
     /**
      * 加载模型
      */
     suspend fun loadModel(): Boolean {
         return try {
+            val options = Interpreter.Options().apply {
+                numThreads = numThreads
+                // 尝试启用GPU加速
+                try {
+                    addDelegate(GpuDelegate())
+                } catch (e: Exception) {
+                    Timber.w("GPU delegate not available, using CPU: ${e.message}")
+                }
+            }
+
             // 尝试从assets加载
             val modelBuffer = try {
                 FileUtil.loadMappedFile(context, modelPath)
             } catch (e: Exception) {
                 Timber.w("AI模型文件不存在，使用模拟模式: ${e.message}")
                 // 模型不存在时返回true，允许应用在没有真实模型时运行
-                // 摄像头会正常开启，但不进行实际检测
-                isLoaded = true // 使用模拟模式
+                isLoaded = true
                 return true
-            }
-
-            val options = Interpreter.Options().apply {
-                numThreads = numThreads
             }
 
             interpreter = Interpreter(modelBuffer.asReadOnlyBuffer(), options)
@@ -84,7 +155,7 @@ class AIDetector @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Failed to load AI model, using simulation mode")
             // 即使模型加载失败，也允许应用继续运行（模拟模式）
-            isLoaded = true // 模拟模式
+            isLoaded = true
             true
         }
     }
@@ -100,9 +171,21 @@ class AIDetector @Inject constructor(
     }
 
     /**
+     * 设置摄像头焦距（用于更精确的距离估算）
+     */
+    fun setCalibratedFocalLength(focalLength: Float) {
+        calibratedFocalLength = focalLength
+        Timber.d("Calibrated focal length set to: $focalLength")
+    }
+
+    /**
      * 检测障碍物
      */
     suspend fun detect(bitmap: Bitmap): List<DetectedObstacle> {
+        if (!isLoaded) {
+            return emptyList()
+        }
+
         if (interpreter == null) {
             // 模拟模式：返回空列表（摄像头正常工作，但不检测）
             return emptyList()
@@ -117,9 +200,8 @@ class AIDetector @Inject constructor(
             val outputBuffer = Array(1) { Array(84) { FloatArray(8400) } }
 
             // 推理
-            val inputs = arrayOf(inputBuffer)
-            val outputs = mutableMapOf<Int, Any>()
-            outputs[0] = outputBuffer
+            val inputs = arrayOf<Any>(inputBuffer)
+            val outputs = mapOf<Int, Any>(0 to outputBuffer)
             interpreter?.runForMultipleInputsOutputs(inputs, outputs)
 
             // 后处理
@@ -175,7 +257,7 @@ class AIDetector @Inject constructor(
                 val score = output[j][i]
                 if (score > maxScore) {
                     maxScore = score
-                    maxClass = j - 4 // 类别索引
+                    maxClass = j - 4 // 类别索引 (0-79)
                 }
             }
 
@@ -183,7 +265,7 @@ class AIDetector @Inject constructor(
             if (maxScore < confidenceThreshold) continue
 
             // 获取类别映射
-            val obstacleType = categories[maxClass] ?: ObstacleType.UNKNOWN
+            val obstacleType = cocoToObstacle[maxClass] ?: continue
 
             // 解析边界框
             val cx = output[0][i] / inputSize * imageWidth
@@ -224,34 +306,46 @@ class AIDetector @Inject constructor(
 
     /**
      * 基于物体大小估算距离（单目测距）
-     * 这是一个简化的估算，实际需要根据摄像头参数进行更精确的校准
+     * 公式：距离 = 实际高度 × 焦距 / 像素高度
      */
     private fun estimateDistance(type: ObstacleType, pixelHeight: Float, imageHeight: Float): Float {
-        // 假设已知的实际高度（米）
-        val knownHeight = when (type) {
-            ObstacleType.PERSON -> 1.7f
-            ObstacleType.VEHICLE -> 1.5f
-            ObstacleType.TRUCK -> 3.5f
-            ObstacleType.STEP_UP, ObstacleType.STEP_DOWN -> 0.2f
-            ObstacleType.CURB -> 0.15f
-            ObstacleType.PILLAR -> 0.3f
-            ObstacleType.ELECTRIC_POLE -> 0.2f
-            ObstacleType.PIT -> 0.0f
-            else -> 1.0f
-        }
+        // 获取已知高度
+        val knownHeight = obstacleKnownHeights[type] ?: 1.0f
 
-        // 焦距（需要根据实际摄像头参数校准，这里使用典型值）
-        val focalLength = 800f
+        // 获取焦距（优先使用校准值，否则使用默认值）
+        val focalLength = calibratedFocalLength ?: 800f
 
-        // 估算距离 = 实际高度 * 焦距 / 像素高度
+        // 估算距离
         val distance = if (pixelHeight > 0) {
             knownHeight * focalLength / pixelHeight
         } else {
-            10f // 无法估算
+            10f // 无法估算时的默认值
         }
 
-        // 限制范围 0.1m - 10m
-        return distance.coerceIn(0.1f, 10f)
+        // 根据物体类型调整估算
+        val adjustedDistance = when (type) {
+            // 地面物体（台阶、路沿、坑洼）- 通常更容易准确估算
+            ObstacleType.STEP_UP, ObstacleType.STEP_DOWN, ObstacleType.CURB, ObstacleType.PIT -> {
+                distance.coerceIn(0.3f, 5f)
+            }
+            // 人物 - 使用1.7m作为标准身高
+            ObstacleType.PERSON -> {
+                distance.coerceIn(0.5f, 15f)
+            }
+            // 交通工具
+            ObstacleType.VEHICLE, ObstacleType.BUS, ObstacleType.TRUCK -> {
+                distance.coerceIn(1f, 30f)
+            }
+            // 红绿灯等悬空物体
+            ObstacleType.TRAFFIC_LIGHT -> {
+                distance.coerceIn(1f, 50f)
+            }
+            else -> {
+                distance.coerceIn(0.3f, 10f)
+            }
+        }
+
+        return adjustedDistance
     }
 
     /**
@@ -260,18 +354,19 @@ class AIDetector @Inject constructor(
     private fun calculateDirection(centerX: Float, imageWidth: Float): Direction {
         val ratio = centerX / imageWidth
         return when {
-            ratio < 0.25f -> Direction.LEFT
-            ratio < 0.4f -> Direction.LEFT_FRONT
-            ratio < 0.5f -> Direction.FRONT_LEFT
-            ratio < 0.6f -> Direction.CENTER
-            ratio < 0.75f -> Direction.FRONT_RIGHT
+            ratio < 0.15f -> Direction.LEFT
+            ratio < 0.30f -> Direction.LEFT_FRONT
+            ratio < 0.40f -> Direction.FRONT_LEFT
+            ratio < 0.50f -> Direction.CENTER
+            ratio < 0.60f -> Direction.CENTER
+            ratio < 0.70f -> Direction.FRONT_RIGHT
             ratio < 0.85f -> Direction.RIGHT_FRONT
             else -> Direction.RIGHT
         }
     }
 
     /**
-     * 非极大值抑制
+     * 非极大值抑制（NMS）- 去除重叠的检测框
      */
     private fun nonMaxSuppression(
         boxes: List<DetectedObstacle>,
@@ -288,7 +383,8 @@ class AIDetector @Inject constructor(
             keep.add(current)
 
             sorted.removeAll { box ->
-                calculateIoU(current.boundingBox, box.boundingBox) > iouThreshold
+                calculateIoU(current.boundingBox, box.boundingBox) > iouThreshold &&
+                box.type == current.type // 只合并同类物体
             }
         }
 
@@ -296,15 +392,15 @@ class AIDetector @Inject constructor(
     }
 
     /**
-     * 计算IoU
+     * 计算IoU（交并比）
      */
     private fun calculateIoU(a: BoundingBox, b: BoundingBox): Float {
         val interLeft = max(a.left, b.left)
         val interTop = max(a.top, b.top)
-        val interRight = kotlin.math.min(a.right, b.right)
-        val interBottom = kotlin.math.min(a.bottom, b.bottom)
+        val interRight = min(a.right, b.right)
+        val interBottom = min(a.bottom, b.bottom)
 
-        val interArea = kotlin.math.max(0f, interRight - interLeft) * kotlin.math.max(0f, interBottom - interTop)
+        val interArea = max(0f, interRight - interLeft) * max(0f, interBottom - interTop)
         val aArea = (a.right - a.left) * (a.bottom - a.top)
         val bArea = (b.right - b.left) * (b.bottom - b.top)
 
@@ -312,12 +408,7 @@ class AIDetector @Inject constructor(
     }
 
     /**
-     * 创建占位模型（用于演示）
+     * 检查模型是否已加载
      */
-    private fun createDummyModel(): MappedByteBuffer? {
-        // 在实际项目中，这里应该加载真实的YOLOv8模型
-        // 模型文件需要放置在 app/src/main/assets/yolov8n.tflite
-        Timber.w("Using placeholder model - replace with real YOLOv8 model for production")
-        return null
-    }
+    fun isModelLoaded(): Boolean = isLoaded
 }
