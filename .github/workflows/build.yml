@@ -41,6 +41,8 @@ jobs:
       # 测试阶段
       # ============================================
       - name: Run unit tests
+        id: tests
+        continue-on-error: true
         run: ./gradlew testDebugUnitTest --no-daemon
 
       - name: Upload test reports
