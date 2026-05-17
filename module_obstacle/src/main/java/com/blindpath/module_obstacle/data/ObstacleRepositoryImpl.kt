@@ -353,7 +353,7 @@ class ObstacleRepositoryImpl @Inject constructor(
     /**
      * 设置 Preview 的 SurfaceProvider（由 CameraPreview Composable 调用）
      */
-    fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider) {
+    override fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider) {
         previewSurfaceProvider = provider
         cameraPreview?.setSurfaceProvider(provider)
         Timber.d("Preview SurfaceProvider set")
