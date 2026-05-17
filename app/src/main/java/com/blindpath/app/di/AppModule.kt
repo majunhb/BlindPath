@@ -4,6 +4,8 @@ import com.blindpath.module_navigation.data.NavigationRepositoryImpl
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_obstacle.data.ObstacleRepositoryImpl
 import com.blindpath.module_obstacle.domain.ObstacleRepository
+import com.blindpath.module_trip_assist.data.TripAssistRepositoryImpl
+import com.blindpath.module_trip_assist.domain.TripAssistRepository
 import com.blindpath.module_voice.data.VoiceRepositoryImpl
 import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.Binds
@@ -33,4 +35,10 @@ abstract class AppModule {
     abstract fun bindVoiceRepository(
         impl: VoiceRepositoryImpl
     ): VoiceRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindTripAssistRepository(
+        impl: TripAssistRepositoryImpl
+    ): TripAssistRepository
 }

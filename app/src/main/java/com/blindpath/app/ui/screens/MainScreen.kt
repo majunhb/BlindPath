@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ExploreNearMe
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,6 +33,7 @@ import com.blindpath.module_obstacle.domain.model.BoundingBox
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
+import com.blindpath.module_trip_assist.ui.TripAssistScreen
 import timber.log.Timber
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -51,6 +53,7 @@ fun MainScreen(
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showCommunity by remember { mutableStateOf(false) }
+    var showTripAssist by remember { mutableStateOf(false) }
     var isDetecting by remember { mutableStateOf(false) }
 
     when {
@@ -59,6 +62,9 @@ fun MainScreen(
         }
         showCommunity -> {
             CommunityScreen(onBackClick = { showCommunity = false })
+        }
+        showTripAssist -> {
+            TripAssistScreen(onBackClick = { showTripAssist = false })
         }
         else -> {
             MainContent(
@@ -72,6 +78,7 @@ fun MainScreen(
                 onSosClick = onSosClick,
                 onSettingsClick = { showSettings = true },
                 onCommunityClick = { showCommunity = true },
+                onTripAssistClick = { showTripAssist = true },
                 onStopDetection = {
                     isDetecting = false
                 }
@@ -89,6 +96,7 @@ private fun MainContent(
     onSosClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onCommunityClick: () -> Unit,
+    onTripAssistClick: () -> Unit,
     onStopDetection: () -> Unit
 ) {
     val obstacleState by obstacleRepository.obstacleState.collectAsState()
@@ -242,6 +250,34 @@ private fun MainContent(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "社区互助",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 出行辅助按钮
+                OutlinedButton(
+                    onClick = onTripAssistClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .semantics {
+                            contentDescription = "出行辅助按钮，查看天气、规划路线、查询无障碍设施"
+                        },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ExploreNearMe,
+                        contentDescription = null,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "出行辅助",
                         style = MaterialTheme.typography.titleMedium
                     )
                 }

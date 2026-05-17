@@ -62,6 +62,7 @@ dependencies {
     implementation(project(":module_voice"))
     implementation(project(":module_settings"))
     implementation(project(":module_community"))
+    implementation(project(":module_trip_assist"))
     
     // 高德地图 SDK（组合包，已包含定位+搜索，Maven Central 可用）
     // 稳定版本 10.1.700，对应定位 SDK 6.5.1 + 搜索 SDK 9.7.4
