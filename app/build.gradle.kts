@@ -60,9 +60,9 @@ dependencies {
     implementation(project(":module_community"))
     
     // 高德地图 SDK
-    implementation("com.amap.api:location:5.2.0")
-    implementation("com.amap.api:maps:9.5.0")
-    implementation("com.amap.api:search:8.1.0")
+    implementation("com.amap.api:location:6.4.0")
+    implementation("com.amap.api:3dmap:9.8.2")
+    implementation("com.amap.api:search:9.7.1")
     
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")

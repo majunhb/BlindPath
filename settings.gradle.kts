@@ -11,7 +11,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        maven { url = uri("https://a.amap.com/maven/repository/releases/") }
+        maven { url = uri("https://maven.amap.com/repository/maven/") }
     }
 }
 
