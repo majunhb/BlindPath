@@ -33,7 +33,7 @@ enum class WeatherCondition(
             109 -> HAZE
             in 200..299 -> SNOW
             in 300..399 -> CLOUDY
-            in 400..499 -> RAIN
+            in 400..499 -> LIGHT_RAIN
             else -> UNKNOWN
         }
 
