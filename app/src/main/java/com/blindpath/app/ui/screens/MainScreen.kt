@@ -1,13 +1,7 @@
 package com.blindpath.app.ui.screens
 
-import android.content.Context
-import android.view.SurfaceView
-import android.view.TextureView
-import android.widget.FrameLayout
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessLifecycleOwner
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -17,11 +11,18 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -31,6 +32,7 @@ import com.blindpath.module_obstacle.domain.model.BoundingBox
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
+import timber.log.Timber
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -102,7 +104,11 @@ private fun MainContent(
             // 1. 相机预览
             CameraPreview(
                 modifier = Modifier.fillMaxSize(),
-                cameraRepository = obstacleRepository as? android x.camera.core.Camera ?: return@Box
+                onPreviewReady = { previewView ->
+                    // 当 PreviewView 准备好后，设置 SurfaceProvider
+                    obstacleRepository.setPreviewSurfaceProvider(previewView.surfaceProvider)
+                    Timber.d("Camera preview SurfaceProvider set")
+                }
             )
 
             // 2. 检测框叠加层
@@ -250,28 +256,26 @@ private fun MainContent(
 @Composable
 fun CameraPreview(
     modifier: Modifier = Modifier,
-    cameraRepository: Any? = null
+    onPreviewReady: (PreviewView) -> Unit
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
     AndroidView(
         factory = { ctx ->
             PreviewView(ctx).apply {
-                // 绑定到CameraX
-                // 注意：实际的CameraX绑定应该在Repository中完成
-                // 这里只显示预览
+                scaleType = PreviewView.ScaleType.FIT_CENTER
+                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
             }
         },
         modifier = modifier,
-        update = { view ->
-            // 更新预览（如果有新的相机提供者）
+        update = { previewView ->
+            onPreviewReady(previewView)
         }
     )
 }
 
 /**
- * 检测框组件
+ * 检测框组件 - 将归一化坐标转换为实际像素并绘制
  */
 @Composable
 fun DetectionBox(
@@ -280,19 +284,57 @@ fun DetectionBox(
     confidence: Float,
     modifier: Modifier = Modifier
 ) {
-    // 注意：BoundingBox的值是0-1标准化坐标，需要转换为实际像素
-    // 这里简化为显示文本标签
-    Box(
-        modifier = modifier
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        Text(
-            text = "$obstacleType ${(confidence * 100).toInt()}%",
-            color = Color.White,
-            fontSize = 14.sp,
-            modifier = Modifier
-                .background(Color.Red.copy(alpha = 0.7f))
-                .padding(horizontal = 8.dp, vertical = 4.dp)
+    val textMeasurer = rememberTextMeasurer()
+    val labelText = "$obstacleType ${(confidence * 100).toInt()}%"
+
+    Canvas(modifier = modifier) {
+        val canvasWidth = size.width
+        val canvasHeight = size.height
+
+        // 将归一化坐标(0-1)转换为实际像素坐标
+        val left = boundingBox.x1 * canvasWidth
+        val top = boundingBox.y1 * canvasHeight
+        val right = boundingBox.x2 * canvasWidth
+        val bottom = boundingBox.y2 * canvasHeight
+
+        val rectWidth = right - left
+        val rectHeight = bottom - top
+
+        // 绘制检测框（红色边框）
+        drawRect(
+            color = Color.Red,
+            topLeft = Offset(left, top),
+            size = Size(rectWidth, rectHeight),
+            style = Stroke(width = 3.dp.toPx())
+        )
+
+        // 测量文本尺寸
+        val textLayoutResult = textMeasurer.measure(
+            text = androidx.compose.ui.text.AnnotatedString(labelText),
+            style = TextStyle(
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        )
+
+        // 绘制标签背景
+        drawRect(
+            color = Color.Red.copy(alpha = 0.7f),
+            topLeft = Offset(left, top - textLayoutResult.size.height - 4.dp.toPx()),
+            size = Size(
+                textLayoutResult.size.width + 8.dp.toPx(),
+                textLayoutResult.size.height + 4.dp.toPx()
+            )
+        )
+
+        // 绘制标签文本
+        drawText(
+            textLayoutResult = textLayoutResult,
+            topLeft = Offset(
+                left + 4.dp.toPx(),
+                top - textLayoutResult.size.height - 2.dp.toPx()
+            )
         )
     }
 }

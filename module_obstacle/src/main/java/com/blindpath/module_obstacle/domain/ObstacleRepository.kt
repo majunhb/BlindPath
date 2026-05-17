@@ -52,6 +52,11 @@ interface ObstacleRepository {
     suspend fun switchCamera(useFrontCamera: Boolean): Result<Boolean>
 
     /**
+     * 设置相机预览 SurfaceProvider（用于显示预览画面）
+     */
+    fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider)
+
+    /**
      * 获取预警级别
      */
     fun getAlertLevel(distance: Float): AlertLevel {

@@ -47,6 +47,10 @@ class ObstacleRepositoryImpl @Inject constructor(
     private var analysisJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
+    // CameraX Preview use case - 用于显示相机预览
+    private var cameraPreview: androidx.camera.core.Preview? = null
+    private var previewSurfaceProvider: androidx.camera.core.Preview.SurfaceProvider? = null
+
     private var latestObstacles: List<DetectedObstacle> = emptyList()
     private var useFrontCamera = false
     private var lastAlertTime = 0L
@@ -260,6 +264,16 @@ class ObstacleRepositoryImpl @Inject constructor(
                     CameraSelector.DEFAULT_BACK_CAMERA
                 }
 
+                // 创建 Preview 用例 - 用于显示相机预览
+                cameraPreview = androidx.camera.core.Preview.Builder()
+                    .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
+                    .build()
+
+                // 设置 SurfaceProvider（如果已有）
+                previewSurfaceProvider?.let { provider ->
+                    cameraPreview?.setSurfaceProvider(provider)
+                }
+
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
@@ -280,10 +294,14 @@ class ObstacleRepositoryImpl @Inject constructor(
                     // 先解绑所有之前的绑定
                     cameraProvider?.unbindAll()
 
+                    val useCases = mutableListOf<androidx.camera.core.UseCase>()
+                    cameraPreview?.let { useCases.add(it) }
+                    useCases.add(imageAnalysis)
+
                     cameraProvider?.bindToLifecycle(
                         androidx.lifecycle.ProcessLifecycleOwner.get(),
                         cameraSelector,
-                        imageAnalysis
+                        *useCases.toTypedArray()
                     )
 
                     isCameraStarted = true
@@ -328,6 +346,17 @@ class ObstacleRepositoryImpl @Inject constructor(
             Timber.w(e, "Failed to shutdown executor")
         }
         cameraExecutor = null
+        cameraPreview = null
+        previewSurfaceProvider = null
+    }
+
+    /**
+     * 设置 Preview 的 SurfaceProvider（由 CameraPreview Composable 调用）
+     */
+    fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider) {
+        previewSurfaceProvider = provider
+        cameraPreview?.setSurfaceProvider(provider)
+        Timber.d("Preview SurfaceProvider set")
     }
 
     private fun processImage(imageProxy: ImageProxy) {
