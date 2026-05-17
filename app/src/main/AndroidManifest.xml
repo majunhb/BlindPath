@@ -32,6 +32,11 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.BlindPath">
 
+        <!-- 高德地图 API Key -->
+        <meta-data
+            android:name="com.amap.api.v2.apikey"
+            android:value="02d60524af990e3835f0b835ab5403e9" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

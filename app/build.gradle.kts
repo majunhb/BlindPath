@@ -59,6 +59,11 @@ dependencies {
     implementation(project(":module_settings"))
     implementation(project(":module_community"))
     
+    // 高德地图 SDK
+    implementation("com.amap.api:location:5.2.0")
+    implementation("com.amap.api:maps:9.5.0")
+    implementation("com.amap.api:search:8.1.0")
+    
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")
     ksp("com.google.dagger:hilt-android-compiler:2.48")
