@@ -213,18 +213,31 @@ class ObstacleRepositoryImpl @Inject constructor(
             try {
                 Timber.d("Starting camera...")
 
-                // 先停止之前的摄像头
+                // 1. 检查摄像头权限
+                if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                    Timber.e("Camera permission not granted")
+                    _state.update { it.copy(lastError = "摄像头权限未授予，请在设置中允许摄像头权限") }
+                    isCameraStarting = false
+                    return@withContext false
+                }
+
+                // 2. 先停止之前的摄像头
                 stopCameraUnsafe()
 
                 cameraExecutor = Executors.newSingleThreadExecutor()
 
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
 
-                // 等待CameraProvider准备完成
+                // 等待CameraProvider准备完成（增加超时时间）
                 val provider = try {
                     withContext(Dispatchers.IO) {
-                        cameraProviderFuture.get(5, java.util.concurrent.TimeUnit.SECONDS)
+                        cameraProviderFuture.get(10, java.util.concurrent.TimeUnit.SECONDS)
                     }
+                } catch (e: java.util.concurrent.TimeoutException) {
+                    Timber.e(e, "Camera provider timeout")
+                    _state.update { it.copy(lastError = "摄像头初始化超时，请重启应用") }
+                    isCameraStarting = false
+                    return@withContext false
                 } catch (e: Exception) {
                     Timber.e(e, "Failed to get camera provider")
                     _state.update { it.copy(lastError = "无法获取摄像头: ${e.message}") }
@@ -266,7 +279,7 @@ class ObstacleRepositoryImpl @Inject constructor(
                 try {
                     // 先解绑所有之前的绑定
                     cameraProvider?.unbindAll()
-                    
+
                     cameraProvider?.bindToLifecycle(
                         androidx.lifecycle.ProcessLifecycleOwner.get(),
                         cameraSelector,

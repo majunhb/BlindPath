@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
 import java.util.Locale
 import java.util.UUID
@@ -28,27 +29,39 @@ class VoiceRepositoryImpl @Inject constructor(
     private var tts: TextToSpeech? = null
     private var isInitialized = false
 
-    override suspend fun initialize(): Result<Boolean> {
-        return try {
+    override suspend fun initialize(): Result<Boolean> = suspendCancellableCoroutine { continuation ->
+        try {
             Timber.d("Initializing Android TTS")
-
+            
             tts = TextToSpeech(context) { status ->
                 if (status == TextToSpeech.SUCCESS) {
-                    val result = tts?.setLanguage(Locale.CHINESE)
+                    // 先尝试中文
+                    var result = tts?.setLanguage(Locale.CHINESE)
+                    
+                    // 中文不可用，回退到英文
                     if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                        Timber.e("Chinese language not supported")
-                        _state.update { it.copy(lastError = "不支持中文语音") }
+                        Timber.w("Chinese TTS not available, trying English")
+                        result = tts?.setLanguage(Locale.US)
+                    }
+                    
+                    if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                        Timber.e("No TTS language available")
+                        _state.update { it.copy(lastError = "不支持任何语音语言") }
+                        isInitialized = false
+                        if (continuation.isActive) continuation.resume(kotlin.Result.Success(false))
                     } else {
                         isInitialized = true
+                        tts?.setSpeechRate(0.9f)
                         _state.update { it.copy(isAvailable = true) }
-                        Timber.d("Android TTS initialized successfully")
+                        Timber.d("TTS initialized successfully")
+                        if (continuation.isActive) continuation.resume(kotlin.Result.Success(true))
                     }
                 } else {
                     Timber.e("TTS initialization failed with status: $status")
-                    _state.update { it.copy(lastError = "语音初始化失败") }
+                    if (continuation.isActive) continuation.resume(kotlin.Result.Success(false))
                 }
             }
-
+            
             // 设置监听器
             tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                 override fun onStart(utteranceId: String?) {
@@ -81,19 +94,22 @@ class VoiceRepositoryImpl @Inject constructor(
                     }
                 }
             })
-
-            Result.Success(true)
+            
         } catch (e: Exception) {
             Timber.e(e, "Failed to initialize TTS")
             _state.update { it.copy(lastError = e.message) }
+            if (continuation.isActive) continuation.resume(kotlin.Result.Failure(e))
             Result.Error(message = e.message ?: "语音初始化失败")
         }
     }
-
+    
     override suspend fun speak(text: String, queueMode: Boolean): Result<Boolean> {
         return try {
             if (!isInitialized) {
-                initialize()
+                val initResult = initialize()
+                if (initResult !is Result.Success || initResult.data == false) {
+                    return Result.Error(message = "TTS 初始化失败，无法播报")
+                }
             }
 
             if (tts == null) {
