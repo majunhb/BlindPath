@@ -15,8 +15,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Directions
 import androidx.compose.material.icons.filled.Accessible
@@ -93,7 +93,7 @@ fun TripAssistScreen(
                             contentDescription = "返回上一页"
                         }
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(Icons.Filled.ArrowBack, contentDescription = null)
                     }
                 }
             )
@@ -251,7 +251,7 @@ private fun WeatherTabContent(viewModel: TripAssistViewModel) {
                     },
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null)
+                Icon(Icons.Filled.VolumeUp, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("获取当前位置天气", fontSize = 16.sp)
             }
@@ -303,7 +303,7 @@ private fun WeatherInfoCard(
                         contentDescription = "重新播报天气"
                     }
                 ) {
-                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = null)
+                    Icon(Icons.Filled.VolumeUp, contentDescription = null)
                 }
             }
 
@@ -563,7 +563,7 @@ private fun RouteOverviewCard(
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 IconButton(onClick = onReplayClick) {
-                    Icon(Icons.AutoMirrored.Filled.VolumeUp, contentDescription = "重新播报")
+                    Icon(Icons.Filled.VolumeUp, contentDescription = "重新播报")
                 }
             }
 
