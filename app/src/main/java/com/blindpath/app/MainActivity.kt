@@ -67,6 +67,7 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     MainScreen(
+                        obstacleRepository = obstacleRepository,
                         onObstacleDetectionClick = { requestPermissionAndAction("obstacle") },
                         onLocationClick = { requestPermissionAndAction("location") },
                         onSosClick = { requestPermissionAndAction("sos") }

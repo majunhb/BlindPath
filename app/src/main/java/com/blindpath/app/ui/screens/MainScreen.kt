@@ -1,13 +1,12 @@
 package com.blindpath.app.ui.screens
 
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.ExploreNearMe
+import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,25 +16,17 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.blindpath.app.ui.theme.BlindPathTheme
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.BoundingBox
-import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
 import com.blindpath.module_trip_assist.ui.TripAssistScreen
-import timber.log.Timber
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
@@ -109,27 +100,21 @@ private fun MainContent(
             .padding(24.dp)
     ) {
         if (isDetecting) {
-            // 1. 相机预览
-            CameraPreview(
+            // 检测中状态显示
+            Box(
                 modifier = Modifier.fillMaxSize(),
-                onPreviewReady = { previewView ->
-                    // 当 PreviewView 准备好后，设置 SurfaceProvider
-                    obstacleRepository.setPreviewSurfaceProvider(previewView.surfaceProvider)
-                    Timber.d("Camera preview SurfaceProvider set")
-                }
-            )
-
-            // 2. 检测框叠加层
-            obstacleState.detectedObstacles?.forEach { obstacle ->
-                DetectionBox(
-                    boundingBox = obstacle.boundingBox,
-                    obstacleType = obstacle.type.chineseName,
-                    confidence = obstacle.confidence,
-                    modifier = Modifier.fillMaxSize()
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "障碍物检测中...\n检测到 ${obstacleState.detectedObstacles?.size ?: 0} 个障碍物",
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.semantics {
+                        contentDescription = "障碍物检测正在进行"
+                    }
                 )
             }
 
-            // 3. 停止检测按钮
+            // 停止检测按钮
             Button(
                 onClick = onStopDetection,
                 modifier = Modifier
@@ -271,7 +256,7 @@ private fun MainContent(
                     )
                 ) {
                     Icon(
-                        imageVector = Icons.Default.ExploreNearMe,
+                        imageVector = Icons.Default.Navigation,
                         contentDescription = null,
                         modifier = Modifier.size(24.dp)
                     )
@@ -283,95 +268,6 @@ private fun MainContent(
                 }
             }
         }
-    }
-}
-
-/**
- * 相机预览组件
- */
-@Composable
-fun CameraPreview(
-    modifier: Modifier = Modifier,
-    onPreviewReady: (PreviewView) -> Unit
-) {
-    val context = LocalContext.current
-
-    AndroidView(
-        factory = { ctx ->
-            PreviewView(ctx).apply {
-                scaleType = PreviewView.ScaleType.FIT_CENTER
-                implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-            }
-        },
-        modifier = modifier,
-        update = { previewView ->
-            onPreviewReady(previewView)
-        }
-    )
-}
-
-/**
- * 检测框组件 - 将归一化坐标转换为实际像素并绘制
- */
-@Composable
-fun DetectionBox(
-    boundingBox: BoundingBox,
-    obstacleType: String,
-    confidence: Float,
-    modifier: Modifier = Modifier
-) {
-    val textMeasurer = rememberTextMeasurer()
-    val labelText = "$obstacleType ${(confidence * 100).toInt()}%"
-
-    Canvas(modifier = modifier) {
-        val canvasWidth = size.width
-        val canvasHeight = size.height
-
-        // 将归一化坐标(0-1)转换为实际像素坐标
-        val left = boundingBox.x1 * canvasWidth
-        val top = boundingBox.y1 * canvasHeight
-        val right = boundingBox.x2 * canvasWidth
-        val bottom = boundingBox.y2 * canvasHeight
-
-        val rectWidth = right - left
-        val rectHeight = bottom - top
-
-        // 绘制检测框（红色边框）
-        drawRect(
-            color = Color.Red,
-            topLeft = Offset(left, top),
-            size = Size(rectWidth, rectHeight),
-            style = Stroke(width = 3.dp.toPx())
-        )
-
-        // 测量文本尺寸
-        val textLayoutResult = textMeasurer.measure(
-            text = androidx.compose.ui.text.AnnotatedString(labelText),
-            style = TextStyle(
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
-        )
-
-        // 绘制标签背景
-        drawRect(
-            color = Color.Red.copy(alpha = 0.7f),
-            topLeft = Offset(left, top - textLayoutResult.size.height - 4.dp.toPx()),
-            size = Size(
-                textLayoutResult.size.width + 8.dp.toPx(),
-                textLayoutResult.size.height + 4.dp.toPx()
-            )
-        )
-
-        // 绘制标签文本
-        drawText(
-            textLayoutResult = textLayoutResult,
-            topLeft = Offset(
-                left + 4.dp.toPx(),
-                top - textLayoutResult.size.height - 2.dp.toPx()
-            )
-        )
     }
 }
 
