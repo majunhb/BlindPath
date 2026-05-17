@@ -18,6 +18,7 @@ import com.blindpath.app.ui.screens.MainScreen
 import com.blindpath.app.ui.theme.BlindPathTheme
 import com.blindpath.base.sos.SosHelper
 import com.blindpath.module_navigation.domain.NavigationRepository
+import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +34,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var navigationRepository: NavigationRepository
+
+    @Inject
+    lateinit var obstacleRepository: ObstacleRepository
 
     private var pendingAction: String? = null
 

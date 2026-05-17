@@ -1,6 +1,5 @@
 package com.blindpath.app.ui.screens
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -11,23 +10,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.*
-import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.blindpath.app.ui.theme.BlindPathTheme
 import com.blindpath.module_obstacle.domain.ObstacleRepository
-import com.blindpath.module_obstacle.domain.model.BoundingBox
+import com.blindpath.module_obstacle.domain.model.ObstacleState
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
 import com.blindpath.module_trip_assist.ui.TripAssistScreen
-import kotlinx.coroutines.launch
 
 /**
  * 主界面 - 视障友好设计
@@ -90,9 +80,7 @@ private fun MainContent(
     onTripAssistClick: () -> Unit,
     onStopDetection: () -> Unit
 ) {
-    val obstacleState by obstacleRepository.obstacleState.collectAsState()
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val obstacleState by obstacleRepository.obstacleState.collectAsState(initial = ObstacleState())
 
     Box(
         modifier = Modifier
