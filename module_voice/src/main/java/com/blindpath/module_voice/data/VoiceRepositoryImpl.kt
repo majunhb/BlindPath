@@ -30,6 +30,9 @@ class VoiceRepositoryImpl @Inject constructor(
     private var isInitialized = false
 
     override suspend fun initialize(): Result<Boolean> = suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation {
+            Timber.d("TTS initialization cancelled")
+        }
         try {
             Timber.d("Initializing Android TTS")
             
