@@ -48,17 +48,17 @@ class VoiceRepositoryImpl @Inject constructor(
                         Timber.e("No TTS language available")
                         _state.update { it.copy(lastError = "不支持任何语音语言") }
                         isInitialized = false
-                        if (continuation.isActive) continuation.resume(kotlin.Result.Success(false))
+                        if (continuation.isActive) continuation.resume(Result.Success(false))
                     } else {
                         isInitialized = true
                         tts?.setSpeechRate(0.9f)
                         _state.update { it.copy(isAvailable = true) }
                         Timber.d("TTS initialized successfully")
-                        if (continuation.isActive) continuation.resume(kotlin.Result.Success(true))
+                        if (continuation.isActive) continuation.resume(Result.Success(true))
                     }
                 } else {
                     Timber.e("TTS initialization failed with status: $status")
-                    if (continuation.isActive) continuation.resume(kotlin.Result.Success(false))
+                    if (continuation.isActive) continuation.resume(Result.Success(false))
                 }
             }
             
@@ -98,8 +98,7 @@ class VoiceRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "Failed to initialize TTS")
             _state.update { it.copy(lastError = e.message) }
-            if (continuation.isActive) continuation.resume(kotlin.Result.Failure(e))
-            Result.Error(message = e.message ?: "语音初始化失败")
+            if (continuation.isActive) continuation.resume(Result.Error(message = e.message ?: "语音初始化失败"))
         }
     }
     
