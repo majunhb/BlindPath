@@ -22,7 +22,7 @@ android {
         }
         // 高德 10.x+ SDK 仅支持 armeabi-v7a 和 arm64-v8a
         ndk {
-            abiFilters.addAll(listOf("armeabi-v7a", "arm64-v8a"))
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
     }
 
@@ -64,8 +64,8 @@ dependencies {
     implementation(project(":module_community"))
     
     // 高德地图 SDK（组合包，已包含定位+搜索，Maven Central 可用）
-    // 最新版本 11.1.200，对应定位 SDK 11.1.200 + 搜索 SDK 9.7.4
-    implementation("com.amap.api:3dmap-location-search:11.1.200_loc11.1.200_sea9.7.4")
+    // 稳定版本 10.1.700，对应定位 SDK 6.5.1 + 搜索 SDK 9.7.4
+    implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
     
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")
