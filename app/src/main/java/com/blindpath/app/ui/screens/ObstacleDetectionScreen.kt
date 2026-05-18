@@ -33,7 +33,10 @@ import com.blindpath.base.common.AlertLevel
 import com.blindpath.module_obstacle.data.detection.AIDetector
 import com.blindpath.module_obstacle.domain.model.*
 import com.blindpath.module_voice.domain.VoiceRepository
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -504,8 +507,8 @@ private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
 /**
  * Hilt EntryPoint - 用于在 Composable 中获取依赖
  */
-@dagger.hilt.EntryPoint
-@InstallIn(dagger.hilt.components.SingletonComponent::class)
+@EntryPoint
+@InstallIn(SingletonComponent::class)
 interface ObstacleDetectionEntryPoint {
     fun voiceRepository(): VoiceRepository
     fun aiDetector(): AIDetector

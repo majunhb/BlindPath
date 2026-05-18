@@ -32,7 +32,10 @@ import com.amap.api.services.geocoder.GeocodeSearch
 import com.amap.api.services.geocoder.RegeocodeResult
 import com.amap.api.services.route.*
 import com.blindpath.module_voice.domain.VoiceRepository
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.coroutines.resume
@@ -439,8 +442,8 @@ private fun parseStepType(action: String): String {
 /**
  * Hilt EntryPoint - 用于在 Composable 中获取依赖
  */
-@dagger.hilt.EntryPoint
-@InstallIn(dagger.hilt.components.SingletonComponent::class)
+@EntryPoint
+@InstallIn(SingletonComponent::class)
 interface NavigationEntryPoint {
     fun voiceRepository(): VoiceRepository
 }

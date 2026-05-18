@@ -28,7 +28,10 @@ import com.amap.api.location.AMapLocationClient
 import com.amap.api.location.AMapLocationClientOption
 import com.amap.api.location.AMapLocationListener
 import com.blindpath.module_voice.domain.VoiceRepository
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -410,8 +413,8 @@ private fun getDirectionText(bearing: Float): String {
 /**
  * Hilt EntryPoint - 用于在 Composable 中获取依赖
  */
-@dagger.hilt.EntryPoint
-@InstallIn(dagger.hilt.components.SingletonComponent::class)
+@EntryPoint
+@InstallIn(SingletonComponent::class)
 interface LocationEntryPoint {
     fun voiceRepository(): VoiceRepository
 }
