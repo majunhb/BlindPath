@@ -4,7 +4,10 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -79,16 +82,12 @@ fun NavigationScreen(
             // 使用高德地图路线规划
             try {
                 val routeSearch = RouteSearch(context)
-                val fromAndTo = RouteSearch.FromAndTo(
-                    "",  // 起点坐标（空字符串表示当前位置）
-                    "",  // 终点坐标
-                    destination,  // 终点名称
-                    ""   // 起点名称
-                )
-                routeSearch.calculateWalkRouteAsyn(fromAndTo, object : RouteSearch.OnRouteSearchListener {
-                    override fun onBusRouteSearched(p0: BusRouteResult?, p1: Int) {}
-                    override fun onDriveRouteSearched(p0: DriveRouteResult?, p1: Int) {}
-                    override fun onRideRouteSearched(p0: RideRouteResult?, p1: Int) {}
+                
+                // 设置搜索监听器
+                routeSearch.setRouteSearchListener(object : RouteSearch.OnRouteSearchListener {
+                    override fun onBusRouteSearched(result: BusRouteResult?, errorCode: Int) {}
+                    override fun onDriveRouteSearched(result: DriveRouteResult?, errorCode: Int) {}
+                    override fun onRideRouteSearched(result: RideRouteResult?, errorCode: Int) {}
 
                     override fun onWalkRouteSearched(result: WalkRouteResult?, errorCode: Int) {
                         if (errorCode == 1000 && result != null && result.paths != null && result.paths.isNotEmpty()) {
@@ -118,6 +117,12 @@ fun NavigationScreen(
                         isPlanning = false
                     }
                 })
+                
+                // 创建路线查询 - 高德SDK使用简化API，无需 FromAndTo 对象
+                // 注意：实际应用中需要获取用户当前位置作为起点坐标
+                val fromAndTo = RouteSearch.FromAndTo("", "")
+                val query = RouteSearch.WalkRouteQuery(fromAndTo)
+                routeSearch.calculateWalkRouteAsyn(query)
             } catch (e: Exception) {
                 // 异常时使用模拟路线
                 routeSteps = generateFallbackRoute()

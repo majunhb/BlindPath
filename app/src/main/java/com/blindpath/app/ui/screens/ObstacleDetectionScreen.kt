@@ -150,7 +150,7 @@ fun ObstacleDetectionScreen(
                             cameraProviderFuture.addListener({
                                 val cameraProvider = cameraProviderFuture.get()
                                 val preview = Preview.Builder().build().also {
-                                    it.surfaceProvider = previewView.surfaceProvider
+                                    it.setSurfaceProvider(previewView.surfaceProvider)
                                 }
                                 val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
                                 try {

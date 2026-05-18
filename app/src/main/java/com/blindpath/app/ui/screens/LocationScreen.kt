@@ -95,8 +95,6 @@ fun LocationScreen(
                     interval = 2000
                     // 需要地址信息
                     isNeedAddress = true
-                    // 需要逆地理编码
-                    isNeedGeoCode = true
                 }
                 locationClient.setLocationOption(locationOption)
 
