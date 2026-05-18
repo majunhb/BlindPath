@@ -143,7 +143,7 @@ fun NavigationScreen(
                             }
                         }
                     })
-                    val query = com.amap.api.services.geocoder.GeocodeQuery(destText, "", "")
+                    val query = com.amap.api.services.geocoder.GeocodeQuery(destText, "")
                     geocodeSearch.getFromLocationNameAsyn(query)
                     continuation.invokeOnCancellation {}
                 } catch (e: Exception) {
