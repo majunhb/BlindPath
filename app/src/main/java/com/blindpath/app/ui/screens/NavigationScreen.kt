@@ -6,8 +6,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -258,7 +256,7 @@ fun NavigationScreen(
                     Column {
                         routeSteps.forEachIndexed { index, step ->
                             RouteStepItem(step, index == currentStep, index < currentStep)
-                            if (index < routeSteps.size - 1) HorizontalDivider(modifier = Modifier.padding(start = 24.dp, end = 24.dp))
+                            if (index < routeSteps.size - 1) Divider(modifier = Modifier.padding(start = 24.dp, end = 24.dp))
                         }
                     }
                 }
