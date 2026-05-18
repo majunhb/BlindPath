@@ -27,12 +27,16 @@ import com.amap.api.location.AMapLocation
 import com.amap.api.location.AMapLocationClient
 import com.amap.api.location.AMapLocationClientOption
 import com.amap.api.location.AMapLocationListener
+import com.blindpath.module_voice.domain.VoiceRepository
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * 实时定位界面 - 高德地图定位版本
- * 使用高德定位SDK获取真实GPS/北斗/网络定位
+ * 实时定位界面 - 实景应用级
+ * 1. 高德定位SDK获取真实GPS/北斗/网络定位
+ * 2. 实时更新位置、道路、方位信息
+ * 3. VoiceRepository TTS 语音播报定位结果
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,6 +45,15 @@ fun LocationScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 通过 Hilt EntryPoint 获取 VoiceRepository
+    val appContext = context.applicationContext
+    val voiceRepository = remember {
+        EntryPointAccessors.fromApplication(
+            appContext,
+            LocationEntryPoint::class.java
+        ).voiceRepository()
+    }
 
     var hasLocationPermission by remember {
         mutableStateOf(
@@ -53,6 +66,7 @@ fun LocationScreen(
     var locationInfo by remember { mutableStateOf<LocationDisplayInfo?>(null) }
     var lastAnnouncement by remember { mutableStateOf("请授权位置权限后开始定位") }
     var locationError by remember { mutableStateOf<String?>(null) }
+    var locationClient by remember { mutableStateOf<AMapLocationClient?>(null) }
 
     // 权限请求
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -67,6 +81,14 @@ fun LocationScreen(
         }
     }
 
+    // 停止定位
+    fun stopLocation() {
+        locationClient?.stopLocation()
+        locationClient?.onDestroy()
+        locationClient = null
+        isLocating = false
+    }
+
     // 真实定位逻辑
     fun startRealLocation() {
         if (!hasLocationPermission) {
@@ -79,33 +101,40 @@ fun LocationScreen(
             return
         }
 
+        // 先停止之前的定位
+        stopLocation()
+
         scope.launch {
             isLocating = true
             locationError = null
-            lastAnnouncement = "正在获取位置信息，请稍候..."
+            lastAnnouncement = "正在通过GPS北斗网络获取位置信息..."
+
+            // 语音播报
+            voiceRepository.speak("正在定位，请稍候", queueMode = false)
 
             try {
-                val locationClient = AMapLocationClient(context)
+                val client = AMapLocationClient(context)
+                locationClient = client
                 val locationOption = AMapLocationClientOption().apply {
                     // 高精度模式：GPS + 北斗 + 网络
                     locationMode = AMapLocationClientOption.AMapLocationMode.Hight_Accuracy
-                    // 单次定位
+                    // 持续定位
                     isOnceLocation = false
-                    // 定位间隔2秒
-                    interval = 2000
+                    // 定位间隔3秒
+                    interval = 3000
                     // 需要地址信息
                     isNeedAddress = true
                 }
-                locationClient.setLocationOption(locationOption)
+                client.setLocationOption(locationOption)
 
-                locationClient.setLocationListener(object : AMapLocationListener {
+                client.setLocationListener(object : AMapLocationListener {
                     override fun onLocationChanged(location: AMapLocation?) {
                         if (location != null && location.errorCode == 0) {
-                            // 定位成功
-                            locationInfo = LocationDisplayInfo(
+                            // 定位成功 - 提取真实数据
+                            val info = LocationDisplayInfo(
                                 road = location.road ?: "未知道路",
                                 direction = getDirectionText(location.bearing),
-                                coordinates = "${"%.6f".format(location.latitude)}°N, ${"%.6f".format(location.longitude)}°E",
+                                coordinates = "${"%.6f".format(location.latitude)}, ${"%.6f".format(location.longitude)}",
                                 accuracy = "±${location.accuracy.toInt()}米",
                                 landmarks = location.poiName ?: location.aoiName ?: "暂无周边地标",
                                 city = location.city ?: "",
@@ -114,31 +143,67 @@ fun LocationScreen(
                                 bearing = location.bearing,
                                 speed = location.speed
                             )
-                            lastAnnouncement = "定位成功，您当前位于${locationInfo?.city}${locationInfo?.district}${locationInfo?.road}，面向${locationInfo?.direction}。${if (!locationInfo?.landmarks.isNullOrBlank()) "附近有${locationInfo?.landmarks}" else ""}"
+                            locationInfo = info
                             isLocating = false
+
+                            // 生成语音播报文本
+                            val voiceText = buildString {
+                                append("定位成功。您当前位于")
+                                if (info.city.isNotEmpty()) append(info.city)
+                                if (info.district.isNotEmpty()) append(info.district)
+                                append(info.road)
+                                append("，面向${info.direction}")
+                                if (info.landmarks.isNotEmpty() && info.landmarks != "暂无周边地标") {
+                                    append("，附近有${info.landmarks}")
+                                }
+                                append("。定位精度${info.accuracy}")
+                            }
+                            lastAnnouncement = voiceText
+
+                            // TTS语音播报
+                            scope.launch {
+                                voiceRepository.speak(voiceText, queueMode = false)
+                            }
                         } else {
-                            locationError = "定位失败：${location?.errorInfo ?: "未知错误"}"
-                            lastAnnouncement = locationError ?: "定位失败，请重试"
+                            val errorMsg = "定位失败：${location?.errorInfo ?: "未知错误"}"
+                            locationError = errorMsg
+                            lastAnnouncement = errorMsg
                             isLocating = false
+
+                            scope.launch {
+                                voiceRepository.speak("定位失败，请检查GPS是否开启", queueMode = false)
+                            }
                         }
                     }
                 })
 
-                locationClient.startLocation()
+                client.startLocation()
 
                 // 30秒超时
                 delay(30000)
                 if (locationInfo == null && locationError == null) {
                     lastAnnouncement = "定位超时，请检查GPS是否开启后重试"
                     isLocating = false
+                    scope.launch {
+                        voiceRepository.speak("定位超时，请检查GPS是否开启", queueMode = false)
+                    }
                 }
-                locationClient.stopLocation()
-                locationClient.onDestroy()
             } catch (e: Exception) {
                 locationError = "定位异常：${e.message}"
                 lastAnnouncement = locationError ?: "定位异常，请重试"
                 isLocating = false
+                scope.launch {
+                    voiceRepository.speak("定位异常，请重试", queueMode = false)
+                }
             }
+        }
+    }
+
+    // 离开页面时停止定位
+    DisposableEffect(Unit) {
+        onDispose {
+            locationClient?.stopLocation()
+            locationClient?.onDestroy()
         }
     }
 
@@ -147,7 +212,11 @@ fun LocationScreen(
             TopAppBar(
                 title = { Text("实时定位") },
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    IconButton(onClick = {
+                        stopLocation()
+                        voiceRepository.speak("已退出定位", queueMode = false)
+                        onBackClick()
+                    }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 },
@@ -336,4 +405,13 @@ private fun getDirectionText(bearing: Float): String {
     val directions = arrayOf("正北", "东北", "正东", "东南", "正南", "西南", "正西", "西北")
     val index = ((bearing + 22.5f) % 360 / 45).toInt()
     return directions[index]
+}
+
+/**
+ * Hilt EntryPoint - 用于在 Composable 中获取依赖
+ */
+@dagger.hilt.EntryPoint
+@InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface LocationEntryPoint {
+    fun voiceRepository(): VoiceRepository
 }

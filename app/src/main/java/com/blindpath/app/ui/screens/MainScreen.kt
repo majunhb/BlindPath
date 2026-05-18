@@ -106,7 +106,7 @@ private fun MainContent(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "BlindPath v1.0",
+                text = "BlindPath v3.0",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.semantics {

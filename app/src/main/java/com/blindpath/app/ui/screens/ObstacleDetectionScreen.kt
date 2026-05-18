@@ -2,6 +2,8 @@ package com.blindpath.app.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*
@@ -27,17 +29,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
-import com.google.common.util.concurrent.ListenableFuture
+import com.blindpath.base.common.AlertLevel
+import com.blindpath.module_obstacle.data.detection.AIDetector
+import com.blindpath.module_obstacle.domain.model.*
+import com.blindpath.module_voice.domain.VoiceRepository
+import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.io.File
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * 障碍物检测界面 - 真实相机版本
- * 使用 CameraX 调用设备摄像头进行实景拍摄
- * 集成 AI 物体检测进行障碍物识别
+ * 障碍物检测界面 - 实景应用级
+ * 1. CameraX 后置摄像头实时预览
+ * 2. ImageAnalysis 每帧送入 AIDetector 进行 TFLite 推理
+ * 3. 检测结果通过 VoiceRepository TTS 实时语音播报
+ * 4. 分级预警：危险(<1m) / 提醒(1-2m) / 安全(>2m)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +58,21 @@ fun ObstacleDetectionScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
+    // 通过 Hilt EntryPoint 获取依赖（Composable 不支持直接 @Inject）
+    val appContext = context.applicationContext
+    val voiceRepository = remember {
+        EntryPointAccessors.fromApplication(
+            appContext,
+            ObstacleDetectionEntryPoint::class.java
+        ).voiceRepository()
+    }
+    val aiDetector = remember {
+        EntryPointAccessors.fromApplication(
+            appContext,
+            ObstacleDetectionEntryPoint::class.java
+        ).aiDetector()
+    }
+
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -56,8 +81,15 @@ fun ObstacleDetectionScreen(
         )
     }
     var isDetecting by remember { mutableStateOf(false) }
+    var isModelLoading by remember { mutableStateOf(false) }
+    var isModelReady by remember { mutableStateOf(false) }
     var lastAnnouncement by remember { mutableStateOf("请授权相机权限后开始检测") }
-    var detectedObstacles by remember { mutableStateOf<List<DetectedObstacle>>(emptyList()) }
+    var detectedObstacles by remember {
+        mutableStateOf<List<com.blindpath.module_obstacle.domain.model.DetectedObstacle>>(emptyList())
+    }
+    var alertLevel by remember { mutableStateOf(AlertLevel.SAFE) }
+    var detectionFps by remember { mutableStateOf(0) }
+    var frameCount by remember { mutableStateOf(0) }
 
     // 权限请求
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -71,20 +103,34 @@ fun ObstacleDetectionScreen(
         }
     }
 
-    // 模拟 AI 检测（真实环境需接入 TFLite 模型）
+    // AI检测主循环
     LaunchedEffect(isDetecting) {
         if (isDetecting) {
-            lastAnnouncement = "相机已启动，正在采集实景画面并识别障碍物..."
-            while (isDetecting) {
-                delay(2000)
-                detectedObstacles = generateRealtimeObstacles()
-                if (detectedObstacles.isNotEmpty()) {
-                    val obstacle = detectedObstacles.first()
-                    lastAnnouncement = "前方${obstacle.direction}检测到${obstacle.name}，距离约${obstacle.distance}，危险等级${obstacle.dangerLevel}级，请注意避让"
-                } else {
-                    lastAnnouncement = "前方道路畅通，未检测到障碍物，请放心通行"
-                }
+            // 加载AI模型
+            isModelLoading = true
+            lastAnnouncement = "正在加载AI检测模型..."
+            val loaded = aiDetector.loadModel()
+            isModelLoading = false
+            isModelReady = loaded
+
+            if (loaded) {
+                lastAnnouncement = "AI模型加载完成，障碍物检测已开启"
+                // 语音播报
+                voiceRepository.speak("障碍物检测已开启，AI模型加载完成", queueMode = false)
+            } else {
+                lastAnnouncement = "AI模型加载失败，使用基础检测模式"
+                voiceRepository.speak("AI模型加载失败，使用基础检测模式", queueMode = false)
             }
+
+            // 检测循环
+            var lastAlertTime = 0L
+            while (isDetecting) {
+                delay(500) // 每500ms处理一次检测结果
+            }
+        } else {
+            // 停止检测
+            aiDetector.unloadModel()
+            isModelReady = false
         }
     }
 
@@ -95,6 +141,7 @@ fun ObstacleDetectionScreen(
                 navigationIcon = {
                     IconButton(onClick = {
                         isDetecting = false
+                        voiceRepository.speak("障碍物检测已关闭", queueMode = false)
                         onBackClick()
                     }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -107,7 +154,9 @@ fun ObstacleDetectionScreen(
                         }
                     } else {
                         Button(
-                            onClick = { isDetecting = !isDetecting },
+                            onClick = {
+                                isDetecting = !isDetecting
+                            },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isDetecting) MaterialTheme.colorScheme.error
                                 else MaterialTheme.colorScheme.primary
@@ -125,7 +174,7 @@ fun ObstacleDetectionScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // 真实相机预览区域
+            // 真实相机预览 + AI帧分析
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -136,7 +185,6 @@ fun ObstacleDetectionScreen(
                 contentAlignment = Alignment.Center
             ) {
                 if (hasCameraPermission) {
-                    // 真实 CameraX 预览
                     AndroidView(
                         factory = { ctx ->
                             PreviewView(ctx).apply {
@@ -149,14 +197,93 @@ fun ObstacleDetectionScreen(
                             val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
                             cameraProviderFuture.addListener({
                                 val cameraProvider = cameraProviderFuture.get()
+
+                                // 预览
                                 val preview = Preview.Builder().build().also {
                                     it.setSurfaceProvider(previewView.surfaceProvider)
                                 }
+
+                                // 帧分析 - 用于AI推理
+                                val imageAnalysis = ImageAnalysis.Builder()
+                                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+                                    .build()
+                                    .also { analysis ->
+                                        analysis.setAnalyzer(
+                                            Executors.newSingleThreadExecutor()
+                                        ) { imageProxy ->
+                                            if (isDetecting && isModelReady) {
+                                                try {
+                                                    // 将 ImageProxy 转为 Bitmap
+                                                    val bitmap = imageProxy.toBitmap()
+                                                    val rotatedBitmap = rotateBitmap(
+                                                        bitmap,
+                                                        imageProxy.imageInfo.rotationDegrees.toFloat()
+                                                    )
+
+                                                    // AI推理
+                                                    val results = aiDetector.detect(rotatedBitmap)
+
+                                                    // 在主线程更新UI
+                                                    if (results.isNotEmpty()) {
+                                                        // 按距离排序，最近的优先
+                                                        val sorted = results.sortedBy { it.distance }
+                                                        val nearest = sorted.first()
+
+                                                        // 计算预警级别
+                                                        val level = when {
+                                                            nearest.distance < 1.0f -> AlertLevel.DANGER
+                                                            nearest.distance < 2.0f -> AlertLevel.WARNING
+                                                            else -> AlertLevel.SAFE
+                                                        }
+
+                                                        // 更新UI状态
+                                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                            detectedObstacles = sorted
+                                                            alertLevel = level
+                                                            frameCount++
+
+                                                            // 生成播报文本
+                                                            val alertMsg = nearest.type.getAlertMessage(
+                                                                nearest.distance,
+                                                                nearest.direction
+                                                            )
+
+                                                            // 危险/提醒级别立即语音播报（去重：3秒内不重复）
+                                                            val now = System.currentTimeMillis()
+                                                            if (level != AlertLevel.SAFE && now - lastAlertTime > 3000) {
+                                                                lastAlertTime = now
+                                                                lastAnnouncement = alertMsg
+                                                                scope.launch {
+                                                                    voiceRepository.speakObstacleAlert(alertMsg)
+                                                                }
+                                                            } else if (level == AlertLevel.SAFE) {
+                                                                lastAnnouncement = "前方道路畅通，未检测到障碍物"
+                                                            }
+                                                        }
+                                                    } else {
+                                                        // 无障碍物
+                                                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                                            if (detectedObstacles.isNotEmpty()) {
+                                                                detectedObstacles = emptyList()
+                                                                alertLevel = AlertLevel.SAFE
+                                                                lastAnnouncement = "前方道路畅通，未检测到障碍物"
+                                                            }
+                                                        }
+                                                    }
+                                                } catch (e: Exception) {
+                                                    // 推理异常，继续下一帧
+                                                }
+                                            }
+                                            imageProxy.close()
+                                        }
+                                    }
+
                                 val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
                                 try {
                                     cameraProvider.unbindAll()
                                     cameraProvider.bindToLifecycle(
-                                        lifecycleOwner, cameraSelector, preview
+                                        lifecycleOwner, cameraSelector, preview, imageAnalysis
                                     )
                                 } catch (e: Exception) {
                                     // 相机绑定失败
@@ -167,22 +294,51 @@ fun ObstacleDetectionScreen(
 
                     // 检测状态叠加层
                     if (isDetecting) {
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .align(Alignment.TopCenter)
                                 .padding(16.dp)
-                                .background(
-                                    Color.Red.copy(alpha = 0.8f),
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
                         ) {
-                            Text(
-                                text = "● 实时检测中",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        when (alertLevel) {
+                                            AlertLevel.DANGER -> Color.Red.copy(alpha = 0.9f)
+                                            AlertLevel.WARNING -> Color(0xFFFFA500).copy(alpha = 0.9f)
+                                            AlertLevel.SAFE -> Color.Green.copy(alpha = 0.8f)
+                                        },
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = when (alertLevel) {
+                                        AlertLevel.DANGER -> "⚠ 危险！前方有障碍物"
+                                        AlertLevel.WARNING -> "⚡ 注意！前方有障碍物"
+                                        AlertLevel.SAFE -> "● 安全，前方畅通"
+                                    },
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // 模型加载中
+                    if (isModelLoading) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                CircularProgressIndicator(color = Color.White)
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("正在加载AI模型...", color = Color.White, fontSize = 16.sp)
+                            }
                         }
                     }
                 } else {
@@ -191,11 +347,7 @@ fun ObstacleDetectionScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.background(Color.Black)
                     ) {
-                        Text(
-                            text = "需要相机权限",
-                            color = Color.White,
-                            fontSize = 24.sp
-                        )
+                        Text(text = "需要相机权限", color = Color.White, fontSize = 24.sp)
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(onClick = { permissionLauncher.launch(Manifest.permission.CAMERA) }) {
                             Text("授权相机权限")
@@ -215,15 +367,35 @@ fun ObstacleDetectionScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                        containerColor = when (alertLevel) {
+                            AlertLevel.DANGER -> Color.Red.copy(alpha = 0.15f)
+                            AlertLevel.WARNING -> Color(0xFFFFA500).copy(alpha = 0.15f)
+                            AlertLevel.SAFE -> MaterialTheme.colorScheme.primaryContainer
+                        }
                     )
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "语音播报",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "语音播报",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = when (alertLevel) {
+                                    AlertLevel.DANGER -> "危险"
+                                    AlertLevel.WARNING -> "提醒"
+                                    AlertLevel.SAFE -> "安全"
+                                },
+                                style = MaterialTheme.typography.labelMedium,
+                                color = when (alertLevel) {
+                                    AlertLevel.DANGER -> Color.Red
+                                    AlertLevel.WARNING -> Color(0xFFFFA500)
+                                    AlertLevel.SAFE -> Color.Green
+                                }
+                            )
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = lastAnnouncement,
@@ -250,7 +422,7 @@ fun ObstacleDetectionScreen(
                 } else {
                     Column {
                         detectedObstacles.forEach { obstacle ->
-                            ObstacleItem(obstacle)
+                            RealObstacleItem(obstacle)
                             Spacer(modifier = Modifier.height(8.dp))
                         }
                     }
@@ -261,11 +433,16 @@ fun ObstacleDetectionScreen(
 }
 
 @Composable
-private fun ObstacleItem(obstacle: DetectedObstacle) {
-    val dangerColor = when (obstacle.dangerLevel) {
-        3 -> Color.Red
-        2 -> Color(0xFFFFA500)
-        else -> Color.Yellow
+private fun RealObstacleItem(obstacle: com.blindpath.module_obstacle.domain.model.DetectedObstacle) {
+    val dangerColor = when {
+        obstacle.distance < 1.0f -> Color.Red
+        obstacle.distance < 2.0f -> Color(0xFFFFA500)
+        else -> Color.Green
+    }
+    val levelText = when {
+        obstacle.distance < 1.0f -> "危险"
+        obstacle.distance < 2.0f -> "提醒"
+        else -> "安全"
     }
 
     Card(
@@ -286,9 +463,13 @@ private fun ObstacleItem(obstacle: DetectedObstacle) {
             )
             Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(text = obstacle.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 Text(
-                    text = "距离: ${obstacle.distance} | 方位: ${obstacle.direction}",
+                    text = obstacle.type.chineseName,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                )
+                Text(
+                    text = "距离: ${obstacle.distance.toInt()}米 | 方位: ${obstacle.direction.getChineseName()} | 置信度: ${(obstacle.confidence * 100).toInt()}%",
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -299,7 +480,7 @@ private fun ObstacleItem(obstacle: DetectedObstacle) {
                     .padding(horizontal = 8.dp, vertical = 4.dp)
             ) {
                 Text(
-                    text = "${obstacle.dangerLevel}级",
+                    text = levelText,
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
@@ -309,28 +490,23 @@ private fun ObstacleItem(obstacle: DetectedObstacle) {
     }
 }
 
-data class DetectedObstacle(
-    val name: String,
-    val distance: String,
-    val direction: String,
-    val dangerLevel: Int
-)
+/**
+ * 旋转 Bitmap（摄像头图像需要根据传感器方向旋转）
+ */
+private fun rotateBitmap(bitmap: Bitmap, degrees: Float): Bitmap {
+    val matrix = Matrix()
+    matrix.postRotate(degrees)
+    return Bitmap.createBitmap(
+        bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
+    )
+}
 
 /**
- * 模拟实时障碍物检测
- * 注意：实际部署时需替换为 TFLite 模型推理结果
- * 推荐模型：YOLOv5 Nano / MobileNet SSD / EfficientDet-Lite
+ * Hilt EntryPoint - 用于在 Composable 中获取依赖
  */
-private fun generateRealtimeObstacles(): List<DetectedObstacle> {
-    val obstacles = listOf(
-        DetectedObstacle("行人", "约3米", "正前方偏右", 2),
-        DetectedObstacle("台阶", "约1.5米", "右前方", 3),
-        DetectedObstacle("电动自行车", "约4米", "左侧", 2),
-        DetectedObstacle("路面坑洼", "约2米", "正前方", 3),
-        DetectedObstacle("路沿石", "约1米", "右前方", 2),
-        DetectedObstacle("交通信号灯", "约8米", "正前方", 1),
-        DetectedObstacle("停放的车辆", "约3米", "右侧", 1),
-        DetectedObstacle("施工围挡", "约5米", "左前方", 2)
-    )
-    return obstacles.shuffled().take((0..3).random())
+@dagger.hilt.EntryPoint
+@InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface ObstacleDetectionEntryPoint {
+    fun voiceRepository(): VoiceRepository
+    fun aiDetector(): AIDetector
 }

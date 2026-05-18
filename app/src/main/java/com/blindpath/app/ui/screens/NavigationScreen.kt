@@ -22,19 +22,28 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import com.amap.api.services.route.BusRouteResult
-import com.amap.api.services.route.DriveRouteResult
-import com.amap.api.services.route.RideRouteResult
-import com.amap.api.services.route.RouteSearch
-import com.amap.api.services.route.WalkPath
-import com.amap.api.services.route.WalkRouteResult
-import com.amap.api.services.route.WalkStep
+import com.amap.api.location.AMapLocation
+import com.amap.api.location.AMapLocationClient
+import com.amap.api.location.AMapLocationClientOption
+import com.amap.api.location.AMapLocationListener
+import com.amap.api.services.core.LatLonPoint
+import com.amap.api.services.geocoder.GeocodeResult
+import com.amap.api.services.geocoder.GeocodeSearch
+import com.amap.api.services.geocoder.RegeocodeResult
+import com.amap.api.services.route.*
+import com.blindpath.module_voice.domain.VoiceRepository
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 /**
- * 智能导航界面 - 高德地图路线规划版本
- * 使用高德地图SDK进行真实路线规划和步行导航
+ * 智能导航界面 - 实景应用级
+ * 1. 高德地理编码：目的地文本 -> 经纬度坐标
+ * 2. 高德定位SDK：获取当前位置坐标
+ * 3. 高德路线规划：起点+终点 -> 真实步行路线
+ * 4. VoiceRepository TTS 语音导航播报
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +52,15 @@ fun NavigationScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // 通过 Hilt EntryPoint 获取 VoiceRepository
+    val appContext = context.applicationContext
+    val voiceRepository = remember {
+        EntryPointAccessors.fromApplication(
+            appContext,
+            NavigationEntryPoint::class.java
+        ).voiceRepository()
+    }
 
     var hasPermission by remember {
         mutableStateOf(
@@ -56,11 +74,122 @@ fun NavigationScreen(
     var routeSteps by remember { mutableStateOf<List<NavigationStep>>(emptyList()) }
     var announcement by remember { mutableStateOf("请输入目的地开始导航") }
     var isPlanning by remember { mutableStateOf(false) }
+    var totalDistance by remember { mutableStateOf("") }
+    var totalDuration by remember { mutableStateOf("") }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         hasPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+    }
+
+    /**
+     * 获取当前位置坐标（使用高德定位SDK）
+     */
+    suspend fun getCurrentPosition(): LatLonPoint? = suspendCoroutine { continuation ->
+        try {
+            val client = AMapLocationClient(context)
+            val option = AMapLocationClientOption().apply {
+                locationMode = AMapLocationClientOption.AMapLocationMode.Hight_Accuracy
+                isOnceLocation = true
+                isNeedAddress = false
+            }
+            client.setLocationOption(option)
+            client.setLocationListener(object : AMapLocationListener {
+                override fun onLocationChanged(location: AMapLocation?) {
+                    client.stopLocation()
+                    client.onDestroy()
+                    if (location != null && location.errorCode == 0) {
+                        continuation.resume(LatLonPoint(location.latitude, location.longitude))
+                    } else {
+                        continuation.resume(null)
+                    }
+                }
+            })
+            client.startLocation()
+            // 10秒超时
+            kotlinx.coroutines.delay(10000)
+            client.stopLocation()
+            client.onDestroy()
+            if (continuation.context.isActive) continuation.resume(null)
+        } catch (e: Exception) {
+            continuation.resume(null)
+        }
+    }
+
+    /**
+     * 地理编码：目的地名称 -> 坐标
+     */
+    suspend fun geocodeDestination(destText: String): LatLonPoint? = suspendCoroutine { continuation ->
+        try {
+            val geocodeSearch = GeocodeSearch(context)
+            val query = GeocodeSearch.Query(destText, "", "")
+            geocodeSearch.getFromLocationNameAsyn(query, object : GeocodeSearch.OnGeocodeSearchListener {
+                override fun onRegeocodeSearched(result: RegeocodeResult?, errorCode: Int) {}
+                override fun onGeocodeSearched(result: GeocodeResult?, errorCode: Int) {
+                    if (errorCode == 1000 && result != null && result.geocodeAddressList != null && result.geocodeAddressList.isNotEmpty()) {
+                        val point = result.geocodeAddressList[0].latLonPoint
+                        continuation.resume(point)
+                    } else {
+                        continuation.resume(null)
+                    }
+                }
+            })
+            // 8秒超时
+            kotlinx.coroutines.delay(8000)
+            if (continuation.context.isActive) continuation.resume(null)
+        } catch (e: Exception) {
+            continuation.resume(null)
+        }
+    }
+
+    /**
+     * 步行路线规划
+     */
+    suspend fun planWalkRoute(origin: LatLonPoint, dest: LatLonPoint): List<NavigationStep> = suspendCoroutine { continuation ->
+        try {
+            val routeSearch = RouteSearch(context)
+            val fromAndTo = RouteSearch.FromAndTo(origin, dest)
+            val query = RouteSearch.WalkRouteQuery(fromAndTo)
+
+            routeSearch.setRouteSearchListener(object : RouteSearch.OnRouteSearchListener {
+                override fun onBusRouteSearched(p0: BusRouteResult?, p1: Int) {}
+                override fun onDriveRouteSearched(p0: DriveRouteResult?, p1: Int) {}
+                override fun onRideRouteSearched(p0: RideRouteResult?, p1: Int) {}
+
+                override fun onWalkRouteSearched(result: WalkRouteResult?, errorCode: Int) {
+                    if (errorCode == 1000 && result != null && result.paths != null && result.paths.isNotEmpty()) {
+                        val path = result.paths[0]
+                        val steps = path.steps
+                        if (steps != null && steps.isNotEmpty()) {
+                            val navSteps = steps.map { step ->
+                                NavigationStep(
+                                    instruction = step.instruction ?: "继续前行",
+                                    distance = "${step.distance.toInt()}米",
+                                    duration = formatDuration(step.duration.toInt()),
+                                    type = parseStepType(step.action),
+                                    road = step.road ?: ""
+                                )
+                            }
+                            totalDistance = "${path.distance.toInt()}米"
+                            totalDuration = formatDuration(path.duration.toInt())
+                            continuation.resume(navSteps)
+                        } else {
+                            continuation.resume(emptyList())
+                        }
+                    } else {
+                        continuation.resume(emptyList())
+                    }
+                }
+            })
+
+            routeSearch.calculateWalkRouteAsyn(query)
+            // 10秒超时
+            kotlinx.coroutines.delay(10000)
+            if (continuation.context.isActive) continuation.resume(emptyList())
+        } catch (e: Exception) {
+            continuation.resume(emptyList())
+        }
     }
 
     fun startNavigation() {
@@ -74,65 +203,46 @@ fun NavigationScreen(
 
         scope.launch {
             isPlanning = true
-            announcement = "正在通过高德地图规划路线，请稍候..."
-            delay(2000)
+            announcement = "正在获取当前位置..."
+            voiceRepository.speak("正在规划路线，请稍候", queueMode = false)
 
-            // 使用高德地图路线规划
-            try {
-                val routeSearch = RouteSearch(context)
-                
-                // 设置搜索监听器
-                routeSearch.setRouteSearchListener(object : RouteSearch.OnRouteSearchListener {
-                    override fun onBusRouteSearched(result: BusRouteResult?, errorCode: Int) {}
-                    override fun onDriveRouteSearched(result: DriveRouteResult?, errorCode: Int) {}
-                    override fun onRideRouteSearched(result: RideRouteResult?, errorCode: Int) {}
-
-                    override fun onWalkRouteSearched(result: WalkRouteResult?, errorCode: Int) {
-                        if (errorCode == 1000 && result != null && result.paths != null && result.paths.isNotEmpty()) {
-                            val path = result.paths[0]
-                            val steps = path.steps
-                            if (steps != null && steps.isNotEmpty()) {
-                                routeSteps = steps.mapIndexed { index, step ->
-                                    NavigationStep(
-                                        instruction = step.instruction ?: "继续前行",
-                                        distance = "${step.distance.toInt()}米",
-                                        duration = formatDuration(step.duration.toInt()),
-                                        type = parseStepType(step.action),
-                                        road = step.road ?: ""
-                                    )
-                                }
-                                isNavigating = true
-                                currentStep = 0
-                                announcement = "路线规划成功！全程${path.distance.toInt()}米，预计${formatDuration(path.duration.toInt())}到达${destination}。共${routeSteps.size}个步骤。"
-                            }
-                        } else {
-                            // 高德地图规划失败，使用模拟路线
-                            routeSteps = generateFallbackRoute()
-                            isNavigating = true
-                            currentStep = 0
-                            announcement = "已为您规划前往${destination}的步行路线，全程约800米，预计12分钟。"
-                        }
-                        isPlanning = false
-                    }
-                })
-                
-                // 高德地图路线规划需要有效的起点终点坐标
-                // 由于需要集成定位SDK获取当前位置，这里使用模拟路线演示
-                // 实际部署时请配合 LocationScreen 获取的坐标进行真正的路线规划
-                delay(1500)
-                routeSteps = generateFallbackRoute()
-                isNavigating = true
-                currentStep = 0
-                announcement = "已为您规划前往${destination}的步行路线，全程约800米，预计12分钟。点击下一步开始导航。"
+            // 1. 获取当前位置
+            val origin = getCurrentPosition()
+            if (origin == null) {
+                announcement = "无法获取当前位置，请检查GPS权限"
+                voiceRepository.speak("无法获取当前位置，请检查GPS权限", queueMode = false)
                 isPlanning = false
-            } catch (e: Exception) {
-                // 异常时使用模拟路线
-                routeSteps = generateFallbackRoute()
-                isNavigating = true
-                currentStep = 0
-                announcement = "已为您规划前往${destination}的步行路线，全程约800米，预计12分钟。"
-                isPlanning = false
+                return@launch
             }
+
+            announcement = "正在解析目的地坐标..."
+            // 2. 地理编码目的地
+            val destPoint = geocodeDestination(destination)
+            if (destPoint == null) {
+                announcement = "无法识别目的地：$destination，请尝试更详细的地址"
+                voiceRepository.speak("无法识别目的地，请尝试更详细的地址", queueMode = false)
+                isPlanning = false
+                return@launch
+            }
+
+            announcement = "正在通过高德地图规划步行路线..."
+            // 3. 路线规划
+            val steps = planWalkRoute(origin, destPoint)
+            if (steps.isEmpty()) {
+                announcement = "路线规划失败，可能是距离过远或无法步行到达"
+                voiceRepository.speak("路线规划失败，请更换目的地", queueMode = false)
+                isPlanning = false
+                return@launch
+            }
+
+            // 4. 导航开始
+            routeSteps = steps
+            isNavigating = true
+            currentStep = 0
+            val startMsg = "路线规划成功！全程${totalDistance}，预计${totalDuration}到达${destination}。共${routeSteps.size}个步骤。点击下一步开始导航。"
+            announcement = startMsg
+            voiceRepository.speak(startMsg, queueMode = false)
+            isPlanning = false
         }
     }
 
@@ -140,10 +250,18 @@ fun NavigationScreen(
         if (currentStep < routeSteps.size - 1) {
             currentStep++
             val step = routeSteps[currentStep]
-            announcement = "${step.instruction}。距离${step.distance}，${step.duration}后到达下一步。"
+            val msg = "${step.instruction}。距离${step.distance}，${step.duration}后到达下一步。"
+            announcement = msg
+            scope.launch {
+                voiceRepository.speakNavigation(msg)
+            }
         } else {
-            announcement = "已到达目的地${destination}，导航结束。请注意安全。"
+            val endMsg = "已到达目的地${destination}附近，导航结束。请注意安全。"
+            announcement = endMsg
             isNavigating = false
+            scope.launch {
+                voiceRepository.speak(endMsg, queueMode = false)
+            }
         }
     }
 
@@ -152,7 +270,11 @@ fun NavigationScreen(
             TopAppBar(
                 title = { Text("智能导航") },
                 navigationIcon = {
-                    IconButton(onClick = { isNavigating = false; onBackClick() }) {
+                    IconButton(onClick = {
+                        isNavigating = false
+                        voiceRepository.speak("导航已退出", queueMode = false)
+                        onBackClick()
+                    }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 }
@@ -206,7 +328,7 @@ fun NavigationScreen(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             CircularProgressIndicator()
                             Spacer(modifier = Modifier.height(16.dp))
-                            Text("正在通过高德地图规划路线...", style = MaterialTheme.typography.bodyLarge)
+                            Text(announcement, style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                 } else {
@@ -226,10 +348,9 @@ fun NavigationScreen(
                             }
                             Spacer(modifier = Modifier.height(16.dp))
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                routeSteps.getOrNull(currentStep)?.let { step ->
-                                    NavInfoItem("距离", step.distance)
-                                    NavInfoItem("预计", step.duration)
-                                }
+                                NavInfoItem("距离", routeSteps.getOrNull(currentStep)?.distance ?: "")
+                                NavInfoItem("预计", routeSteps.getOrNull(currentStep)?.duration ?: "")
+                                NavInfoItem("全程", totalDistance)
                             }
                         }
                     }
@@ -250,7 +371,11 @@ fun NavigationScreen(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("下一步")
                         }
-                        OutlinedButton(onClick = { isNavigating = false; announcement = "导航已取消" }, modifier = Modifier.weight(1f)) {
+                        OutlinedButton(onClick = {
+                            isNavigating = false
+                            announcement = "导航已取消"
+                            scope.launch { voiceRepository.speak("导航已取消", queueMode = false) }
+                        }, modifier = Modifier.weight(1f)) {
                             Text("结束导航")
                         }
                     }
@@ -311,12 +436,11 @@ private fun parseStepType(action: String): String {
     }
 }
 
-private fun generateFallbackRoute(): List<NavigationStep> {
-    return listOf(
-        NavigationStep("从当前位置出发", "0米", "0秒"),
-        NavigationStep("沿当前道路直行", "200米", "3分钟"),
-        NavigationStep("前方路口左转", "50米", "1分钟"),
-        NavigationStep("继续直行", "300米", "4分钟"),
-        NavigationStep("到达目的地", "0米", "0秒")
-    )
+/**
+ * Hilt EntryPoint - 用于在 Composable 中获取依赖
+ */
+@dagger.hilt.EntryPoint
+@InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface NavigationEntryPoint {
+    fun voiceRepository(): VoiceRepository
 }
