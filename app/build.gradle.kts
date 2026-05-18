@@ -68,6 +68,20 @@ dependencies {
     // 稳定版本 10.1.700，对应定位 SDK 6.5.1 + 搜索 SDK 9.7.4
     implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
     
+    // CameraX - 真实相机预览
+    implementation("androidx.camera:camera-core:1.3.1")
+    implementation("androidx.camera:camera-camera2:1.3.1")
+    implementation("androidx.camera:camera-lifecycle:1.3.1")
+    implementation("androidx.camera:camera-view:1.3.1")
+    
+    // Google Play Services Location - 高精度定位
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+    
+    // TensorFlow Lite - AI物体检测
+    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
+    
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")
     ksp("com.google.dagger:hilt-android-compiler:2.48")
