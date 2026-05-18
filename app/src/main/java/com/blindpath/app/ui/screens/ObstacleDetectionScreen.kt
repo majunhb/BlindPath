@@ -93,6 +93,7 @@ fun ObstacleDetectionScreen(
     var alertLevel by remember { mutableStateOf(AlertLevel.SAFE) }
     var detectionFps by remember { mutableStateOf(0) }
     var frameCount by remember { mutableStateOf(0) }
+    var lastAlertTime by remember { mutableStateOf(0L) }
 
     // 权限请求
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -126,7 +127,6 @@ fun ObstacleDetectionScreen(
             }
 
             // 检测循环
-            var lastAlertTime = 0L
             while (isDetecting) {
                 delay(500) // 每500ms处理一次检测结果
             }

@@ -38,6 +38,7 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.isActive
 import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 
@@ -114,7 +115,7 @@ fun NavigationScreen(
             kotlinx.coroutines.delay(10000)
             client.stopLocation()
             client.onDestroy()
-            if (continuation.context.isActive) continuation.resume(null)
+            if (kotlinx.coroutines.isActive) continuation.resume(null)
         } catch (e: Exception) {
             continuation.resume(null)
         }
@@ -126,7 +127,7 @@ fun NavigationScreen(
     suspend fun geocodeDestination(destText: String): LatLonPoint? = suspendCoroutine { continuation ->
         try {
             val geocodeSearch = GeocodeSearch(context)
-            val query = GeocodeSearch.Query(destText, "", "")
+            val query = com.amap.api.services.geocoder.GeocodeSearch.Query(destText, "", "")
             geocodeSearch.getFromLocationNameAsyn(query, object : GeocodeSearch.OnGeocodeSearchListener {
                 override fun onRegeocodeSearched(result: RegeocodeResult?, errorCode: Int) {}
                 override fun onGeocodeSearched(result: GeocodeResult?, errorCode: Int) {
@@ -140,7 +141,7 @@ fun NavigationScreen(
             })
             // 8秒超时
             kotlinx.coroutines.delay(8000)
-            if (continuation.context.isActive) continuation.resume(null)
+            if (kotlinx.coroutines.isActive) continuation.resume(null)
         } catch (e: Exception) {
             continuation.resume(null)
         }
@@ -189,7 +190,7 @@ fun NavigationScreen(
             routeSearch.calculateWalkRouteAsyn(query)
             // 10秒超时
             kotlinx.coroutines.delay(10000)
-            if (continuation.context.isActive) continuation.resume(emptyList())
+            if (kotlinx.coroutines.isActive) continuation.resume(emptyList())
         } catch (e: Exception) {
             continuation.resume(emptyList())
         }
