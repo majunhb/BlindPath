@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -26,6 +27,7 @@ class TripAssistViewModelTest {
 
     private lateinit var repository: TripAssistRepository
     private lateinit var viewModel: TripAssistViewModel
+    private val testDispatcher = StandardTestDispatcher()
 
     private val testWeather = WeatherInfo(
         cityName = "北京",
@@ -74,7 +76,7 @@ class TripAssistViewModelTest {
 
     @Before
     fun setup() {
-        Dispatchers.setMain(StandardTestDispatcher())
+        Dispatchers.setMain(testDispatcher)
         repository = mockk(relaxed = true)
         every { repository.tripAssistState } returns flowOf(TripAssistState())
         viewModel = TripAssistViewModel(repository)
@@ -86,61 +88,67 @@ class TripAssistViewModelTest {
     }
 
     @Test
-    fun `switchTab updates activeTab`() = runTest {
+    fun `switchTab updates activeTab`() = runTest(testDispatcher) {
         viewModel.switchTab(TripAssistTab.ROUTE)
+        advanceUntilIdle()
         assertEquals(TripAssistTab.ROUTE, viewModel.uiState.value.activeTab)
     }
 
     @Test
-    fun `fetchAndAnnounceWeather calls repository and announces`() = runTest {
+    fun `fetchAndAnnounceWeather calls repository and announces`() = runTest(testDispatcher) {
         coEvery { repository.getWeather(any(), any()) } returns Result.Success(testWeather)
         coEvery { repository.announceWeather(any()) } returns Result.Success(true)
 
         viewModel.fetchAndAnnounceWeather(39.9, 116.4)
+        advanceUntilIdle()
 
         coVerify { repository.getWeather(39.9, 116.4) }
         coVerify { repository.announceWeather(testWeather) }
     }
 
     @Test
-    fun `fetchWeatherByCity calls repository with city name`() = runTest {
+    fun `fetchWeatherByCity calls repository with city name`() = runTest(testDispatcher) {
         coEvery { repository.getWeatherByCity("上海") } returns Result.Success(testWeather)
         coEvery { repository.announceWeather(any()) } returns Result.Success(true)
 
         viewModel.fetchWeatherByCity("上海")
+        advanceUntilIdle()
 
         coVerify { repository.getWeatherByCity("上海") }
     }
 
     @Test
-    fun `fetchWeatherByCity with blank name does not call repository`() = runTest {
+    fun `fetchWeatherByCity with blank name does not call repository`() = runTest(testDispatcher) {
         viewModel.fetchWeatherByCity("")
+        advanceUntilIdle()
 
         coVerify(exactly = 0) { repository.getWeatherByCity(any()) }
     }
 
     @Test
-    fun `planRouteAndAnnounce validates inputs`() = runTest {
+    fun `planRouteAndAnnounce validates inputs`() = runTest(testDispatcher) {
         viewModel.planRouteAndAnnounce()
+        advanceUntilIdle()
 
         coVerify(exactly = 0) { repository.planRoute(any(), any(), any()) }
     }
 
     @Test
-    fun `planRouteAndAnnounce calls repository with valid inputs`() = runTest {
+    fun `planRouteAndAnnounce calls repository with valid inputs`() = runTest(testDispatcher) {
         coEvery { repository.planRoute(any(), any(), any()) } returns Result.Success(testRoute)
         coEvery { repository.announceRouteOverview(any()) } returns Result.Success(true)
 
         viewModel.originText.value = "天安门"
         viewModel.destinationText.value = "故宫"
         viewModel.planRouteAndAnnounce()
+        advanceUntilIdle()
 
         coVerify { repository.planRoute("天安门", "故宫", TransportMode.SUBWAY) }
         coVerify { repository.announceRouteOverview(testRoute) }
     }
 
     @Test
-    fun `announceNextStep increments step index`() = runTest {
+    fun `announceNextStep increments step index`() = runTest(testDispatcher) {
         // 模拟有当前路线的状态
         every { repository.tripAssistState } returns flowOf(
             TripAssistState(currentRoute = testRoute, currentStepIndex = 0)
@@ -149,12 +157,13 @@ class TripAssistViewModelTest {
 
         val viewModelWithRoute = TripAssistViewModel(repository)
         viewModelWithRoute.announceNextStep()
+        advanceUntilIdle()
 
         coVerify { repository.announceRouteStep(1) }
     }
 
     @Test
-    fun `announcePreviousStep decrements step index`() = runTest {
+    fun `announcePreviousStep decrements step index`() = runTest(testDispatcher) {
         every { repository.tripAssistState } returns flowOf(
             TripAssistState(currentRoute = testRoute, currentStepIndex = 1)
         )
@@ -162,12 +171,13 @@ class TripAssistViewModelTest {
 
         val viewModelWithRoute = TripAssistViewModel(repository)
         viewModelWithRoute.announcePreviousStep()
+        advanceUntilIdle()
 
         coVerify { repository.announceRouteStep(0) }
     }
 
     @Test
-    fun `searchAndAnnounceFacilities calls repository`() = runTest {
+    fun `searchAndAnnounceFacilities calls repository`() = runTest(testDispatcher) {
         val facilities = listOf(
             AccessibleFacility(
                 name = "测试盲道",
@@ -181,27 +191,31 @@ class TripAssistViewModelTest {
         coEvery { repository.announceNearbyFacilities(any()) } returns Result.Success(true)
 
         viewModel.searchAndAnnounceFacilities(39.9, 116.4)
+        advanceUntilIdle()
 
         coVerify { repository.searchNearbyFacilities(39.9, 116.4, any(), any()) }
         coVerify { repository.announceNearbyFacilities(facilities) }
     }
 
     @Test
-    fun `setTransportMode updates selected mode`() = runTest {
+    fun `setTransportMode updates selected mode`() = runTest(testDispatcher) {
         viewModel.setTransportMode(TransportMode.BUS)
+        advanceUntilIdle()
         assertEquals(TransportMode.BUS, viewModel.selectedTransportMode.value)
     }
 
     @Test
-    fun `clearError removes error message`() = runTest {
+    fun `clearError removes error message`() = runTest(testDispatcher) {
         // 模拟有错误的状态
         every { repository.tripAssistState } returns flowOf(
             TripAssistState(error = "测试错误")
         )
         val viewModelWithError = TripAssistViewModel(repository)
+        advanceUntilIdle()
         assertEquals("测试错误", viewModelWithError.uiState.value.error)
 
         viewModelWithError.clearError()
+        advanceUntilIdle()
         assertNull(viewModelWithError.uiState.value.error)
     }
 
