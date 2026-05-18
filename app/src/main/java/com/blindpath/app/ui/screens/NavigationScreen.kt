@@ -38,9 +38,9 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 /**
  * 智能导航界面 - 实景应用级
@@ -88,112 +88,119 @@ fun NavigationScreen(
     }
 
     /**
-     * 获取当前位置坐标（使用高德定位SDK）
+     * 获取当前位置坐标（使用高德定位SDK，带超时）
      */
-    suspend fun getCurrentPosition(): LatLonPoint? = suspendCoroutine { continuation ->
-        try {
-            val client = AMapLocationClient(context)
-            val option = AMapLocationClientOption().apply {
-                locationMode = AMapLocationClientOption.AMapLocationMode.Hight_Accuracy
-                isOnceLocation = true
-                isNeedAddress = false
-            }
-            client.setLocationOption(option)
-            client.setLocationListener(object : AMapLocationListener {
-                override fun onLocationChanged(location: AMapLocation?) {
-                    client.stopLocation()
-                    client.onDestroy()
-                    if (location != null && location.errorCode == 0) {
-                        continuation.resume(LatLonPoint(location.latitude, location.longitude))
-                    } else {
-                        continuation.resume(null)
+    suspend fun getCurrentPosition(): LatLonPoint? {
+        return withTimeoutOrNull(10000L) {
+            suspendCancellableCoroutine { continuation ->
+                try {
+                    val client = AMapLocationClient(context)
+                    val option = AMapLocationClientOption().apply {
+                        locationMode = AMapLocationClientOption.AMapLocationMode.Hight_Accuracy
+                        isOnceLocation = true
+                        isNeedAddress = false
                     }
-                }
-            })
-            client.startLocation()
-            // 10秒超时
-            kotlinx.coroutines.delay(10000)
-            client.stopLocation()
-            client.onDestroy()
-            if (kotlinx.coroutines.isActive) continuation.resume(null)
-        } catch (e: Exception) {
-            continuation.resume(null)
-        }
-    }
-
-    /**
-     * 地理编码：目的地名称 -> 坐标
-     */
-    suspend fun geocodeDestination(destText: String): LatLonPoint? = suspendCoroutine { continuation ->
-        try {
-            val geocodeSearch = GeocodeSearch(context)
-            val query = com.amap.api.services.geocoder.GeocodeSearch.Query(destText, "", "")
-            geocodeSearch.getFromLocationNameAsyn(query, object : GeocodeSearch.OnGeocodeSearchListener {
-                override fun onRegeocodeSearched(result: RegeocodeResult?, errorCode: Int) {}
-                override fun onGeocodeSearched(result: GeocodeResult?, errorCode: Int) {
-                    if (errorCode == 1000 && result != null && result.geocodeAddressList != null && result.geocodeAddressList.isNotEmpty()) {
-                        val point = result.geocodeAddressList[0].latLonPoint
-                        continuation.resume(point)
-                    } else {
-                        continuation.resume(null)
-                    }
-                }
-            })
-            // 8秒超时
-            kotlinx.coroutines.delay(8000)
-            if (kotlinx.coroutines.isActive) continuation.resume(null)
-        } catch (e: Exception) {
-            continuation.resume(null)
-        }
-    }
-
-    /**
-     * 步行路线规划
-     */
-    suspend fun planWalkRoute(origin: LatLonPoint, dest: LatLonPoint): List<NavigationStep> = suspendCoroutine { continuation ->
-        try {
-            val routeSearch = RouteSearch(context)
-            val fromAndTo = RouteSearch.FromAndTo(origin, dest)
-            val query = RouteSearch.WalkRouteQuery(fromAndTo)
-
-            routeSearch.setRouteSearchListener(object : RouteSearch.OnRouteSearchListener {
-                override fun onBusRouteSearched(p0: BusRouteResult?, p1: Int) {}
-                override fun onDriveRouteSearched(p0: DriveRouteResult?, p1: Int) {}
-                override fun onRideRouteSearched(p0: RideRouteResult?, p1: Int) {}
-
-                override fun onWalkRouteSearched(result: WalkRouteResult?, errorCode: Int) {
-                    if (errorCode == 1000 && result != null && result.paths != null && result.paths.isNotEmpty()) {
-                        val path = result.paths[0]
-                        val steps = path.steps
-                        if (steps != null && steps.isNotEmpty()) {
-                            val navSteps = steps.map { step ->
-                                NavigationStep(
-                                    instruction = step.instruction ?: "继续前行",
-                                    distance = "${step.distance.toInt()}米",
-                                    duration = formatDuration(step.duration.toInt()),
-                                    type = parseStepType(step.action),
-                                    road = step.road ?: ""
-                                )
+                    client.setLocationOption(option)
+                    client.setLocationListener(object : AMapLocationListener {
+                        override fun onLocationChanged(location: AMapLocation?) {
+                            client.stopLocation()
+                            client.onDestroy()
+                            if (location != null && location.errorCode == 0) {
+                                continuation.resume(LatLonPoint(location.latitude, location.longitude)) {}
+                            } else {
+                                continuation.resume(null) {}
                             }
-                            totalDistance = "${path.distance.toInt()}米"
-                            totalDuration = formatDuration(path.duration.toInt())
-                            continuation.resume(navSteps)
-                        } else {
-                            continuation.resume(emptyList())
                         }
-                    } else {
-                        continuation.resume(emptyList())
+                    })
+                    client.startLocation()
+                    continuation.invokeOnCancellation {
+                        client.stopLocation()
+                        client.onDestroy()
                     }
+                } catch (e: Exception) {
+                    continuation.resume(null) {}
                 }
-            })
-
-            routeSearch.calculateWalkRouteAsyn(query)
-            // 10秒超时
-            kotlinx.coroutines.delay(10000)
-            if (kotlinx.coroutines.isActive) continuation.resume(emptyList())
-        } catch (e: Exception) {
-            continuation.resume(emptyList())
+            }
         }
+    }
+
+    /**
+     * 地理编码：目的地名称 -> 坐标（带超时）
+     */
+    suspend fun geocodeDestination(destText: String): LatLonPoint? {
+        return withTimeoutOrNull(8000L) {
+            suspendCancellableCoroutine { continuation ->
+                try {
+                    val geocodeSearch = GeocodeSearch(context)
+                    val query = GeocodeSearch.Query(destText, "", "")
+                    geocodeSearch.getFromLocationNameAsyn(query, object : GeocodeSearch.OnGeocodeSearchListener {
+                        override fun onRegeocodeSearched(result: RegeocodeResult?, errorCode: Int) {}
+                        override fun onGeocodeSearched(result: GeocodeResult?, errorCode: Int) {
+                            if (errorCode == 1000 && result != null && result.geocodeAddressList != null && result.geocodeAddressList.isNotEmpty()) {
+                                val point = result.geocodeAddressList[0].latLonPoint
+                                continuation.resume(point) {}
+                            } else {
+                                continuation.resume(null) {}
+                            }
+                        }
+                    })
+                    continuation.invokeOnCancellation {}
+                } catch (e: Exception) {
+                    continuation.resume(null) {}
+                }
+            }
+        }
+    }
+
+    /**
+     * 步行路线规划（带超时）
+     */
+    suspend fun planWalkRoute(origin: LatLonPoint, dest: LatLonPoint): List<NavigationStep> {
+        return withTimeoutOrNull(10000L) {
+            suspendCancellableCoroutine { continuation ->
+                try {
+                    val routeSearch = RouteSearch(context)
+                    val fromAndTo = RouteSearch.FromAndTo(origin, dest)
+                    val query = RouteSearch.WalkRouteQuery(fromAndTo)
+
+                    routeSearch.setRouteSearchListener(object : RouteSearch.OnRouteSearchListener {
+                        override fun onBusRouteSearched(p0: BusRouteResult?, p1: Int) {}
+                        override fun onDriveRouteSearched(p0: DriveRouteResult?, p1: Int) {}
+                        override fun onRideRouteSearched(p0: RideRouteResult?, p1: Int) {}
+
+                        override fun onWalkRouteSearched(result: WalkRouteResult?, errorCode: Int) {
+                            if (errorCode == 1000 && result != null && result.paths != null && result.paths.isNotEmpty()) {
+                                val path = result.paths[0]
+                                val steps = path.steps
+                                if (steps != null && steps.isNotEmpty()) {
+                                    val navSteps = steps.map { step ->
+                                        NavigationStep(
+                                            instruction = step.instruction ?: "继续前行",
+                                            distance = "${step.distance.toInt()}米",
+                                            duration = formatDuration(step.duration.toInt()),
+                                            type = parseStepType(step.action),
+                                            road = step.road ?: ""
+                                        )
+                                    }
+                                    totalDistance = "${path.distance.toInt()}米"
+                                    totalDuration = formatDuration(path.duration.toInt())
+                                    continuation.resume(navSteps) {}
+                                } else {
+                                    continuation.resume(emptyList()) {}
+                                }
+                            } else {
+                                continuation.resume(emptyList()) {}
+                            }
+                        }
+                    })
+
+                    routeSearch.calculateWalkRouteAsyn(query)
+                    continuation.invokeOnCancellation {}
+                } catch (e: Exception) {
+                    continuation.resume(emptyList()) {}
+                }
+            }
+        } ?: emptyList()
     }
 
     fun startNavigation() {
