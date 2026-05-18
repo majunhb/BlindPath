@@ -217,7 +217,7 @@ fun LocationScreen(
                 navigationIcon = {
                     IconButton(onClick = {
                         stopLocation()
-                        voiceRepository.speak("已退出定位", queueMode = false)
+                        scope.launch { voiceRepository.speak("已退出定位", queueMode = false) }
                         onBackClick()
                     }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")

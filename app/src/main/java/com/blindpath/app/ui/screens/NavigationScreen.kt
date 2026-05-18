@@ -132,8 +132,7 @@ fun NavigationScreen(
             suspendCancellableCoroutine { continuation ->
                 try {
                     val geocodeSearch = GeocodeSearch(context)
-                    val query = GeocodeSearch.Query(destText, "", "")
-                    geocodeSearch.getFromLocationNameAsyn(query, object : GeocodeSearch.OnGeocodeSearchListener {
+                    geocodeSearch.setOnGeocodeSearchListener(object : GeocodeSearch.OnGeocodeSearchListener {
                         override fun onRegeocodeSearched(result: RegeocodeResult?, errorCode: Int) {}
                         override fun onGeocodeSearched(result: GeocodeResult?, errorCode: Int) {
                             if (errorCode == 1000 && result != null && result.geocodeAddressList != null && result.geocodeAddressList.isNotEmpty()) {
@@ -144,6 +143,8 @@ fun NavigationScreen(
                             }
                         }
                     })
+                    val query = com.amap.api.services.geocoder.GeocodeQuery(destText, "", "")
+                    geocodeSearch.getFromLocationNameAsyn(query)
                     continuation.invokeOnCancellation {}
                 } catch (e: Exception) {
                     continuation.resume(null) {}
@@ -283,7 +284,7 @@ fun NavigationScreen(
                 navigationIcon = {
                     IconButton(onClick = {
                         isNavigating = false
-                        voiceRepository.speak("导航已退出", queueMode = false)
+                        scope.launch { voiceRepository.speak("导航已退出", queueMode = false) }
                         onBackClick()
                     }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")

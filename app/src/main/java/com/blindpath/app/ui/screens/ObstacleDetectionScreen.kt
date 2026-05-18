@@ -144,7 +144,7 @@ fun ObstacleDetectionScreen(
                 navigationIcon = {
                     IconButton(onClick = {
                         isDetecting = false
-                        voiceRepository.speak("障碍物检测已关闭", queueMode = false)
+                        scope.launch { voiceRepository.speak("障碍物检测已关闭", queueMode = false) }
                         onBackClick()
                     }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -225,7 +225,7 @@ fun ObstacleDetectionScreen(
                                                     )
 
                                                     // AI推理
-                                                    val results = aiDetector.detect(rotatedBitmap)
+                                                    val results = kotlinx.coroutines.runBlocking { aiDetector.detect(rotatedBitmap) }
 
                                                     // 在主线程更新UI
                                                     if (results.isNotEmpty()) {
