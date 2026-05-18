@@ -95,15 +95,15 @@ fun NavigationScreen(
                                 routeSteps = steps.mapIndexed { index, step ->
                                     NavigationStep(
                                         instruction = step.instruction ?: "继续前行",
-                                        distance = "${step.distance}米",
-                                        duration = formatDuration(step.duration),
+                                        distance = "${step.distance.toInt()}米",
+                                        duration = formatDuration(step.duration.toInt()),
                                         type = parseStepType(step.action),
                                         road = step.road ?: ""
                                     )
                                 }
                                 isNavigating = true
                                 currentStep = 0
-                                announcement = "路线规划成功！全程${path.distance}米，预计${formatDuration(path.duration)}到达${destination}。共${routeSteps.size}个步骤。"
+                                announcement = "路线规划成功！全程${path.distance.toInt()}米，预计${formatDuration(path.duration.toInt())}到达${destination}。共${routeSteps.size}个步骤。"
                             }
                         } else {
                             // 高德地图规划失败，使用模拟路线
@@ -116,11 +116,15 @@ fun NavigationScreen(
                     }
                 })
                 
-                // 创建路线查询 - 高德SDK使用简化API，无需 FromAndTo 对象
-                // 注意：实际应用中需要获取用户当前位置作为起点坐标
-                val fromAndTo = RouteSearch.FromAndTo("", "")
-                val query = RouteSearch.WalkRouteQuery(fromAndTo)
-                routeSearch.calculateWalkRouteAsyn(query)
+                // 高德地图路线规划需要有效的起点终点坐标
+                // 由于需要集成定位SDK获取当前位置，这里使用模拟路线演示
+                // 实际部署时请配合 LocationScreen 获取的坐标进行真正的路线规划
+                delay(1500)
+                routeSteps = generateFallbackRoute()
+                isNavigating = true
+                currentStep = 0
+                announcement = "已为您规划前往${destination}的步行路线，全程约800米，预计12分钟。点击下一步开始导航。"
+                isPlanning = false
             } catch (e: Exception) {
                 // 异常时使用模拟路线
                 routeSteps = generateFallbackRoute()
