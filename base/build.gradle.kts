@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.blindpath.base"
+    namespace = "com.blindpath.module_trip_assist"
     compileSdk = 34
 
     defaultConfig {
@@ -30,47 +30,55 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+        freeCompilerArgs += listOf(
+            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
+        )
     }
-    
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
-    }
-    
     buildFeatures {
         compose = true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.5"
     }
 }
 
 dependencies {
+    implementation(project(":base"))
+    implementation(project(":module_voice"))
+
     // Hilt
     implementation("com.google.dagger:hilt-android:2.48")
     ksp("com.google.dagger:hilt-android-compiler:2.48")
-    
-    // WorkManager + Hilt Worker
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
-    implementation("androidx.hilt:hilt-work:1.1.0")
-    ksp("androidx.hilt:hilt-compiler:1.1.0")
-    
-    // Jetpack Compose
-    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
+    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+
+    // Retrofit + OkHttp（天气 API 网络请求）
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // DataStore（本地缓存）
+    implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // Compose
+    implementation(platform("androidx.compose:compose-bom:2023.10.01"))
     implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended:1.5.4")
+
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.appcompat:appcompat:1.6.1")
-    
-    // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-    
-    // TTS & Vibration (基础能力)
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    
-    // Logging
+
+    // Timber
     implementation("com.jakewharton.timber:timber:5.0.1")
-    
+
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.mockk:mockk:1.13.8")
