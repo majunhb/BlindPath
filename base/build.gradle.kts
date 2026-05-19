@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.blindpath.module_trip_assist"
+    namespace = "com.blindpath.base"
     compileSdk = 34
 
     defaultConfig {
