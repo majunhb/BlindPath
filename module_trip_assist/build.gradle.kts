@@ -67,7 +67,6 @@ dependencies {
     implementation(project(":module_voice"))
     implementation(project(":module_settings"))
     implementation(project(":module_community"))
-    implementation(project(":module_trip_assist"))
 
     // ML Kit Image Labeling
     implementation("com.google.mlkit:image-labeling:17.0.7")
