@@ -1,0 +1,414 @@
+package com.blindpath.module_indoor.data
+
+import android.content.Context
+import android.graphics.Bitmap
+import com.blindpath.module_indoor.domain.model.*
+import com.blindpath.module_obstacle.data.detection.AIDetector
+import com.blindpath.module_obstacle.domain.model.BoundingBox
+import com.blindpath.module_obstacle.domain.model.DetectedObstacle
+import com.blindpath.module_obstacle.domain.model.Direction
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.label.ImageLabeling
+import com.google.mlkit.vision.label.defaults.ImageLabelerOptions
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import timber.log.Timber
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * 室内环境检测器
+ * 结合 ML Kit Image Labeling 进行场景识别
+ * 复用 AIDetector 进行障碍物检测
+ */
+@Singleton
+class IndoorDetector @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val aiDetector: AIDetector
+) {
+    private var imageLabeler: com.google.mlkit.vision.label.ImageLabeler? = null
+    private var isLoaded = false
+
+    // ML Kit 标签到房间类型的映射
+    private val labelToRoomType = mapOf(
+        // 客厅相关标签
+        "Living room" to RoomType.LIVING_ROOM,
+        "Furniture" to RoomType.LIVING_ROOM,
+        "Couch" to RoomType.LIVING_ROOM,
+        "Sofa" to RoomType.LIVING_ROOM,
+        "Coffee table" to RoomType.LIVING_ROOM,
+        "Television" to RoomType.LIVING_ROOM,
+        "TV" to RoomType.LIVING_ROOM,
+        "Table" to RoomType.LIVING_ROOM,
+        "Dining table" to RoomType.LIVING_ROOM,
+        "Chair" to RoomType.LIVING_ROOM,
+        "Lamp" to RoomType.LIVING_ROOM,
+        "Floor lamp" to RoomType.LIVING_ROOM,
+
+        // 卧室相关标签
+        "Bedroom" to RoomType.BEDROOM,
+        "Bed" to RoomType.BEDROOM,
+        "Mattress" to RoomType.BEDROOM,
+        "Nightstand" to RoomType.BEDROOM,
+        "Pillow" to RoomType.BEDROOM,
+        "Blanket" to RoomType.BEDROOM,
+        "Wardrobe" to RoomType.BEDROOM,
+
+        // 厨房相关标签
+        "Kitchen" to RoomType.KITCHEN,
+        "Refrigerator" to RoomType.KITCHEN,
+        "Oven" to RoomType.KITCHEN,
+        "Stove" to RoomType.KITCHEN,
+        "Microwave" to RoomType.KITCHEN,
+        "Sink" to RoomType.KITCHEN,
+        "Kitchen appliance" to RoomType.KITCHEN,
+        "Kitchen counter" to RoomType.KITCHEN,
+        "Cupboard" to RoomType.KITCHEN,
+        "Kitchen utensil" to RoomType.KITCHEN,
+        "Countertop" to RoomType.KITCHEN,
+
+        // 卫生间相关标签
+        "Bathroom" to RoomType.BATHROOM,
+        "Toilet" to RoomType.BATHROOM,
+        "Sink" to RoomType.BATHROOM,
+        "Shower" to RoomType.BATHROOM,
+        "Bathtub" to RoomType.BATHROOM,
+        "Mirror" to RoomType.BATHROOM,
+        "Tap" to RoomType.BATHROOM,
+        "Restroom" to RoomType.BATHROOM,
+        "Washbasin" to RoomType.BATHROOM,
+
+        // 阳台相关标签
+        "Balcony" to RoomType.BALCONY,
+        "Terrace" to RoomType.BALCONY,
+        "Patio" to RoomType.BALCONY,
+        "Railing" to RoomType.BALCONY,
+
+        // 走廊相关标签
+        "Hallway" to RoomType.HALLWAY,
+        "Corridor" to RoomType.HALLWAY,
+        "Hall" to RoomType.HALLWAY,
+        "Door" to RoomType.HALLWAY,
+        "Door handle" to RoomType.HALLWAY,
+
+        // 楼梯间相关标签
+        "Stairs" to RoomType.STAIRS,
+        "Staircase" to RoomType.STAIRS,
+        "Stairwell" to RoomType.STAIRS,
+        "Handrail" to RoomType.STAIRS,
+        "Step" to RoomType.STAIRS
+    )
+
+    // COCO 类别到室内障碍物类型的映射
+    private val cocoToIndoorObstacle = mapOf(
+        // 家具类
+        56 to IndoorObstacleType.CHAIR,        // chair
+        57 to IndoorObstacleType.SOFA,         // sofa/couch
+        58 to IndoorObstacleType.TABLE,        // potted plant -> table (fallback)
+        59 to IndoorObstacleType.BED,          // bed
+        60 to IndoorObstacleType.TABLE,        // dining table
+
+        // 其他室内物品
+        62 to IndoorObstacleType.TV,           // tv
+        63 to IndoorObstacleType.REFRIGERATOR, // laptop -> refrigerator (fallback)
+        64 to IndoorObstacleType.WASHING_MACHINE, // mouse -> washing machine (fallback)
+        65 to IndoorObstacleType.CABINET,      // remote -> cabinet (fallback)
+        66 to IndoorObstacleType.TABLE,        // keyboard -> table (fallback)
+        67 to IndoorObstacleType.TV,           // cell phone -> tv (fallback)
+        68 to IndoorObstacleType.REFRIGERATOR, // microwave -> refrigerator (fallback)
+        69 to IndoorObstacleType.REFRIGERATOR, // oven -> refrigerator (fallback)
+        70 to IndoorObstacleType.WASHING_MACHINE, // toaster -> washing machine (fallback)
+        71 to IndoorObstacleType.CABINET,      // sink -> cabinet (fallback)
+        72 to IndoorObstacleType.REFRIGERATOR, // refrigerator
+        73 to IndoorObstacleType.CABINET       // book -> cabinet (fallback)
+    )
+
+    // ML Kit 标签到室内障碍物类型的映射
+    private val mlKitLabelToIndoorObstacle = mapOf(
+        "Chair" to IndoorObstacleType.CHAIR,
+        "Couch" to IndoorObstacleType.SOFA,
+        "Sofa" to IndoorObstacleType.SOFA,
+        "Table" to IndoorObstacleType.TABLE,
+        "Dining table" to IndoorObstacleType.TABLE,
+        "Coffee table" to IndoorObstacleType.TABLE,
+        "Bed" to IndoorObstacleType.BED,
+        "Cabinet" to IndoorObstacleType.CABINET,
+        "Cupboard" to IndoorObstacleType.CABINET,
+        "Wardrobe" to IndoorObstacleType.CABINET,
+        "Door" to IndoorObstacleType.DOOR,
+        "Window" to IndoorObstacleType.WINDOW,
+        "Stairs" to IndoorObstacleType.STAIRS,
+        "Staircase" to IndoorObstacleType.STAIRS,
+        "Television" to IndoorObstacleType.TV,
+        "TV" to IndoorObstacleType.TV,
+        "Refrigerator" to IndoorObstacleType.REFRIGERATOR,
+        "Fridge" to IndoorObstacleType.REFRIGERATOR,
+        "Washing machine" to IndoorObstacleType.WASHING_MACHINE,
+        "Washer" to IndoorObstacleType.WASHING_MACHINE
+    )
+
+    /**
+     * 加载检测模型
+     */
+    suspend fun loadModel(): Boolean {
+        return try {
+            // 1. 加载 AIDetector 模型
+            val aiLoaded = aiDetector.loadModel()
+
+            // 2. 初始化 ML Kit Image Labeler（优化参数）
+            val options = ImageLabelerOptions.Builder()
+                .setConfidenceThreshold(0.3f)  // 降低阈值提高召回率
+                .build()
+            imageLabeler = ImageLabeling.getClient(options)
+
+            isLoaded = aiLoaded
+            Timber.d("IndoorDetector loaded: AI=$aiLoaded, ImageLabeler initialized")
+            isLoaded
+        } catch (e: Exception) {
+            Timber.e(e, "加载室内检测模型失败")
+            isLoaded = false
+            false
+        }
+    }
+
+    /**
+     * 卸载模型
+     */
+    fun unloadModel() {
+        aiDetector.unloadModel()
+        imageLabeler?.close()
+        imageLabeler = null
+        isLoaded = false
+        Timber.d("IndoorDetector unloaded")
+    }
+
+    /**
+     * 检测室内场景和障碍物
+     */
+    suspend fun detect(bitmap: Bitmap): IndoorScene {
+        if (!isLoaded) {
+            return IndoorScene(
+                roomType = RoomType.UNKNOWN,
+                confidence = 0f,
+                obstacles = emptyList()
+            )
+        }
+
+        return withContext(Dispatchers.IO) {
+            try {
+                // 并行执行3个检测任务（原来串行，现在并发）
+                val roomTypeDeferred = async { detectRoomType(bitmap) }
+                val obstaclesDeferred = async { aiDetector.detect(bitmap) }
+                val mlKitObstaclesDeferred = async { detectWithMlKit(bitmap) }
+
+                // 等待所有结果
+                val roomTypeResult = roomTypeDeferred.await()
+                val detectedObstacles = obstaclesDeferred.await()
+                val mlKitObstacles = mlKitObstaclesDeferred.await()
+
+                // 转换和合并
+                val indoorObstacles = detectedObstacles.mapNotNull { convertToIndoorObstacle(it) }
+                val allObstacles = mergeObstacles(indoorObstacles, mlKitObstacles)
+
+                IndoorScene(
+                    roomType = roomTypeResult.first,
+                    confidence = roomTypeResult.second,
+                    obstacles = allObstacles
+                )
+            } catch (e: Exception) {
+                Timber.e(e, "室内检测失败")
+                IndoorScene(
+                    roomType = RoomType.UNKNOWN,
+                    confidence = 0f,
+                    obstacles = emptyList()
+                )
+            }
+        }
+    }
+
+    /**
+     * 使用 ML Kit Image Labeling 识别房间类型
+     */
+    private suspend fun detectRoomType(bitmap: Bitmap): Pair<RoomType, Float> {
+        return try {
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val labels = imageLabeler?.process(image)?.await()
+
+            if (labels.isNullOrEmpty()) {
+                return Pair(RoomType.UNKNOWN, 0f)
+            }
+
+            // 查找匹配的房间类型
+            for (label in labels) {
+                val roomType = labelToRoomType[label.text]
+                if (roomType != null) {
+                    Timber.d("Detected room type: ${label.text} -> ${roomType.chineseName} (${label.confidence})")
+                    return Pair(roomType, label.confidence)
+                }
+            }
+
+            // 如果没有直接匹配，根据标签组合推断
+            val labelTexts = labels.map { it.text.lowercase() }.toSet()
+            val inferredType = inferRoomType(labelTexts)
+
+            Pair(inferredType, labels.firstOrNull()?.confidence ?: 0.5f)
+        } catch (e: Exception) {
+            Timber.e(e, "房间类型识别失败")
+            Pair(RoomType.UNKNOWN, 0f)
+        }
+    }
+
+    /**
+     * 根据标签组合推断房间类型
+     */
+    private fun inferRoomType(labels: Set<String>): RoomType {
+        val labelString = labels.joinToString(" ")
+
+        return when {
+            // 厨房特征
+            labelString.contains("kitchen") ||
+            labelString.contains("refrigerator") ||
+            labelString.contains("oven") ||
+            labelString.contains("stove") ||
+            labelString.contains("microwave") -> RoomType.KITCHEN
+
+            // 卧室特征
+            labelString.contains("bed") ||
+            labelString.contains("bedroom") ||
+            labelString.contains("pillow") ||
+            labelString.contains("blanket") -> RoomType.BEDROOM
+
+            // 卫生间特征
+            labelString.contains("bathroom") ||
+            labelString.contains("toilet") ||
+            labelString.contains("shower") ||
+            labelString.contains("bathtub") -> RoomType.BATHROOM
+
+            // 客厅特征
+            labelString.contains("sofa") ||
+            labelString.contains("couch") ||
+            labelString.contains("tv") ||
+            labelString.contains("television") ||
+            labelString.contains("coffee table") -> RoomType.LIVING_ROOM
+
+            // 楼梯特征
+            labelString.contains("stairs") ||
+            labelString.contains("staircase") ||
+            labelString.contains("handrail") ||
+            labelString.contains("step") -> RoomType.STAIRS
+
+            // 走廊特征
+            labelString.contains("door") ||
+            labelString.contains("door handle") ||
+            labelString.contains("hallway") ||
+            labelString.contains("corridor") -> RoomType.HALLWAY
+
+            // 阳台特征
+            labelString.contains("railing") ||
+            labelString.contains("outdoor") ||
+            labelString.contains("balcony") ||
+            labelString.contains("patio") -> RoomType.BALCONY
+
+            else -> RoomType.UNKNOWN
+        }
+    }
+
+    /**
+     * 将 AIDetector 检测结果转换为室内障碍物
+     */
+    private fun convertToIndoorObstacle(detectedObstacle: DetectedObstacle): DetectedIndoorObstacle? {
+        // 获取 COCO 类别索引（通过反向查找）
+        val obstacleType = when (detectedObstacle.type) {
+            com.blindpath.module_obstacle.domain.model.ObstacleType.CHAIR -> IndoorObstacleType.CHAIR
+            com.blindpath.module_obstacle.domain.model.ObstacleType.SOFA -> IndoorObstacleType.SOFA
+            com.blindpath.module_obstacle.domain.model.ObstacleType.TABLE -> IndoorObstacleType.TABLE
+            com.blindpath.module_obstacle.domain.model.ObstacleType.BED -> IndoorObstacleType.BED
+            com.blindpath.module_obstacle.domain.model.ObstacleType.STAIRS -> IndoorObstacleType.STAIRS
+            else -> null
+        }
+
+        return obstacleType?.let {
+            DetectedIndoorObstacle(
+                type = it,
+                confidence = detectedObstacle.confidence,
+                distance = detectedObstacle.distance,
+                direction = detectedObstacle.direction,
+                boundingBox = detectedObstacle.boundingBox
+            )
+        }
+    }
+
+    /**
+     * 使用 ML Kit 进行额外的室内物品检测
+     */
+    private suspend fun detectWithMlKit(bitmap: Bitmap): List<DetectedIndoorObstacle> {
+        return try {
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val labels = imageLabeler?.process(image)?.await()
+            val results = mutableListOf<DetectedIndoorObstacle>()
+
+            labels?.forEach { label ->
+                val obstacleType = mlKitLabelToIndoorObstacle[label.text]
+                if (obstacleType != null && label.confidence > 0.3f) {
+                    // ML Kit 只提供标签，不提供位置信息
+                    // 这里使用中心位置作为默认值
+                    results.add(
+                        DetectedIndoorObstacle(
+                            type = obstacleType,
+                            confidence = label.confidence,
+                            distance = 2.0f, // 默认距离
+                            direction = Direction.CENTER,
+                            boundingBox = BoundingBox(
+                                left = 0.3f,
+                                top = 0.3f,
+                                right = 0.7f,
+                                bottom = 0.7f
+                            )
+                        )
+                    )
+                }
+            }
+
+            results
+        } catch (e: Exception) {
+            Timber.e(e, "ML Kit 室内物品检测失败")
+            emptyList()
+        }
+    }
+
+    /**
+     * 合并障碍物列表（去重）
+     */
+    private fun mergeObstacles(
+        list1: List<DetectedIndoorObstacle>,
+        list2: List<DetectedIndoorObstacle>
+    ): List<DetectedIndoorObstacle> {
+        val merged = mutableListOf<DetectedIndoorObstacle>()
+        merged.addAll(list1)
+
+        // 添加 list2 中不重复的项目
+        list2.forEach { obstacle2 ->
+            val isDuplicate = list1.any { obstacle1 ->
+                obstacle1.type == obstacle2.type &&
+                kotlin.math.abs(obstacle1.distance - obstacle2.distance) < 0.5f
+            }
+            if (!isDuplicate) {
+                merged.add(obstacle2)
+            }
+        }
+
+        // 按优先级和距离排序
+        return merged.sortedWith(
+            compareByDescending<DetectedIndoorObstacle> { it.type.priority }
+                .thenBy { it.distance }
+        )
+    }
+
+    /**
+     * 检查模型是否已加载
+     */
+    fun isModelLoaded(): Boolean = isLoaded
+}

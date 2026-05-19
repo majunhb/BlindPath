@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 简洁的眼睛/导航图标 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,34C38,34 25,47 25,54C25,61 38,74 54,74C70,74 83,61 83,54C83,47 70,34 54,34ZM54,40C67,40 77,48 77,54C77,60 67,68 54,68C41,68 31,60 31,54C31,48 41,40 54,40Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,46C49,46 45,50 45,54C45,58 49,62 54,62C59,62 63,58 63,54C63,50 59,46 54,46Z"/>
+    <!-- 方向指示箭头 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M78,48L84,54L78,60L78,53L54,53L54,55L78,55Z"/>
+</vector>

@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- 严重级别设置 -->
+    
+    <!-- 正确性问题 - 必须修复 -->
+    <issue id="Correctness" severity="error" />
+    <issue id="Correctness:Messages" severity="error" />
+    
+    <!-- 安全问题 - 必须修复 -->
+    <issue id="Security" severity="error" />
+    
+    <!-- 性能问题 - 警告 -->
+    <issue id="Performance" severity="warning" />
+    
+    <!-- 可用性问题 - 警告 -->
+    <issue id="Usability" severity="warning" />
+    
+    <!-- 无障碍问题 - 警告（视障应用特别重要） -->
+    <issue id="Accessibility" severity="warning" />
+    
+    <!-- 国际化问题 - 警告 -->
+    <issue id="Internationalization" severity="warning" />
+    
+    <!-- 代码风格问题 - 信息 -->
+    <issue id="Typography" severity="informational" />
+    
+    <!-- 忽略的规则 -->
+    <issue id="ObsoleteLintCustomCheck" severity="ignore" />
+    <issue id="GradleCompatible" severity="ignore" />
+    
+    <!-- 自定义规则配置 -->
+    
+    <!-- 禁止硬编码字符串（国际化） -->
+    <issue id="HardcodedText" severity="warning" />
+    
+    <!-- 禁止使用过时 API -->
+    <issue id="Deprecated" severity="warning" />
+    
+    <!-- 检查内存泄漏 -->
+    <issue id="StaticFieldLeak" severity="error" />
+    
+    <!-- 检查权限使用 -->
+    <issue id="MissingPermission" severity="error" />
+    
+    <!-- 检查网络操作在主线程 -->
+    <issue id="NetworkSecurityConfig" severity="warning" />
+    
+    <!-- 检查硬件加速 -->
+    <issue id="HardwareAcceleration" severity="informational" />
+    
+    <!-- 检查 TextView 可点击性 -->
+    <issue id="TextViewEdits" severity="warning" />
+    
+    <!-- 检查资源引用 -->
+    <issue id="ResourceType" severity="error" />
+    
+    <!-- 检查 SQL 注入 -->
+    <issue id="SqlCommand" severity="error" />
+    
+    <!-- 检查 Webview 安全 -->
+    <issue id="WebViewApiAvailability" severity="warning" />
+    
+    <!-- 检查 Intent 安全 -->
+    <issue id="UnsafeIntentLaunch" severity="error" />
+    
+    <!-- 检查文件操作 -->
+    <issue id="WorldReadableFiles" severity="error" />
+    <issue id="WorldWriteableFiles" severity="error" />
+    
+    <!-- 检查日志安全 -->
+    <issue id="LogConditional" severity="warning" />
+    
+    <!-- 检查包可见性 -->
+    <issue id="PackageVisibility" severity="warning" />
+    
+    <!-- 检查 Toast 使用 -->
+    <issue id="ShowToast" severity="informational" />
+    
+    <!-- 视障应用特殊规则 -->
+    
+    <!-- 强制要求内容描述 -->
+    <issue id="ContentDescription" severity="error" />
+    
+    <!-- 强制要求触摸目标大小 -->
+    <issue id="TouchTargetSize" severity="warning" />
+    
+    <!-- 检查文字大小 -->
+    <issue id="SmallSp" severity="warning" />
+    
+    <!-- 检查颜色对比度 -->
+    <issue id="TextContrast" severity="warning" />
+    
+</lint>

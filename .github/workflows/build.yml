@@ -1,0 +1,94 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v2
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # ============================================
+      # 测试阶段
+      # ============================================
+      - name: Run unit tests
+        id: tests
+        continue-on-error: true
+        run: ./gradlew testDebugUnitTest --no-daemon
+
+      - name: Upload test reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            **/build/reports/tests/testDebugUnitTest/
+            **/build/test-results/testDebugUnitTest/
+          retention-days: 14
+
+      # ============================================
+      # 代码质量检查阶段
+      # ============================================
+      - name: Run Android Lint
+        run: ./gradlew lintDebug --no-daemon
+
+      - name: Upload Lint reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-reports
+          path: |
+            **/build/reports/lint-results*.html
+            **/build/reports/lint-results*.xml
+          retention-days: 14
+
+      # ============================================
+      # 构建阶段
+      # ============================================
+      - name: Build with Gradle
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: app-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+
+      # ============================================
+      # 构建失败通知
+      # ============================================
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "Build failed! Check the test reports and lint reports for details."

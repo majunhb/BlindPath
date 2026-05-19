@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/google_maps_key,@string/amp_api_key">
+    
+    <!-- 
+    资源压缩配置
+    启用资源压缩后，通过此文件保留必要资源
+    -->
+    
+</resources>
