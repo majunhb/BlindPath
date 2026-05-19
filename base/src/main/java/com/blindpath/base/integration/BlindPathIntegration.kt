@@ -2,14 +2,12 @@ package com.blindpath.base.integration
 
 import android.content.Context
 import com.blindpath.base.accessibility.AccessibilitySettings
-import com.blindpath.base.accessibility.FontSizeScale
 import com.blindpath.base.analytics.AnalyticsManager
 import com.blindpath.base.cache.CacheManager
 import com.blindpath.base.config.AppConfig
 import com.blindpath.base.error.BlindPathError
 import com.blindpath.base.error.DegradationManager
-import com.blindpath.base.error.DegradationLevel
-import com.blindpath.base.i18n.Language
+import com.blindpath.base.error.DegradationManager.DegradationLevel
 import com.blindpath.base.i18n.LanguageManager
 import com.blindpath.base.network.NetworkMonitor
 import com.blindpath.base.offline.ModelPreloader
@@ -42,6 +40,11 @@ object BlindPathIntegration {
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var isInitialized = false
     
+    private lateinit var accessibilitySettings: AccessibilitySettings
+    private lateinit var languageManager: LanguageManager
+    private lateinit var permissionManager: PermissionManager
+    private lateinit var privacyManager: PrivacyManager
+    
     /**
      * 初始化所有集成组件
      */
@@ -62,19 +65,19 @@ object BlindPathIntegration {
             Timber.d("CacheManager initialized")
             
             // 3. 初始化语言管理器
-            LanguageManager.initialize(context)
+            languageManager = LanguageManager(context)
             Timber.d("LanguageManager initialized")
             
             // 4. 初始化无障碍设置
-            AccessibilitySettings.initialize(context)
+            accessibilitySettings = AccessibilitySettings(context)
             Timber.d("AccessibilitySettings initialized")
             
             // 5. 初始化权限管理器
-            PermissionManager.initialize(context)
+            permissionManager = PermissionManager(context)
             Timber.d("PermissionManager initialized")
             
             // 6. 初始化隐私管理器
-            PrivacyManager.initialize(context)
+            privacyManager = PrivacyManager(context)
             Timber.d("PrivacyManager initialized")
             
             // 7. 初始化网络监控
@@ -105,7 +108,7 @@ object BlindPathIntegration {
             // 记录启动事件
             AnalyticsManager.logEvent("app_started", mapOf(
                 "version" to AppConfig.App.VERSION_NAME,
-                "language" to LanguageManager.currentLanguage.value.code
+                "language" to languageManager.selectedLanguage.code
             ))
             
             Result.success(true)
@@ -124,16 +127,19 @@ object BlindPathIntegration {
                 when {
                     !status.isConnected -> {
                         Timber.w("Network disconnected, entering offline mode")
-                        DegradationManager.degrade(DegradationLevel.OFFLINE)
+                        DegradationManager.setDegradationLevel(
+                            DegradationManager.Feature.NETWORK,
+                            DegradationLevel.OFFLINE
+                        )
                         
                         AnalyticsManager.logEvent("network_offline", mapOf(
                             "was_wifi" to status.isWifi,
                             "was_cellular" to status.isCellular
                         ))
                     }
-                    status.isConnected && DegradationManager.currentLevel.value == DegradationLevel.OFFLINE -> {
+                    status.isConnected && DegradationManager.getDegradationLevel(DegradationManager.Feature.NETWORK) == DegradationLevel.OFFLINE -> {
                         Timber.i("Network restored, exiting offline mode")
-                        DegradationManager.promote(DegradationLevel.NORMAL)
+                        DegradationManager.restoreFeature(DegradationManager.Feature.NETWORK)
                         
                         AnalyticsManager.logEvent("network_restored", mapOf(
                             "is_wifi" to status.isWifi,
@@ -154,7 +160,10 @@ object BlindPathIntegration {
                 when {
                     state.level <= AppConfig.Power.CRITICAL_BATTERY_THRESHOLD -> {
                         Timber.w("Critical battery level: ${state.level}%")
-                        DegradationManager.degrade(DegradationLevel.MINIMAL)
+                        DegradationManager.setDegradationLevel(
+                            DegradationManager.Feature.AI_DETECTION,
+                            DegradationLevel.DISABLED
+                        )
                         
                         AnalyticsManager.logEvent("battery_critical", mapOf(
                             "level" to state.level
@@ -162,7 +171,10 @@ object BlindPathIntegration {
                     }
                     state.level <= AppConfig.Power.LOW_BATTERY_THRESHOLD -> {
                         Timber.i("Low battery level: ${state.level}%")
-                        DegradationManager.degrade(DegradationLevel.LOW_POWER)
+                        DegradationManager.setDegradationLevel(
+                            DegradationManager.Feature.AI_DETECTION,
+                            DegradationLevel.REDUCED
+                        )
                         
                         AnalyticsManager.logEvent("battery_low", mapOf(
                             "level" to state.level
@@ -170,7 +182,7 @@ object BlindPathIntegration {
                     }
                     state.isCharging -> {
                         Timber.i("Device charging, restoring normal mode")
-                        DegradationManager.promote(DegradationLevel.NORMAL)
+                        DegradationManager.restoreFeature(DegradationManager.Feature.AI_DETECTION)
                     }
                 }
             }
@@ -203,7 +215,7 @@ object BlindPathIntegration {
             PermissionManager.Permission.PHONE
         )
         
-        return required.filter { !PermissionManager.isGranted(it) }
+        return required.filter { !permissionManager.isGranted(it) }
     }
     
     /**
@@ -212,13 +224,13 @@ object BlindPathIntegration {
     fun getStatusSummary(): StatusSummary {
         return StatusSummary(
             isInitialized = isInitialized,
-            degradationLevel = DegradationManager.currentLevel.value,
+            degradationLevel = DegradationManager.getDegradationLevel(DegradationManager.Feature.AI_DETECTION),
             batteryLevel = PowerManager.batteryState.value.level,
             isCharging = PowerManager.batteryState.value.isCharging,
             isNetworkConnected = NetworkMonitor.networkStatus.value.isConnected,
-            currentLanguage = LanguageManager.currentLanguage.value,
-            fontSizeScale = AccessibilitySettings.fontSizeScale.value,
-            isHighContrastEnabled = AccessibilitySettings.highContrastEnabled.value,
+            currentLanguage = languageManager.selectedLanguage,
+            fontSizeScale = accessibilitySettings.fontScale,
+            isHighContrastEnabled = accessibilitySettings.isHighContrastEnabled,
             isPerformanceOptimal = PerformanceMonitor.getReport().averageFrameTimeMs < 33
         )
     }
@@ -232,8 +244,8 @@ object BlindPathIntegration {
         val batteryLevel: Int,
         val isCharging: Boolean,
         val isNetworkConnected: Boolean,
-        val currentLanguage: Language,
-        val fontSizeScale: FontSizeScale,
+        val currentLanguage: LanguageManager.Language,
+        val fontSizeScale: Float,
         val isHighContrastEnabled: Boolean,
         val isPerformanceOptimal: Boolean
     )
