@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="8dp"
+    android:background="#80000000">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="智行助盲"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="8dp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <ImageButton
+            android:id="@+id/btn_detection"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:layout_margin="4dp"
+            android:background="#4CAF50"
+            android:src="@android:drawable/ic_menu_camera"
+            android:contentDescription="障碍物检测"
+            android:scaleType="centerInside" />
+
+        <ImageButton
+            android:id="@+id/btn_sos"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:layout_margin="4dp"
+            android:background="#F44336"
+            android:src="@android:drawable/ic_menu_call"
+            android:contentDescription="SOS紧急求助"
+            android:scaleType="centerInside" />
+
+        <ImageButton
+            android:id="@+id/btn_navigation"
+            android:layout_width="60dp"
+            android:layout_height="60dp"
+            android:layout_margin="4dp"
+            android:background="#2196F3"
+            android:src="@android:drawable/ic_menu_directions"
+            android:contentDescription="快速导航"
+            android:scaleType="centerInside" />
+
+    </LinearLayout>
+
+</LinearLayout>
