@@ -1,7 +1,6 @@
 package com.blindpath.base.error
 
 import android.content.Context
-import com.blindpath.base.R
 import timber.log.Timber
 
 /**
