@@ -1,1 +1,27 @@
-config/detekt/detekt.yml
+complexity:
+  LongMethod:
+    threshold: 60
+  LongParameterList:
+    threshold: 6
+  LargeClass:
+    threshold: 600
+
+style:
+  MaxLineLength:
+    maxLineLength: 120
+
+exceptions:
+  TooGenericExceptionCaught:
+    active: true
+
+empty-blocks:
+  EmptyCatchBlock:
+    active: true
+  EmptyFunctionBlock:
+    active: true
+    ignoreOverridden: true
+
+formatting:
+  autoCorrect: true
+  Indentation:
+    indentSize: 4
