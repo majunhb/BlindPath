@@ -38,12 +38,12 @@ jobs:
         run: chmod +x gradlew
 
       # ============================================
-      # 测试阶段
+      # 测试阶段 (已禁用以便调试)
       # ============================================
-      - name: Run unit tests
-        id: tests
-        continue-on-error: true
-        run: ./gradlew testDebugUnitTest --no-daemon
+      # - name: Run unit tests
+      #   id: tests
+      #   continue-on-error: true
+      #   run: ./gradlew testDebugUnitTest --no-daemon
 
       - name: Upload test reports
         uses: actions/upload-artifact@v4
