@@ -64,6 +64,11 @@ dependencies {
     // DataStore（本地缓存）
     implementation("androidx.datastore:datastore-preferences:1.0.0")
 
+    // Room 数据库
+    implementation("androidx.room:room-runtime:2.6.1")
+    implementation("androidx.room:room-ktx:2.6.1")
+    ksp("androidx.room:room-compiler:2.6.1")
+
     // Compose
     implementation(platform("androidx.compose:compose-bom:2023.10.01"))
     implementation("androidx.compose.ui:ui")

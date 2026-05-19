@@ -134,10 +134,10 @@ object AppConfig {
     
     object Debug {
         /** 是否启用详细日志 */
-        const val VERBOSE_LOGGING = BuildConfig.DEBUG
+        const val VERBOSE_LOGGING = false
         
         /** 是否启用性能监控 */
-        const val ENABLE_PERFORMANCE_MONITORING = BuildConfig.DEBUG
+        const val ENABLE_PERFORMANCE_MONITORING = false
         
         /** 是否显示检测框（调试用） */
         const val SHOW_DETECTION_BOXES = false

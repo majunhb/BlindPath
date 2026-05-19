@@ -9,7 +9,7 @@ import kotlinx.coroutines.withTimeout
  * 协程工具扩展函数
  */
 
-private const val TAG = "CoroutineUtils"
+internal const val COROUTINE_UTILS_TAG = "CoroutineUtils"
 
 /**
  * 安全执行协程，返回 Result 类型
@@ -20,7 +20,7 @@ suspend inline fun <T> safeSuspend(
     return try {
         Result.Success(block())
     } catch (e: Exception) {
-        BlindPathLog.e(TAG, mapOf(
+        BlindPathLog.e(COROUTINE_UTILS_TAG, mapOf(
             "event" to "safe_suspend_error",
             "error" to (e.message ?: "unknown")
         ), e)
@@ -40,13 +40,13 @@ suspend inline fun <T> safeSuspendWithTimeout(
             block()
         }.let { Result.Success(it) }
     } catch (e: TimeoutCancellationException) {
-        BlindPathLog.w(TAG, mapOf(
+        BlindPathLog.w(COROUTINE_UTILS_TAG, mapOf(
             "event" to "timeout",
             "timeout_ms" to timeoutMs
         ))
         Result.Error(message = "Operation timed out after ${timeoutMs}ms")
     } catch (e: Exception) {
-        BlindPathLog.e(TAG, mapOf(
+        BlindPathLog.e(COROUTINE_UTILS_TAG, mapOf(
             "event" to "safe_suspend_error",
             "error" to (e.message ?: "unknown")
         ), e)
@@ -71,7 +71,7 @@ suspend inline fun <T> retrySuspend(
             return Result.Success(block())
         } catch (e: Exception) {
             lastException = e
-            BlindPathLog.w(TAG, mapOf(
+            BlindPathLog.w(COROUTINE_UTILS_TAG, mapOf(
                 "event" to "retry_attempt",
                 "attempt" to (attempt + 1),
                 "max_attempts" to times,
