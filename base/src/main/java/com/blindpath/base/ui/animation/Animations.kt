@@ -272,14 +272,14 @@ object PageTransitions {
     /**
      * 淡入淡出过渡
      */
-    fun fadeInOut(): EnterExitTransition {
+    fun fadeInOut(): ContentTransform {
         return fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
     }
     
     /**
      * 滑动过渡
      */
-    fun slideHorizontally(): EnterExitTransition {
+    fun slideHorizontally(): ContentTransform {
         return slideInHorizontally(
             animationSpec = tween(300, easing = FastOutSlowInEasing),
             initialOffsetX = { fullWidth -> fullWidth / 2 }
@@ -292,7 +292,7 @@ object PageTransitions {
     /**
      * 缩放过渡
      */
-    fun scaleInOut(): EnterExitTransition {
+    fun scaleInOut(): ContentTransform {
         return scaleIn(
             animationSpec = tween(300),
             initialScale = 0.9f
@@ -305,7 +305,7 @@ object PageTransitions {
     /**
      * 组合过渡（淡入 + 滑动）
      */
-    fun combinedTransition(): EnterExitTransition {
+    fun combinedTransition(): ContentTransform {
         return fadeIn(animationSpec = tween(300)) + slideInVertically(
             animationSpec = tween(300),
             initialOffsetY = { it / 4 }
