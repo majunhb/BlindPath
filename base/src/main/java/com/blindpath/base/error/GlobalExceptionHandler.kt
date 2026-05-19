@@ -170,7 +170,9 @@ class BlindPathCoroutineExceptionHandler(
     private val onError: (Throwable) -> Unit = { Timber.e(it, "Coroutine error") }
 ) : kotlin.coroutines.CoroutineExceptionHandler {
     
-    override val key: kotlin.coroutines.CoroutineContext.Key<*> = kotlin.coroutines.CoroutineExceptionHandler.Key
+    @Suppress("UNCHECKED_CAST")
+    override val key: kotlin.coroutines.CoroutineContext.Key<kotlin.coroutines.CoroutineExceptionHandler> = 
+        kotlin.coroutines.CoroutineExceptionHandler.Key as kotlin.coroutines.CoroutineContext.Key<kotlin.coroutines.CoroutineExceptionHandler>
     
     override fun handleException(context: kotlin.coroutines.CoroutineContext, exception: Throwable) {
         Timber.e(exception, "Coroutine uncaught exception")
