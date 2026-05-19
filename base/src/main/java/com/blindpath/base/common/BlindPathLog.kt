@@ -34,6 +34,21 @@ import timber.log.Timber
  */
 object BlindPathLog {
 
+    // ============ 初始化 ============
+    
+    private var isInitialized = false
+    
+    /**
+     * 初始化日志系统
+     * 在应用启动时调用
+     */
+    fun init(context: android.content.Context) {
+        if (isInitialized) return
+        isInitialized = true
+        // Timber 初始化由 Application 完成
+        i("BlindPathLog", mapOf("event" to "initialized"))
+    }
+
     // ============ 模块标签 ============
     
     const val TAG_OBSTACLE = "Obstacle"

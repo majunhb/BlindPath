@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.blindpath.base.config.AppConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
@@ -275,8 +276,8 @@ class ModelPreloader private constructor(
                 val file = copyModelFromAssets().getOrThrow()
                 file
             }.recoverCatching {
-                // 如果assets没有，尝试下载
-                downloadModel().getOrThrow()
+                // 如果assets没有，尝试下载（使用 runBlocking 调用挂起函数）
+                runBlocking { downloadModel().getOrThrow() }
             }
             
             onComplete(result)

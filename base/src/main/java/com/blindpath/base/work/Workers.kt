@@ -197,37 +197,4 @@ class ModelUpdateWorker @AssistedInject constructor(
     }
 }
 
-/**
- * 后台任务调度器
- * 统一管理所有 WorkManager 任务
- */
-object WorkScheduler {
-    
-    private const val TAG = "WorkScheduler"
-    
-    /**
-     * 初始化所有定期任务
-     */
-    fun initialize(context: Context) {
-        BlindPathLog.i(TAG, mapOf("event" to "initializing_workers"))
-        
-        // 数据清理 - 每天执行
-        DataCleanupWorker.schedule(context)
-        
-        // 使用统计 - 每6小时
-        UsageStatsWorker.schedule(context)
-        
-        // 模型更新检查 - 每周
-        ModelUpdateWorker.schedule(context)
-        
-        BlindPathLog.i(TAG, mapOf("event" to "workers_initialized"))
-    }
-    
-    /**
-     * 取消所有任务
-     */
-    fun cancelAll(context: Context) {
-        WorkManager.getInstance(context).cancelAllWork()
-        BlindPathLog.i(TAG, mapOf("event" to "all_workers_cancelled"))
-    }
-}
+// WorkScheduler 已在 WorkScheduler.kt 中定义
