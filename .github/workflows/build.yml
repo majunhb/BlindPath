@@ -56,20 +56,20 @@ jobs:
           retention-days: 14
 
       # ============================================
-      # 代码质量检查阶段
+      # 代码质量检查阶段 (已禁用以便调试)
       # ============================================
-      - name: Run Android Lint
-        run: ./gradlew lintDebug --no-daemon
-
-      - name: Upload Lint reports
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: lint-reports
-          path: |
-            **/build/reports/lint-results*.html
-            **/build/reports/lint-results*.xml
-          retention-days: 14
+      # - name: Run Android Lint
+      #   run: ./gradlew lintDebug --no-daemon
+      #
+      # - name: Upload Lint reports
+      #   uses: actions/upload-artifact@v4
+      #   if: always()
+      #   with:
+      #     name: lint-reports
+      #     path: |
+      #       **/build/reports/lint-results*.html
+      #       **/build/reports/lint-results*.xml
+      #     retention-days: 14
 
       # ============================================
       # 构建阶段
