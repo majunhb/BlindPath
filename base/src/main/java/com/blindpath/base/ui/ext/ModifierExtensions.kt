@@ -8,7 +8,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -44,7 +44,8 @@ fun Modifier.shadow(
                 0f,
                 size.width,
                 size.height,
-                CornerRadius(borderRadius.toPx(), borderRadius.toPx()),
+                borderRadius.toPx(),
+                borderRadius.toPx(),
                 paint
             )
         }
