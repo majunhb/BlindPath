@@ -55,7 +55,7 @@ class BlindPathInitializer : Initializer<Unit> {
     
     private fun initCoreComponents(context: Context) {
         // 核心组件同步初始化
-        PerformanceMonitor.initialize(context)
+        PerformanceMonitor.getInstance(context)
     }
     
     private fun initNonCriticalComponents(context: Context) {
@@ -63,7 +63,7 @@ class BlindPathInitializer : Initializer<Unit> {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 // 缓存管理
-                CacheManager.initialize(context)
+                CacheManager.getInstance(context)
                 
                 // 快捷方式
                 AppShortcutsManager.updateShortcuts(context)
@@ -72,7 +72,7 @@ class BlindPathInitializer : Initializer<Unit> {
                 WorkScheduler.initialize(context)
                 
                 // 分析
-                AnalyticsManager.initialize(context)
+                AnalyticsManager.getInstance(context).initializeSession()
                 
                 BlindPathLog.i("Startup", mapOf("event" to "non_critical_initialized"))
             } catch (e: Exception) {
@@ -90,7 +90,7 @@ class BlindPathInitializer : Initializer<Unit> {
  */
 class PerformanceInitializer : Initializer<Unit> {
     override fun create(context: Context) {
-        PerformanceMonitor.initialize(context)
+        PerformanceMonitor.getInstance(context)
     }
     
     override fun dependencies(): List<Class<out Initializer<*>>> {
