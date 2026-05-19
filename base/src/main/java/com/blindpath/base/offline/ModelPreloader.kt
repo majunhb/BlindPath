@@ -270,13 +270,13 @@ class ModelPreloader private constructor(
             return
         }
         
-        // 先尝试从assets复制
+        // 先尝试从assets复制，然后尝试下载
         Thread {
             val result = runCatching {
-                val file = copyModelFromAssets().getOrThrow()
-                file
+                // 使用 runBlocking 调用挂起函数
+                runBlocking { copyModelFromAssets().getOrThrow() }
             }.recoverCatching {
-                // 如果assets没有，尝试下载（使用 runBlocking 调用挂起函数）
+                // 如果assets没有，尝试下载
                 runBlocking { downloadModel().getOrThrow() }
             }
             
