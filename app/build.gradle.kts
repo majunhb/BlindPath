@@ -20,7 +20,7 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-        // 高德 10.x+ SDK 仅支持 armeabi-v7a 和 arm64-v8a
+        // 高德 10.x+ SDK 仅支�?armeabi-v7a �?arm64-v8a
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
@@ -46,13 +46,13 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.5"
+        kotlinCompilerExtensionVersion = "1.5.6"
     }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-        // 防止高德SDK的.so文件打包冲突
+        // 防止高德SDK�?so文件打包冲突
         jniLibs {
             useLegacyPackaging = true
         }
