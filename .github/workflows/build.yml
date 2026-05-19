@@ -38,7 +38,7 @@ jobs:
       # 构建阶段 (跳过测试和lint以便快速验证)
       # ============================================
       - name: Build with Gradle
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
