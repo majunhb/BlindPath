@@ -43,7 +43,6 @@ android {
 }
 
 dependencies {
-    implementation(project(":base"))
     implementation(project(":module_voice"))
 
     // Hilt
