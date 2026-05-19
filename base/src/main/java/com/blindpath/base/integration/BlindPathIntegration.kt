@@ -44,6 +44,8 @@ object BlindPathIntegration {
     private lateinit var languageManager: LanguageManager
     private lateinit var permissionManager: PermissionManager
     private lateinit var privacyManager: PrivacyManager
+    private lateinit var networkMonitor: NetworkMonitor
+    private lateinit var powerManager: PowerManager
     
     /**
      * 初始化所有集成组件
@@ -57,11 +59,11 @@ object BlindPathIntegration {
             Timber.i("Initializing BlindPath integration components...")
             
             // 1. 初始化安全存储
-            SecureStorage.initialize(context)
+            SecureStorage.initializeKey(context)
             Timber.d("SecureStorage initialized")
             
-            // 2. 初始化缓存管理器
-            CacheManager.initialize(context)
+            // 2. 获取缓存管理器实例
+            val cacheManager = CacheManager.getInstance(context)
             Timber.d("CacheManager initialized")
             
             // 3. 初始化语言管理器
@@ -81,35 +83,29 @@ object BlindPathIntegration {
             Timber.d("PrivacyManager initialized")
             
             // 7. 初始化网络监控
-            NetworkMonitor.initialize(context)
+            networkMonitor = NetworkMonitor(context)
             startNetworkMonitoring()
             Timber.d("NetworkMonitor initialized")
             
             // 8. 初始化电量管理
-            PowerManager.initialize(context)
+            powerManager = PowerManager(context)
             startPowerMonitoring()
             Timber.d("PowerManager initialized")
             
-            // 9. 初始化模型预加载器
-            ModelPreloader.initialize(context)
+            // 9. 获取模型预加载器实例
+            val modelPreloader = ModelPreloader.getInstance(context)
             Timber.d("ModelPreloader initialized")
             
-            // 10. 初始化性能监控
-            PerformanceMonitor.initialize()
+            // 10. 获取性能监控实例
+            val performanceMonitor = PerformanceMonitor.getInstance()
             Timber.d("PerformanceMonitor initialized")
             
             // 11. 初始化分析管理器
-            AnalyticsManager.initialize(context)
+            AnalyticsManager.initializeSession(context)
             Timber.d("AnalyticsManager initialized")
             
             isInitialized = true
             Timber.i("All integration components initialized successfully")
-            
-            // 记录启动事件
-            AnalyticsManager.logEvent("app_started", mapOf(
-                "version" to AppConfig.App.VERSION_NAME,
-                "language" to languageManager.selectedLanguage.code
-            ))
             
             Result.success(true)
         } catch (e: Exception) {
@@ -123,7 +119,7 @@ object BlindPathIntegration {
      */
     private fun startNetworkMonitoring() {
         scope.launch {
-            NetworkMonitor.networkStatus.collectLatest { status ->
+            networkMonitor.networkStatus.collectLatest { status ->
                 when {
                     !status.isConnected -> {
                         Timber.w("Network disconnected, entering offline mode")
@@ -131,20 +127,10 @@ object BlindPathIntegration {
                             DegradationManager.Feature.NETWORK,
                             DegradationLevel.OFFLINE
                         )
-                        
-                        AnalyticsManager.logEvent("network_offline", mapOf(
-                            "was_wifi" to status.isWifi,
-                            "was_cellular" to status.isCellular
-                        ))
                     }
                     status.isConnected && DegradationManager.getDegradationLevel(DegradationManager.Feature.NETWORK) == DegradationLevel.OFFLINE -> {
                         Timber.i("Network restored, exiting offline mode")
                         DegradationManager.restoreFeature(DegradationManager.Feature.NETWORK)
-                        
-                        AnalyticsManager.logEvent("network_restored", mapOf(
-                            "is_wifi" to status.isWifi,
-                            "is_cellular" to status.isCellular
-                        ))
                     }
                 }
             }
@@ -156,7 +142,7 @@ object BlindPathIntegration {
      */
     private fun startPowerMonitoring() {
         scope.launch {
-            PowerManager.batteryState.collectLatest { state ->
+            powerManager.batteryState.collectLatest { state ->
                 when {
                     state.level <= AppConfig.Power.CRITICAL_BATTERY_THRESHOLD -> {
                         Timber.w("Critical battery level: ${state.level}%")
@@ -164,10 +150,6 @@ object BlindPathIntegration {
                             DegradationManager.Feature.AI_DETECTION,
                             DegradationLevel.DISABLED
                         )
-                        
-                        AnalyticsManager.logEvent("battery_critical", mapOf(
-                            "level" to state.level
-                        ))
                     }
                     state.level <= AppConfig.Power.LOW_BATTERY_THRESHOLD -> {
                         Timber.i("Low battery level: ${state.level}%")
@@ -175,10 +157,6 @@ object BlindPathIntegration {
                             DegradationManager.Feature.AI_DETECTION,
                             DegradationLevel.REDUCED
                         )
-                        
-                        AnalyticsManager.logEvent("battery_low", mapOf(
-                            "level" to state.level
-                        ))
                     }
                     state.isCharging -> {
                         Timber.i("Device charging, restoring normal mode")
@@ -192,10 +170,10 @@ object BlindPathIntegration {
     /**
      * 预加载 AI 模型
      */
-    suspend fun preloadModels(): Result<Boolean> {
+    suspend fun preloadModels(context: Context): Result<Boolean> {
         return try {
             Timber.i("Preloading AI models...")
-            ModelPreloader.preloadAll()
+            ModelPreloader.getInstance(context).preloadAll()
             Timber.i("AI models preloaded successfully")
             Result.success(true)
         } catch (e: Exception) {
@@ -225,13 +203,13 @@ object BlindPathIntegration {
         return StatusSummary(
             isInitialized = isInitialized,
             degradationLevel = DegradationManager.getDegradationLevel(DegradationManager.Feature.AI_DETECTION),
-            batteryLevel = PowerManager.batteryState.value.level,
-            isCharging = PowerManager.batteryState.value.isCharging,
-            isNetworkConnected = NetworkMonitor.networkStatus.value.isConnected,
+            batteryLevel = powerManager.batteryState.value.level,
+            isCharging = powerManager.batteryState.value.isCharging,
+            isNetworkConnected = networkMonitor.networkStatus.value.isConnected,
             currentLanguage = languageManager.selectedLanguage,
             fontSizeScale = accessibilitySettings.fontScale,
             isHighContrastEnabled = accessibilitySettings.isHighContrastEnabled,
-            isPerformanceOptimal = PerformanceMonitor.getReport().averageFrameTimeMs < 33
+            isPerformanceOptimal = PerformanceMonitor.getInstance().getReport().averageFrameTimeMs < 33
         )
     }
     
@@ -255,8 +233,8 @@ object BlindPathIntegration {
      */
     fun release() {
         try {
-            CacheManager.clearExpired()
-            PerformanceMonitor.release()
+            CacheManager.getInstance().clearExpired()
+            PerformanceMonitor.getInstance().release()
             Timber.i("BlindPath integration resources released")
         } catch (e: Exception) {
             Timber.e(e, "Error releasing integration resources")

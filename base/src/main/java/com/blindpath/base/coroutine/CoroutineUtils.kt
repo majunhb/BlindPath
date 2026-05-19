@@ -9,7 +9,7 @@ import kotlinx.coroutines.withTimeout
  * 协程工具扩展函数
  */
 
-internal const val COROUTINE_UTILS_TAG = "CoroutineUtils"
+const val COROUTINE_UTILS_TAG = "CoroutineUtils"
 
 /**
  * 安全执行协程，返回 Result 类型
