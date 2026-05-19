@@ -166,11 +166,11 @@ class GlobalExceptionHandler(
  * 协程异常处理器
  * 用于捕获协程中的未处理异常
  */
-class CoroutineExceptionHandler(
+class BlindPathCoroutineExceptionHandler(
     private val onError: (Throwable) -> Unit = { Timber.e(it, "Coroutine error") }
 ) : kotlin.coroutines.CoroutineExceptionHandler {
     
-    override val key = kotlin.coroutines.CoroutineExceptionHandler.Key
+    override val key: kotlin.coroutines.CoroutineContext.Key<*> = kotlin.coroutines.CoroutineExceptionHandler.Key
     
     override fun handleException(context: kotlin.coroutines.CoroutineContext, exception: Throwable) {
         Timber.e(exception, "Coroutine uncaught exception")
@@ -181,8 +181,8 @@ class CoroutineExceptionHandler(
         /**
          * 创建一个协程异常处理器
          */
-        fun create(onError: (Throwable) -> Unit = {}): CoroutineExceptionHandler {
-            return CoroutineExceptionHandler(onError)
+        fun create(onError: (Throwable) -> Unit = {}): BlindPathCoroutineExceptionHandler {
+            return BlindPathCoroutineExceptionHandler(onError)
         }
     }
 }

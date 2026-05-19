@@ -12,13 +12,13 @@ sealed class BlindPathError : Throwable() {
     data class ModelLoadError(
         override val message: String,
         val modelName: String? = null,
-        val cause: Throwable? = null
+        override val cause: Throwable? = null
     ) : BlindPathError()
     
     /** AI 推理失败 */
     data class InferenceError(
         override val message: String,
-        val cause: Throwable? = null
+        override val cause: Throwable? = null
     ) : BlindPathError()
     
     /** 模型文件缺失 */
@@ -38,7 +38,7 @@ sealed class BlindPathError : Throwable() {
     /** 摄像头初始化失败 */
     data class CameraInitError(
         override val message: String = "摄像头初始化失败",
-        val cause: Throwable? = null
+        override val cause: Throwable? = null
     ) : BlindPathError()
     
     /** 摄像头被占用 */
@@ -68,7 +68,7 @@ sealed class BlindPathError : Throwable() {
     /** 定位失败 */
     data class LocationError(
         override val message: String = "获取位置失败",
-        val cause: Throwable? = null
+        override val cause: Throwable? = null
     ) : BlindPathError()
     
     // ==================== 语音相关错误 ====================
@@ -76,7 +76,7 @@ sealed class BlindPathError : Throwable() {
     /** TTS 初始化失败 */
     data class TtsInitError(
         override val message: String = "语音引擎初始化失败",
-        val cause: Throwable? = null
+        override val cause: Throwable? = null
     ) : BlindPathError()
     
     /** TTS 语言不支持 */
@@ -89,7 +89,7 @@ sealed class BlindPathError : Throwable() {
     /** TTS 播报失败 */
     data class TtsSpeakError(
         override val message: String = "语音播报失败",
-        val cause: Throwable? = null
+        override val cause: Throwable? = null
     ) : BlindPathError()
     
     // ==================== 网络相关错误 ====================
@@ -127,7 +127,7 @@ sealed class BlindPathError : Throwable() {
     /** 文件读取失败 */
     data class FileReadError(
         val fileName: String,
-        val cause: Throwable? = null
+        override val cause: Throwable? = null
     ) : BlindPathError() {
         override val message: String = "无法读取文件: $fileName"
     }
@@ -135,7 +135,7 @@ sealed class BlindPathError : Throwable() {
     /** 文件写入失败 */
     data class FileWriteError(
         val fileName: String,
-        val cause: Throwable? = null
+        override val cause: Throwable? = null
     ) : BlindPathError() {
         override val message: String = "无法写入文件: $fileName"
     }
@@ -145,7 +145,7 @@ sealed class BlindPathError : Throwable() {
     /** 未知错误 */
     data class UnknownError(
         override val message: String = "发生未知错误",
-        val cause: Throwable? = null
+        override val cause: Throwable? = null
     ) : BlindPathError()
     
     /** 功能不可用 */

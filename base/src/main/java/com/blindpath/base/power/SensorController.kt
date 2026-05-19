@@ -209,17 +209,23 @@ class DeviceOrientationCalculator(
      * 开始监听方向变化
      */
     fun start() {
-        sensorController.registerSensor(SensorController.Sensors.ACCELEROMETER) { event ->
-            System.arraycopy(event.values, 0, accelerometerData, 0, 3)
-            hasAccelerometerData = true
-            updateOrientation()
-        }
+        sensorController.registerSensor(
+            SensorController.Sensors.ACCELEROMETER,
+            listener = { event ->
+                System.arraycopy(event.values, 0, accelerometerData, 0, 3)
+                hasAccelerometerData = true
+                updateOrientation()
+            }
+        )
         
-        sensorController.registerSensor(SensorController.Sensors.MAGNETIC_FIELD) { event ->
-            System.arraycopy(event.values, 0, magneticFieldData, 0, 3)
-            hasMagneticFieldData = true
-            updateOrientation()
-        }
+        sensorController.registerSensor(
+            SensorController.Sensors.MAGNETIC_FIELD,
+            listener = { event ->
+                System.arraycopy(event.values, 0, magneticFieldData, 0, 3)
+                hasMagneticFieldData = true
+                updateOrientation()
+            }
+        )
     }
     
     /**
