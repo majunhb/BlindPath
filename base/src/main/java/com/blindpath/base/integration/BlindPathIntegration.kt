@@ -46,6 +46,7 @@ object BlindPathIntegration {
     private lateinit var secureStorage: SecureStorage
     private lateinit var analyticsManager: AnalyticsManager
     private lateinit var performanceMonitor: PerformanceMonitor
+    private lateinit var appContext: Context
     
     /**
      * 初始化所有集成组件
@@ -57,6 +58,7 @@ object BlindPathIntegration {
         
         return try {
             Timber.i("Initializing BlindPath integration components...")
+            appContext = context.applicationContext
             
             // 1. 初始化安全存储
             secureStorage = SecureStorage(context)
@@ -121,7 +123,7 @@ object BlindPathIntegration {
     private fun startNetworkMonitoring() {
         scope.launch {
             try {
-                val status = networkMonitor.getNetworkStatus()
+                val status = networkMonitor.getCurrentNetworkStatus()
                 if (!status.isConnected) {
                     Timber.w("Network disconnected, entering offline mode")
                     DegradationManager.setDegradationLevel(
@@ -208,7 +210,7 @@ object BlindPathIntegration {
         }
         
         val networkStatus = try {
-            networkMonitor.getNetworkStatus()
+            networkMonitor.getCurrentNetworkStatus()
         } catch (e: Exception) {
             null
         }
@@ -219,6 +221,11 @@ object BlindPathIntegration {
             null
         }
         
+        // 计算平均帧时间（如果 metrics 中有相关数据）
+        val isPerformanceOptimal = performanceReport?.metrics?.values?.any { metric ->
+            metric.averageTimeMs < 33
+        } ?: false
+        
         return StatusSummary(
             isInitialized = isInitialized,
             degradationLevel = DegradationManager.getDegradationLevel(DegradationManager.Feature.AI_DETECTION),
@@ -228,7 +235,7 @@ object BlindPathIntegration {
             currentLanguage = languageManager.selectedLanguage,
             fontSizeScale = accessibilitySettings.fontScale,
             isHighContrastEnabled = accessibilitySettings.isHighContrastEnabled,
-            isPerformanceOptimal = performanceReport?.let { it.averageFrameTimeMs < 33 } ?: false
+            isPerformanceOptimal = isPerformanceOptimal
         )
     }
     
@@ -252,7 +259,7 @@ object BlindPathIntegration {
      */
     fun release() {
         try {
-            CacheManager.getInstance().clearExpired()
+            CacheManager.getInstance(appContext).clearAll()
             performanceMonitor.clear()
             Timber.i("BlindPath integration resources released")
         } catch (e: Exception) {
