@@ -162,18 +162,4 @@ class GlobalExceptionHandler(
     }
 }
 
-/**
- * 协程异常处理器
- * 用于捕获协程中的未处理异常
- */
-object CoroutineErrorHandler {
-    /**
-     * 创建一个协程异常处理器
-     */
-    fun create(onError: (Throwable) -> Unit = {}): kotlin.coroutines.CoroutineExceptionHandler {
-        return kotlinx.coroutines.CoroutineExceptionHandler { _, exception ->
-            Timber.e(exception, "Coroutine uncaught exception")
-            onError(exception)
-        }
-    }
-}
+
