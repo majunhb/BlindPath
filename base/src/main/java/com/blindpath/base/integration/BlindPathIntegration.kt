@@ -4,8 +4,6 @@ import android.content.Context
 import com.blindpath.base.accessibility.AccessibilitySettings
 import com.blindpath.base.analytics.AnalyticsManager
 import com.blindpath.base.cache.CacheManager
-import com.blindpath.base.config.AppConfig
-import com.blindpath.base.error.BlindPathError
 import com.blindpath.base.error.DegradationManager
 import com.blindpath.base.error.DegradationManager.DegradationLevel
 import com.blindpath.base.i18n.LanguageManager
@@ -19,7 +17,6 @@ import com.blindpath.base.security.SecureStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
@@ -46,20 +43,24 @@ object BlindPathIntegration {
     private lateinit var privacyManager: PrivacyManager
     private lateinit var networkMonitor: NetworkMonitor
     private lateinit var powerManager: PowerManager
+    private lateinit var secureStorage: SecureStorage
+    private lateinit var analyticsManager: AnalyticsManager
+    private lateinit var performanceMonitor: PerformanceMonitor
     
     /**
      * 初始化所有集成组件
      */
-    suspend fun initialize(context: Context): Result<Boolean> {
+    fun initialize(context: Context): Boolean {
         if (isInitialized) {
-            return Result.success(true)
+            return true
         }
         
         return try {
             Timber.i("Initializing BlindPath integration components...")
             
             // 1. 初始化安全存储
-            SecureStorage.initializeKey(context)
+            secureStorage = SecureStorage(context)
+            secureStorage.initializeKey()
             Timber.d("SecureStorage initialized")
             
             // 2. 获取缓存管理器实例
@@ -89,7 +90,6 @@ object BlindPathIntegration {
             
             // 8. 初始化电量管理
             powerManager = PowerManager(context)
-            startPowerMonitoring()
             Timber.d("PowerManager initialized")
             
             // 9. 获取模型预加载器实例
@@ -97,20 +97,21 @@ object BlindPathIntegration {
             Timber.d("ModelPreloader initialized")
             
             // 10. 获取性能监控实例
-            val performanceMonitor = PerformanceMonitor.getInstance()
+            performanceMonitor = PerformanceMonitor.getInstance(context)
             Timber.d("PerformanceMonitor initialized")
             
             // 11. 初始化分析管理器
-            AnalyticsManager.initializeSession(context)
+            analyticsManager = AnalyticsManager.getInstance(context)
+            analyticsManager.initializeSession()
             Timber.d("AnalyticsManager initialized")
             
             isInitialized = true
             Timber.i("All integration components initialized successfully")
             
-            Result.success(true)
+            true
         } catch (e: Exception) {
             Timber.e(e, "Failed to initialize integration components")
-            Result.failure(e)
+            false
         }
     }
     
@@ -119,97 +120,115 @@ object BlindPathIntegration {
      */
     private fun startNetworkMonitoring() {
         scope.launch {
-            networkMonitor.networkStatus.collectLatest { status ->
-                when {
-                    !status.isConnected -> {
-                        Timber.w("Network disconnected, entering offline mode")
-                        DegradationManager.setDegradationLevel(
-                            DegradationManager.Feature.NETWORK,
-                            DegradationLevel.OFFLINE
-                        )
-                    }
-                    status.isConnected && DegradationManager.getDegradationLevel(DegradationManager.Feature.NETWORK) == DegradationLevel.OFFLINE -> {
-                        Timber.i("Network restored, exiting offline mode")
-                        DegradationManager.restoreFeature(DegradationManager.Feature.NETWORK)
-                    }
+            try {
+                val status = networkMonitor.getNetworkStatus()
+                if (!status.isConnected) {
+                    Timber.w("Network disconnected, entering offline mode")
+                    DegradationManager.setDegradationLevel(
+                        DegradationManager.Feature.NETWORK,
+                        DegradationLevel.OFFLINE
+                    )
                 }
+            } catch (e: Exception) {
+                Timber.e(e, "Error monitoring network")
             }
         }
     }
     
     /**
-     * 启动电量监控
+     * 检查电量状态并应用降级策略
      */
-    private fun startPowerMonitoring() {
-        scope.launch {
-            powerManager.batteryState.collectLatest { state ->
-                when {
-                    state.level <= AppConfig.Power.CRITICAL_BATTERY_THRESHOLD -> {
-                        Timber.w("Critical battery level: ${state.level}%")
-                        DegradationManager.setDegradationLevel(
-                            DegradationManager.Feature.AI_DETECTION,
-                            DegradationLevel.DISABLED
-                        )
-                    }
-                    state.level <= AppConfig.Power.LOW_BATTERY_THRESHOLD -> {
-                        Timber.i("Low battery level: ${state.level}%")
-                        DegradationManager.setDegradationLevel(
-                            DegradationManager.Feature.AI_DETECTION,
-                            DegradationLevel.REDUCED
-                        )
-                    }
-                    state.isCharging -> {
-                        Timber.i("Device charging, restoring normal mode")
-                        DegradationManager.restoreFeature(DegradationManager.Feature.AI_DETECTION)
-                    }
+    fun checkPowerStatus() {
+        try {
+            val powerState = powerManager.getPowerState()
+            when {
+                powerState.isLowBattery -> {
+                    Timber.w("Low battery level: ${powerState.batteryLevel}%")
+                    DegradationManager.setDegradationLevel(
+                        DegradationManager.Feature.AI_DETECTION,
+                        DegradationLevel.REDUCED
+                    )
+                }
+                powerState.isCharging -> {
+                    Timber.i("Device charging, restoring normal mode")
+                    DegradationManager.restoreFeature(DegradationManager.Feature.AI_DETECTION)
                 }
             }
+        } catch (e: Exception) {
+            Timber.e(e, "Error checking power status")
         }
     }
     
     /**
      * 预加载 AI 模型
      */
-    suspend fun preloadModels(context: Context): Result<Boolean> {
-        return try {
+    fun preloadModels(context: Context, onComplete: (Result<Any>) -> Unit) {
+        try {
             Timber.i("Preloading AI models...")
-            ModelPreloader.getInstance(context).preloadAll()
-            Timber.i("AI models preloaded successfully")
-            Result.success(true)
+            ModelPreloader.getInstance(context).preloadInBackground { result ->
+                result.fold(
+                    onSuccess = { file ->
+                        Timber.i("AI models preloaded successfully: ${file.absolutePath}")
+                        onComplete(Result.success(file))
+                    },
+                    onFailure = { error ->
+                        Timber.e(error, "Failed to preload AI models")
+                        onComplete(Result.failure(error))
+                    }
+                )
+            }
         } catch (e: Exception) {
             Timber.e(e, "Failed to preload AI models")
-            Result.failure(e)
+            onComplete(Result.failure(e))
         }
     }
     
     /**
-     * 检查权限状态
+     * 检查核心权限状态
      */
-    fun checkRequiredPermissions(): List<PermissionManager.Permission> {
-        val required = listOf(
-            PermissionManager.Permission.CAMERA,
-            PermissionManager.Permission.LOCATION,
-            PermissionManager.Permission.RECORD_AUDIO,
-            PermissionManager.Permission.PHONE
-        )
-        
-        return required.filter { !permissionManager.isGranted(it) }
+    fun checkCorePermissions(): Boolean {
+        return permissionManager.hasCorePermissions()
+    }
+    
+    /**
+     * 获取缺失的核心权限
+     */
+    fun getMissingCorePermissions(): List<String> {
+        return permissionManager.getMissingPermissions(PermissionManager.PermissionGroups.CORE_PERMISSIONS)
     }
     
     /**
      * 获取当前运行状态摘要
      */
     fun getStatusSummary(): StatusSummary {
+        val powerState = try {
+            powerManager.getPowerState()
+        } catch (e: Exception) {
+            null
+        }
+        
+        val networkStatus = try {
+            networkMonitor.getNetworkStatus()
+        } catch (e: Exception) {
+            null
+        }
+        
+        val performanceReport = try {
+            performanceMonitor.getPerformanceReport()
+        } catch (e: Exception) {
+            null
+        }
+        
         return StatusSummary(
             isInitialized = isInitialized,
             degradationLevel = DegradationManager.getDegradationLevel(DegradationManager.Feature.AI_DETECTION),
-            batteryLevel = powerManager.batteryState.value.level,
-            isCharging = powerManager.batteryState.value.isCharging,
-            isNetworkConnected = networkMonitor.networkStatus.value.isConnected,
+            batteryLevel = powerState?.batteryLevel ?: -1,
+            isCharging = powerState?.isCharging ?: false,
+            isNetworkConnected = networkStatus?.isConnected ?: false,
             currentLanguage = languageManager.selectedLanguage,
             fontSizeScale = accessibilitySettings.fontScale,
             isHighContrastEnabled = accessibilitySettings.isHighContrastEnabled,
-            isPerformanceOptimal = PerformanceMonitor.getInstance().getReport().averageFrameTimeMs < 33
+            isPerformanceOptimal = performanceReport?.let { it.averageFrameTimeMs < 33 } ?: false
         )
     }
     
@@ -234,7 +253,7 @@ object BlindPathIntegration {
     fun release() {
         try {
             CacheManager.getInstance().clearExpired()
-            PerformanceMonitor.getInstance().release()
+            performanceMonitor.clear()
             Timber.i("BlindPath integration resources released")
         } catch (e: Exception) {
             Timber.e(e, "Error releasing integration resources")
