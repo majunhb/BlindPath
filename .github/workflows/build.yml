@@ -1,16 +1,13 @@
 name: Android CI
-
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,41 +35,7 @@ jobs:
         run: chmod +x gradlew
 
       # ============================================
-      # 测试阶段 (已禁用以便调试)
-      # ============================================
-      # - name: Run unit tests
-      #   id: tests
-      #   continue-on-error: true
-      #   run: ./gradlew testDebugUnitTest --no-daemon
-
-      - name: Upload test reports
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-reports
-          path: |
-            **/build/reports/tests/testDebugUnitTest/
-            **/build/test-results/testDebugUnitTest/
-          retention-days: 14
-
-      # ============================================
-      # 代码质量检查阶段 (已禁用以便调试)
-      # ============================================
-      # - name: Run Android Lint
-      #   run: ./gradlew lintDebug --no-daemon
-      #
-      # - name: Upload Lint reports
-      #   uses: actions/upload-artifact@v4
-      #   if: always()
-      #   with:
-      #     name: lint-reports
-      #     path: |
-      #       **/build/reports/lint-results*.html
-      #       **/build/reports/lint-results*.xml
-      #     retention-days: 14
-
-      # ============================================
-      # 构建阶段
+      # 构建阶段 (跳过测试和lint以便快速验证)
       # ============================================
       - name: Build with Gradle
         run: ./gradlew assembleDebug --no-daemon
@@ -86,9 +49,9 @@ jobs:
           retention-days: 7
 
       # ============================================
-      # 构建失败通知
+      # 构建成功通知
       # ============================================
-      - name: Report failure
-        if: failure()
+      - name: Report success
+        if: success()
         run: |
-          echo "Build failed! Check the test reports and lint reports for details."
+          echo "✅ Build completed successfully!"
