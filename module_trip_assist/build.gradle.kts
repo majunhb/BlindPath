@@ -38,7 +38,7 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.7"
+        kotlinCompilerExtensionVersion = "1.5.10"
     }
 }
 
@@ -54,20 +54,20 @@ dependencies {
     // ML Kit Image Labeling
     implementation("com.google.mlkit:image-labeling:17.0.7")
 
-    // 高德地图 SDK（组合包，已包含定位+搜索，Maven Central 可用�?
-    // 稳定版本 10.1.700，对应定�?SDK 6.5.1 + 搜索 SDK 9.7.4
+    // é«˜å¾·åœ°å›¾ SDKï¼ˆç»„åˆåŒ…ï¼Œå·²åŒ…å«å®šä½+æœç´¢ï¼ŒMaven Central å¯ç”¨ï¼?
+    // ç¨³å®šç‰ˆæœ¬ 10.1.700ï¼Œå¯¹åº”å®šä½?SDK 6.5.1 + æœç´¢ SDK 9.7.4
     implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
 
-    // CameraX - 真实相机预览
+    // CameraX - çœŸå®žç›¸æœºé¢„è§ˆ
     implementation("androidx.camera:camera-core:1.3.1")
     implementation("androidx.camera:camera-camera2:1.3.1")
     implementation("androidx.camera:camera-lifecycle:1.3.1")
     implementation("androidx.camera:camera-view:1.3.1")
 
-    // Google Play Services Location - 高精度定�?
+    // Google Play Services Location - é«˜ç²¾åº¦å®šä½?
     implementation("com.google.android.gms:play-services-location:21.0.1")
 
-    // TensorFlow Lite - AI物体检�?
+    // TensorFlow Lite - AIç‰©ä½“æ£€æµ?
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
@@ -84,7 +84,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.8.1")
 
     // Compose
-    implementation(platform("androidx.compose:compose-bom:2023.10.01"))
+    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
@@ -105,6 +105,6 @@ dependencies {
     // Android Test
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2023.10.01"))
+    androidTestImplementation(platform("androidx.compose:compose-bom:2024.02.00"))
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
 }
