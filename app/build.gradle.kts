@@ -70,14 +70,14 @@ dependencies {
     implementation(project(":module_trip_assist"))
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.48")
-    ksp("com.google.dagger:hilt-android-compiler:2.48")
+    implementation("com.google.dagger:hilt-android:2.50")
+    ksp("com.google.dagger:hilt-android-compiler:2.50")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-process:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.7.0")
     implementation("androidx.activity:activity-compose:1.8.1")
 
     // Compose
@@ -97,7 +97,7 @@ dependencies {
     testImplementation("io.mockk:mockk:1.13.8")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
-    testImplementation("androidx.lifecycle:lifecycle-runtime-testing:2.6.2")
+    testImplementation("androidx.lifecycle:lifecycle-runtime-testing:2.7.0")
 
     // Android Test
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
