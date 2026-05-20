@@ -60,9 +60,9 @@ dependencies {
     implementation("com.jakewharton.timber:timber:5.0.1")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:")
 
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
@@ -71,6 +71,6 @@ dependencies {
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.mockk:mockk:1.13.8")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
 }
