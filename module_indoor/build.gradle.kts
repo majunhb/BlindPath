@@ -54,7 +54,7 @@ dependencies {
 
     // TensorFlow Lite
     implementation("org.tensorflow:tensorflow-lite:")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.3")
+    implementation("org.tensorflow:tensorflow-lite-support:")
 
     // Timber
     implementation("com.jakewharton.timber:timber:5.0.1")
