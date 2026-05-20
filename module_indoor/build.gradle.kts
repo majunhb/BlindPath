@@ -53,7 +53,7 @@ dependencies {
     implementation("com.google.mlkit:image-labeling:17.0.7")
 
     // TensorFlow Lite
-    implementation("org.tensorflow:tensorflow-lite:2.13.0")
+    implementation("org.tensorflow:tensorflow-lite:")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.3")
 
     // Timber
