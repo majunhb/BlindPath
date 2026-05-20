@@ -50,8 +50,8 @@ dependencies {
     implementation("com.google.dagger:hilt-android:")
     ksp("com.google.dagger:hilt-android-compiler:")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:")
 
     // DataStore
     implementation("androidx.datastore:datastore-preferences:1.0.0")
