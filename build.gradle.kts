@@ -34,8 +34,10 @@ subprojects {
             "src/main/java"
         )
         // 排除生成的代码
-        exclude("**/build/**")
-        exclude("**/*.Generated.kt")
+        filter {
+            exclude("**/build/**")
+            exclude("**/*.Generated.kt")
+        }
     }
 
     // ktlint 配置
