@@ -39,8 +39,8 @@ dependencies {
     implementation(project(":module_voice"))
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.48")
-    ksp("com.google.dagger:hilt-android-compiler:2.48")
+    implementation("com.google.dagger:hilt-android:")
+    ksp("com.google.dagger:hilt-android-compiler:")
 
     // CameraX
     val cameraxVersion = "1.3.0"
