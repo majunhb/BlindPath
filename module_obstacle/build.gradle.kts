@@ -38,8 +38,8 @@ dependencies {
     implementation(project(":module_voice"))
     
     // Hilt
-    implementation("com.google.dagger:hilt-android:")
-    ksp("com.google.dagger:hilt-android-compiler:")
+    implementation("com.google.dagger:hilt-android:2.50")
+    ksp("com.google.dagger:hilt-android-compiler:2.50")
     
     // CameraX
     val cameraxVersion = "1.3.0"
@@ -54,7 +54,7 @@ dependencies {
     // TensorFlow Lite
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")  // GPU加速支持
+    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")  // GPU加速支�?
 
     // Timber
     implementation("com.jakewharton.timber:timber:5.0.1")
@@ -69,13 +69,14 @@ dependencies {
     
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-service:")
     implementation("androidx.lifecycle:lifecycle-process:")
     
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
-    testImplementation("io.mockk:mockk:")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:")
+    testImplementation("io.mockk:mockk:1.13.9")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
 }
+

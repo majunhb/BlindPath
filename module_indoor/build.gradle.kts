@@ -39,8 +39,8 @@ dependencies {
     implementation(project(":module_voice"))
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:")
-    ksp("com.google.dagger:hilt-android-compiler:")
+    implementation("com.google.dagger:hilt-android:2.50")
+    ksp("com.google.dagger:hilt-android-compiler:2.50")
 
     // CameraX
     val cameraxVersion = "1.3.0"
@@ -71,6 +71,7 @@ dependencies {
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.mockk:mockk:1.13.8")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
 }
+

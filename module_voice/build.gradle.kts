@@ -37,22 +37,23 @@ dependencies {
     implementation(project(":base"))
     
     // Hilt
-    implementation("com.google.dagger:hilt-android:")
-    ksp("com.google.dagger:hilt-android-compiler:")
+    implementation("com.google.dagger:hilt-android:2.50")
+    ksp("com.google.dagger:hilt-android-compiler:2.50")
     
     // Timber
     implementation("com.jakewharton.timber:timber:5.0.1")
 
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
-    testImplementation("io.mockk:mockk:")
+    testImplementation("io.mockk:mockk:1.13.9")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
 }
+
