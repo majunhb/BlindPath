@@ -20,7 +20,7 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-        // 高德 10.x+ SDK 仅支�?armeabi-v7a �?arm64-v8a
+        // é«˜å¾· 10.x+ SDK ä»…æ”¯æŒ?armeabi-v7a å’?arm64-v8a
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
@@ -46,13 +46,13 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.7"
+        kotlinCompilerExtensionVersion = "1.5.10"
     }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-        // 防止高德SDK�?so文件打包冲突
+        // é˜²æ­¢é«˜å¾·SDKçš?soæ–‡ä»¶æ‰“åŒ…å†²çª
         jniLibs {
             useLegacyPackaging = true
         }
