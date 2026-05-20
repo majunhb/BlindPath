@@ -13,7 +13,10 @@ build:
 config:
   validation: true
   warningsAsErrors: false
-  excludes: ''
+  # 排除生成的代码和 build 目录
+  excludes: |
+    - '**/build/**'
+    - '**/*.Generated.kt'
 
 processors:
   active: true
