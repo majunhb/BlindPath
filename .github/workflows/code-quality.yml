@@ -1,4 +1,3 @@
-
 name: Code Quality
 
 on:
@@ -8,37 +7,164 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# 并发控制：同一 PR 只保留最新一次检查，节省 CI 资源
+concurrency:
+  group: code-quality-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ============================================================
+  # 1. Android Lint — 官方静态分析，检测 Android 特有问题
+  # ============================================================
   lint:
+    name: Android Lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+
       - uses: android-actions/setup-android@v2
-      - run: chmod +x gradlew
-      - run: ./gradlew lintDebug --no-daemon
-      - uses: actions/upload-artifact@v4
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Run Android Lint
+        run: ./gradlew lintDebug --no-daemon --continue
+
+      - name: Upload Lint Reports
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: lint-reports
           path: '**/build/reports/lint-results*.html'
+          retention-days: 14
 
+  # ============================================================
+  # 2. Detekt — Kotlin 静态分析，阻断不符合规范的代码
+  # ============================================================
+  detekt:
+    name: Detekt Static Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Run Detekt
+        run: |
+          ./gradlew detekt --no-daemon --continue
+          echo "Detekt analysis completed"
+
+      - name: Upload Detekt Reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: detekt-reports
+          path: |
+            **/build/reports/detekt/detekt.html
+            **/build/reports/detekt/detekt.sarif
+          retention-days: 14
+
+      # 将 Detekt SARIF 上传到 GitHub Security 面板（便于直接在代码中看到问题）
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: '**/build/reports/detekt/detekt.sarif'
+        continue-on-error: true  # SARIF 上传失败不影响主流程
+
+  # ============================================================
+  # 3. ktlint — Kotlin 代码格式检查
+  # ============================================================
+  ktlint:
+    name: ktlint Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Run ktlint Check
+        run: ./gradlew ktlintCheck --no-daemon --continue
+
+      - name: Upload ktlint Reports
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ktlint-reports
+          path: '**/build/reports/ktlint/**/*.html'
+          retention-days: 7
+
+  # ============================================================
+  # 4. CodeQL — GitHub 安全扫描（保留原有配置）
+  # ============================================================
   codeql:
+    name: CodeQL Security Scan
     runs-on: ubuntu-latest
     permissions:
       security-events: write
     steps:
       - uses: actions/checkout@v4
+
       - uses: github/codeql-action/init@v3
         with:
           languages: java-kotlin
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
+
       - uses: android-actions/setup-android@v2
+
       - run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+
       - uses: github/codeql-action/analyze@v3
+
+  # ============================================================
+  # 5. 质量汇总报告 — 所有检查通过后输出摘要
+  # ============================================================
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    needs: [ lint, detekt, ktlint ]
+    if: always()
+    steps:
+      - name: Check Quality Gate
+        run: |
+          if [ "${{ needs.lint.result }}" = "failure" ] || \
+             [ "${{ needs.detekt.result }}" = "failure" ] || \
+             [ "${{ needs.ktlint.result }}" = "failure" ]; then
+            echo "❌ Quality Gate FAILED"
+            echo "  Lint:    ${{ needs.lint.result }}"
+            echo "  Detekt:  ${{ needs.detekt.result }}"
+            echo "  ktlint:  ${{ needs.ktlint.result }}"
+            echo ""
+            echo "请下载对应的 artifacts 查看详细报告，修复后重新提交。"
+            exit 1
+          else
+            echo "✅ Quality Gate PASSED"
+            echo "  Lint:    ${{ needs.lint.result }}"
+            echo "  Detekt:  ${{ needs.detekt.result }}"
+            echo "  ktlint:  ${{ needs.ktlint.result }}"
+          fi
