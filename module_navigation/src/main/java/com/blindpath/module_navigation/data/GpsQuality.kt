@@ -37,9 +37,9 @@ enum class GpsQuality(val description: String, val announcement: String) {
          */
         fun fromAccuracy(accuracy: Float): GpsQuality {
             return when {
-                accuracy <= AppConfig.Navigation.GPS_ACCURACY_EXCELLENT -> EXCELLENT
-                accuracy <= AppConfig.Navigation.GPS_ACCURACY_GOOD -> GOOD
-                accuracy <= AppConfig.Navigation.GPS_ACCURACY_FAIR -> FAIR
+                accuracy <= AppConfig.Navigation.EXCELLENT_THRESHOLD -> EXCELLENT
+                accuracy <= AppConfig.Navigation.GOOD_THRESHOLD -> GOOD
+                accuracy <= AppConfig.Navigation.FAIR_THRESHOLD -> FAIR
                 else -> POOR
             }
         }

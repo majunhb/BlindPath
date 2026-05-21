@@ -5,6 +5,13 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
+// 修复 Hilt KSP 增量构建时的 FileAlreadyExistsException 冲突
+// 参考：https://github.com/google/dagger/issues/3879
+ksp {
+    arg("dagger.fastInit", "enabled")
+    arg("dagger.hilt.android.internal.disableAndroidSuperclassValidation", "true")
+}
+
 android {
     namespace = "com.blindpath.module_obstacle"
     compileSdk = 34
@@ -36,21 +43,21 @@ android {
 dependencies {
     implementation(project(":base"))
     implementation(project(":module_voice"))
-
+    
     // Hilt
     implementation("com.google.dagger:hilt-android:2.50")
     ksp("com.google.dagger:hilt-android-compiler:2.50")
-
+    
     // CameraX
-    val cameraXVersion = "1.3.0"
-    implementation("androidx.camera:camera-core:$cameraXVersion")
-    implementation("androidx.camera:camera-camera2:$cameraXVersion")
-    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
-    implementation("androidx.camera:camera-view:$cameraXVersion")
-
+    val cameraxVersion = "1.3.0"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+    
     // ML Kit
     implementation("com.google.mlkit:object-detection:17.0.0")
-
+    
     // TensorFlow Lite
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
@@ -58,7 +65,7 @@ dependencies {
 
     // Timber
     implementation("com.jakewharton.timber:timber:5.0.1")
-
+    
     // OkHttp
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
@@ -66,13 +73,13 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0")
-
+    
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-service:2.7.0")
     implementation("androidx.lifecycle:lifecycle-process:2.7.0")
-
+    
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.mockk:mockk:1.13.9")

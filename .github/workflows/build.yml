@@ -27,16 +27,16 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/gradle.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ============================================
-      # 构建阶段 (跳过测试和lint以便快速验证)
-      # ============================================
+      - name: Clean KSP generated outputs
+        run: ./gradlew clean --no-daemon
+
       - name: Build with Gradle
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
@@ -48,10 +48,7 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 7
 
-      # ============================================
-      # 构建成功通知
-      # ============================================
       - name: Report success
         if: success()
         run: |
-          echo "✅ Build completed successfully!"
+          echo "Build completed successfully!"
