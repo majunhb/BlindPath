@@ -69,8 +69,10 @@ dependencies {
     implementation(project(":module_trip_assist"))
 
     // ============ 高德地图 SDK ============
-    // 地图 + 定位 + 搜索 一体包（与 module_trip_assist 保持一致）
-    implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
+    // 地图 + 定位 + 搜索（分开引入以确保依赖正确）
+    implementation("com.amap.api:3dmap:10.1.700")
+    implementation("com.amap.api:location:6.5.1")
+    implementation("com.amap.api:search:9.7.4")
 
     // Hilt
     implementation("com.google.dagger:hilt-android:2.51.1")
