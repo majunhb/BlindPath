@@ -36,11 +36,11 @@ android {
 dependencies {
     implementation(project(":base"))
     implementation(project(":module_voice"))
-    
+
     // Hilt
     implementation("com.google.dagger:hilt-android:2.50")
     ksp("com.google.dagger:hilt-android-compiler:2.50")
-    
+
     // Location
     implementation("com.google.android.gms:play-services-location:21.0.1")
 
@@ -48,18 +48,17 @@ dependencies {
     implementation("com.jakewharton.timber:timber:5.0.1")
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:")
-    
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
+
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-service:")
-    
+    implementation("androidx.lifecycle:lifecycle-service:2.7.0")
+
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.mockk:mockk:1.13.9")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
 }
-
