@@ -12,6 +12,11 @@ import kotlinx.coroutines.flow.Flow
 interface ObstacleRepository {
 
     /**
+     * 初始化避障模块
+     */
+    suspend fun initialize(): Result<Boolean>
+
+    /**
      * 避障状态Flow
      */
     val obstacleState: Flow<ObstacleState>

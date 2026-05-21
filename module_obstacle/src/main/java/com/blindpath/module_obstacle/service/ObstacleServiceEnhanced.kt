@@ -12,9 +12,8 @@ import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.config.AppConfig
 import com.blindpath.base.error.BlindPathError
 import com.blindpath.base.error.DegradationManager
-import com.blindpath.base.error.DegradationLevel
 import com.blindpath.base.power.FrameRateController
-import com.blindpath.base.power.PowerManager
+import com.blindpath.base.power.PerformanceMode
 import com.blindpath.base.tts.VibrationHelper
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.domain.VoiceRepository
@@ -69,7 +68,7 @@ class ObstacleService : Service() {
         super.onCreate()
         
         // 初始化帧率控制器
-        frameRateController = FrameRateController(this)
+        frameRateController = FrameRateController()
         
         // 监控电量变化
         registerBatteryReceiver()
@@ -104,8 +103,8 @@ class ObstacleService : Service() {
             try {
                 // 初始化检测器
                 val initResult = obstacleRepository.initialize()
-                if (initResult !is com.blindpath.base.common.Result.Success) {
-                    handleError(BlindPathError.AI.INIT_FAILED)
+                if (initResult !is com.blindpath.base.common.Result.Success<*>) {
+                    handleError(BlindPathError.ModelLoadError("初始化失败"))
                     return@launch
                 }
 
@@ -115,8 +114,8 @@ class ObstacleService : Service() {
 
                 // 开始检测
                 val result = obstacleRepository.startDetection()
-                if (result !is com.blindpath.base.common.Result.Success) {
-                    handleError(BlindPathError.Camera.INIT_FAILED)
+                if (result !is com.blindpath.base.common.Result.Success<*>) {
+                    handleError(BlindPathError.CameraInitError())
                     stopObstacle()
                     return@launch
                 }
@@ -136,7 +135,7 @@ class ObstacleService : Service() {
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Obstacle detection failed")
-                handleError(BlindPathError.AI.INFERENCE_FAILED)
+                handleError(BlindPathError.InferenceError("检测失败"))
                 stopObstacle()
             }
         }
@@ -148,8 +147,8 @@ class ObstacleService : Service() {
 
         // 恢复正常模式
         if (isLowPowerMode) {
-            DegradationManager.promote(DegradationLevel.NORMAL)
-            frameRateController.setFrameRate(AppConfig.Power.NORMAL_FRAME_RATE)
+            DegradationManager.restoreFeature(DegradationManager.Feature.AI_DETECTION)
+            frameRateController.setPerformanceMode(PerformanceMode.HIGH)
         }
 
         serviceScope.launch {
@@ -204,7 +203,7 @@ class ObstacleService : Service() {
 
         Timber.d("Battery level: $batteryLevel%")
 
-        if (batteryLevel <= AppConfig.Power.LOW_BATTERY_THRESHOLD) {
+        if (batteryLevel <= AppConfig.PowerSaving.LOW_BATTERY_THRESHOLD) {
             enableLowPowerMode()
         } else {
             disableLowPowerMode()
@@ -221,10 +220,14 @@ class ObstacleService : Service() {
         Timber.i("Enabling low power mode (battery: $batteryLevel%)")
         
         // 应用降级策略
-        DegradationManager.degrade(DegradationLevel.LOW_POWER)
+        DegradationManager.setDegradationLevel(
+            DegradationManager.Feature.AI_DETECTION,
+            DegradationManager.DegradationLevel.REDUCED,
+            "Low battery"
+        )
         
         // 降低帧率
-        frameRateController.setFrameRate(AppConfig.Power.LOW_POWER_FRAME_RATE)
+        frameRateController.setPerformanceMode(PerformanceMode.LOW)
         
         // 语音提示
         serviceScope.launch {
@@ -242,10 +245,10 @@ class ObstacleService : Service() {
         Timber.i("Disabling low power mode (battery: $batteryLevel%)")
         
         // 恢复正常模式
-        DegradationManager.promote(DegradationLevel.NORMAL)
+        DegradationManager.restoreFeature(DegradationManager.Feature.AI_DETECTION)
         
         // 恢复帧率
-        frameRateController.setFrameRate(AppConfig.Power.NORMAL_FRAME_RATE)
+        frameRateController.setPerformanceMode(PerformanceMode.HIGH)
     }
 
     /**
@@ -253,7 +256,7 @@ class ObstacleService : Service() {
      */
     private fun registerBatteryReceiver() {
         val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        registerBatteryReceiver(object : android.content.BroadcastReceiver() {
+        val receiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(context: android.content.Context?, intent: Intent?) {
                 val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
                 val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
@@ -261,14 +264,15 @@ class ObstacleService : Service() {
                 if (level >= 0 && scale > 0) {
                     batteryLevel = (level * 100) / scale
                     
-                    if (batteryLevel <= AppConfig.Power.LOW_BATTERY_THRESHOLD && !isLowPowerMode) {
+                    if (batteryLevel <= AppConfig.PowerSaving.LOW_BATTERY_THRESHOLD && !isLowPowerMode) {
                         enableLowPowerMode()
-                    } else if (batteryLevel > AppConfig.Power.LOW_BATTERY_THRESHOLD + 5 && isLowPowerMode) {
+                    } else if (batteryLevel > AppConfig.PowerSaving.LOW_BATTERY_THRESHOLD + 5 && isLowPowerMode) {
                         disableLowPowerMode()
                     }
                 }
             }
-        }, filter)
+        }
+        registerReceiver(receiver, filter)
     }
 
     /**
@@ -278,22 +282,22 @@ class ObstacleService : Service() {
         Timber.e("ObstacleService error: $error")
         
         when (error) {
-            is BlindPathError.Camera.PERMISSION_DENIED -> {
+            is BlindPathError.CameraPermissionDenied -> {
                 serviceScope.launch {
                     voiceRepository.speak("相机权限被拒绝，请在设置中开启", queueMode = false)
                 }
             }
-            is BlindPathError.Camera.DEVICE_NOT_FOUND -> {
+            is BlindPathError.CameraInitError -> {
                 serviceScope.launch {
-                    voiceRepository.speak("未检测到相机设备", queueMode = false)
+                    voiceRepository.speak("相机初始化失败", queueMode = false)
                 }
             }
-            is BlindPathError.AI.MODEL_NOT_FOUND -> {
+            is BlindPathError.ModelNotFoundError -> {
                 serviceScope.launch {
                     voiceRepository.speak("AI模型未加载，请检查应用设置", queueMode = false)
                 }
             }
-            is BlindPathError.AI.INFERENCE_FAILED -> {
+            is BlindPathError.InferenceError -> {
                 serviceScope.launch {
                     voiceRepository.speak("AI检测出现异常", queueMode = false)
                 }
