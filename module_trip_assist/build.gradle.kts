@@ -66,6 +66,7 @@ dependencies {
     implementation("com.jakewharton.timber:timber:5.0.1")
 
     // 高德地图 SDK（组合包，已包含定位+搜索）
+    // 稳定版本 10.1.700，对应定位SDK 6.5.1 + 搜索SDK 9.7.4
     implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
 
     // CameraX - 真实相机预览
@@ -107,8 +108,8 @@ dependencies {
 
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
-    testImplementation("io.mockk:mockk:1.13.8")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("io.mockk:mockk:1.13.9")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
     testImplementation("androidx.lifecycle:lifecycle-runtime-testing:2.7.0")
 

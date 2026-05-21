@@ -1,10 +1,20 @@
 name: Android CI
+
 on:
+  # Push 到 main 分支时触发
   push:
     branches: [ main ]
+  # PR 到 main 分支时触发
   pull_request:
     branches: [ main ]
+  # 手动触发
   workflow_dispatch:
+
+# 并发控制：同一分支只保留最新构建
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,20 +37,20 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/gradle.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # ============================================
-      # 构建阶段 (跳过测试和lint以便快速验证)
-      # ============================================
-      - name: Build with Gradle
+      - name: Clean KSP generated outputs
+        run: ./gradlew clean --no-daemon
+
+      - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Upload Debug APK
         uses: actions/upload-artifact@v4
         if: success()
         with:
@@ -48,10 +58,9 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 7
 
-      # ============================================
-      # 构建成功通知
-      # ============================================
       - name: Report success
         if: success()
         run: |
           echo "✅ Build completed successfully!"
+          echo "📦 Build type: debug"
+          echo "📱 APK artifact uploaded with 7-day retention"

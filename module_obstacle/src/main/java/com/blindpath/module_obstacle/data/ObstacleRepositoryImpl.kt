@@ -57,12 +57,12 @@ class ObstacleRepositoryImpl @Inject constructor(
     private var useFrontCamera = false
     private var lastAlertTime = 0L
     private var lastSceneAnnouncementTime = 0L
-    private val alertCooldown = AppConfig.Obstacle.ALERT_COOLDOWN_MS    // 预警冷却时间（毫秒）
-    private val sceneCooldown = AppConfig.Obstacle.SCENE_COOLDOWN_MS    // 场景播报冷却时间
+    private val alertCooldown = AppConfig.ObstacleAlert.ALERT_COOLDOWN_MS    // 预警冷却时间（毫秒）
+    private val sceneCooldown = AppConfig.ObstacleAlert.SCENE_COOLDOWN_MS    // 场景播报冷却时间
 
     // ============ 多障碍物播报队列 ============
     private var lastMultiObstacleAnnouncement = 0L
-    private val multiObstacleCooldown = AppConfig.Obstacle.MULTI_OBSTACLE_COOLDOWN_MS // 多障碍物播报间隔
+    private val multiObstacleCooldown = AppConfig.ObstacleAlert.MULTI_OBSTACLE_COOLDOWN_MS // 多障碍物播报间隔
 
     private var isCameraStarting = false
     private var isCameraStarted = false

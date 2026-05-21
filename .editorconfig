@@ -1,57 +1,32 @@
-# ktlint 配置文件
-# https://pinterest.github.io/ktlint/
+# .editorconfig — BlindPath 代码风格统一配置
+# ktlint 会读取此文件，无需额外 .ktlint 配置文件
 
-# 缩进大小
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
 indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
 
-# 最大行长度
+[*.{kt,kts}]
+indent_size = 4
+ij_kotlin_imports_layout = *,java.**,javax.**,kotlin.**,^
+ij_kotlin_allow_trailing_comma = true
+ij_kotlin_allow_trailing_comma_on_call_site = true
+# 最大行长 120，与 detekt 配置一致
 max_line_length = 120
 
-# 续行缩进
-continuation_indent_size = 8
+[*.{xml,html}]
+indent_size = 2
 
-# 导入排序
-ktlint_code_style = android_studio
+[*.{yml,yaml}]
+indent_size = 2
 
-# 禁用的规则
-disabled_rules = [
-    # 允许使用 wildcard 导入
-    no-wildcard-imports,
-    
-    # 允许文件末尾有空行
-    final-newline,
-    
-    # 允许使用分号
-    no-semi,
-]
+[*.json]
+indent_size = 2
 
-# 启用的规则
-enabled_rules = [
-    # 强制使用大括号
-    multi-if-else,
-    
-    # 禁止使用空代码块
-    no-empty-first-line-in-method-block,
-    
-    # 强制换行
-    chain-wrapping,
-    
-    # 参数换行
-    argument-list-wrapping,
-    
-    # 多重条件换行
-    multiline-if-else,
-    
-    # 字符串模板
-    string-template,
-    
-    # 禁止使用不必要的括号
-    unnecessary-parentheses-before-trailing-lambda,
-]
-
-# 实验性规则
-ktlint_experimental = enabled
-
-# 文件名规则
-[*.{kt,kts}]
-indent_style = space
+[*.{md,txt}]
+trim_trailing_whitespace = false

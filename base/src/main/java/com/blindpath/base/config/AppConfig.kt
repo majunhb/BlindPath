@@ -10,7 +10,6 @@ package com.blindpath.base.config
  * 4. 快速调试和优化
  */
 object AppConfig {
-
     // ============ AI 检测配置 ============
     
     object AIDetection {
@@ -89,6 +88,11 @@ object AppConfig {
         const val EXCELLENT_THRESHOLD = 1.0f
         const val GOOD_THRESHOLD = 3.0f
         const val FAIR_THRESHOLD = 10.0f
+
+        /** GPS 精度常量别名（供 GpsQuality 等模块引用） */
+        const val GPS_ACCURACY_EXCELLENT = EXCELLENT_THRESHOLD
+        const val GPS_ACCURACY_GOOD = GOOD_THRESHOLD
+        const val GPS_ACCURACY_FAIR = FAIR_THRESHOLD
     }
 
     // ============ 语音配置 ============
