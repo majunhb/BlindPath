@@ -79,8 +79,8 @@ dependencies {
 
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-process:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:")
+    implementation("androidx.lifecycle:lifecycle-process:")
     implementation("androidx.activity:activity-compose:1.8.1")
 
     // Compose
@@ -100,7 +100,7 @@ dependencies {
     testImplementation("io.mockk:mockk:1.13.8")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
-    testImplementation("androidx.lifecycle:lifecycle-runtime-testing:2.6.2")
+    testImplementation("androidx.lifecycle:lifecycle-runtime-testing:")
 
     // Android Test
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
