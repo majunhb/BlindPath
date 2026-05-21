@@ -1,4 +1,12 @@
-name: Release Build
+name: Release Build (Debug Signed)
+
+# 注意：此工作流构建 Debug 签名的 APK
+# 如需构建正式 Release APK，需要配置签名密钥：
+# 1. 创建 keystore 文件
+# 2. 在 app/build.gradle.kts 中配置 signingConfigs
+# 3. 在 GitHub Secrets 中存储密钥信息
+# 4. 修改此工作流使用 assembleRelease
+
 on:
   workflow_dispatch:
     inputs:
@@ -41,24 +49,10 @@ jobs:
         run: chmod +x gradlew
 
       # ============================================
-      # 构建 Release APK
-      # ============================================
-      - name: Build Release APK
-        run: ./gradlew assembleRelease --no-daemon
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: release-apk-v${{ github.event.inputs.version }}
-          path: app/build/outputs/apk/release/*.apk
-          retention-days: 30
-
-      # ============================================
-      # 构建 Debug APK (可选)
+      # 构建 Debug APK（使用 Debug 签名）
       # ============================================
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4
@@ -66,7 +60,7 @@ jobs:
         with:
           name: debug-apk-v${{ github.event.inputs.version }}
           path: app/build/outputs/apk/debug/*.apk
-          retention-days: 7
+          retention-days: 30
 
       # ============================================
       # 构建完成通知
@@ -74,6 +68,8 @@ jobs:
       - name: Report success
         if: success()
         run: |
-          echo "✅ Release build completed successfully!"
+          echo "✅ Debug build completed successfully!"
           echo "📦 Version: ${{ github.event.inputs.version }}"
           echo "📝 Description: ${{ github.event.inputs.description }}"
+          echo ""
+          echo "⚠️ 注意：此为 Debug 签名版本，适合测试使用"
