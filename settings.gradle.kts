@@ -11,8 +11,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // 高德地图 SDK Maven 仓库
-        maven { url = uri("https://maven.aliyun.com/nexus/content/groups/public/") }
+        // 高德地图 SDK Maven 仓库（阿里云镜像）
+        maven { url = uri("https://maven.aliyun.com/repository/public") }
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://jitpack.io") }
     }
 }
