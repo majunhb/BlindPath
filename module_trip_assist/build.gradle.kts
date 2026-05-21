@@ -54,34 +54,34 @@ dependencies {
     // ML Kit Image Labeling
     implementation("com.google.mlkit:image-labeling:17.0.7")
 
-    // é«˜å¾·åœ°å›¾ SDKï¼ˆç»„åˆåŒ…ï¼Œå·²åŒ…å«å®šä½+æœç´¢ï¼ŒMaven Central å¯ç”¨ï¼?
-    // ç¨³å®šç‰ˆæœ¬ 10.1.700ï¼Œå¯¹åº”å®šä½?SDK 6.5.1 + æœç´¢ SDK 9.7.4
+    // 高德地图 SDK（组合包，已包含定位+搜索，Maven Central 可用）
+    // 稳定版本 10.1.700，对应定位SDK 6.5.1 + 搜索SDK 9.7.4
     implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
 
-    // CameraX - çœŸå®žç›¸æœºé¢„è§ˆ
+    // CameraX - 真实相机预览
     implementation("androidx.camera:camera-core:1.3.1")
     implementation("androidx.camera:camera-camera2:1.3.1")
     implementation("androidx.camera:camera-lifecycle:1.3.1")
     implementation("androidx.camera:camera-view:1.3.1")
 
-    // Google Play Services Location - é«˜ç²¾åº¦å®šä½?
+    // Google Play Services Location - 高精度定位
     implementation("com.google.android.gms:play-services-location:21.0.1")
 
-    // TensorFlow Lite - AIç‰©ä½“æ£€æµ?
+    // TensorFlow Lite - AI物体检测
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:")
-    ksp("com.google.dagger:hilt-android-compiler:")
+    implementation("com.google.dagger:hilt-android:2.50")
+    ksp("com.google.dagger:hilt-android-compiler:2.50")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:")
-    implementation("androidx.lifecycle:lifecycle-process:")
-    implementation("androidx.activity:activity-compose:1.8.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.7.0")
+    implementation("androidx.activity:activity-compose:1.8.2")
 
     // Compose
     implementation(platform("androidx.compose:compose-bom:2024.02.00"))
@@ -97,10 +97,10 @@ dependencies {
 
     // Test dependencies
     testImplementation("junit:junit:4.13.2")
-    testImplementation("io.mockk:mockk:1.13.8")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("io.mockk:mockk:1.13.9")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
-    testImplementation("androidx.lifecycle:lifecycle-runtime-testing:")
+    testImplementation("androidx.lifecycle:lifecycle-runtime-testing:2.7.0")
 
     // Android Test
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
