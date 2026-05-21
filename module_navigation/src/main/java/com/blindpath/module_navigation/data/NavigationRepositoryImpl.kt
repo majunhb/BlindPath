@@ -166,7 +166,7 @@ class NavigationRepositoryImpl @Inject constructor(
                 isNeedAddress = true
                 
                 // 返回逆地理编码
-                isGeoLanguage = AMapLocationClientOption.GeoLanguage.DEFAULT
+                geoLanguage = AMapLocationClientOption.GeoLanguage.DEFAULT
                 
                 // 缓存定位
                 isLocationCacheEnable = true

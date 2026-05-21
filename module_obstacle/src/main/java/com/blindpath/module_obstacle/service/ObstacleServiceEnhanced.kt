@@ -47,7 +47,7 @@ class ObstacleService : Service() {
 
     private var lastAlertMessage: String? = null
     private var lastAlertTime = 0L
-    private val alertRepeatMinInterval = AppConfig.Obstacle.ALERT_COOLDOWN_MS
+    private val alertRepeatMinInterval = AppConfig.ObstacleAlert.ALERT_COOLDOWN_MS
 
     // 新增：电量监控
     private var batteryLevel = 100
