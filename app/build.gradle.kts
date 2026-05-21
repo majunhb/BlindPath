@@ -20,7 +20,7 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
-        // 高德 10.x+ SDK 仅支�?armeabi-v7a �?arm64-v8a
+
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
@@ -46,13 +46,13 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.7"
+        kotlinCompilerExtensionVersion = "1.5.10"
     }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-        // 防止高德SDK�?so文件打包冲突
+
         jniLibs {
             useLegacyPackaging = true
         }
@@ -69,16 +69,20 @@ dependencies {
     implementation(project(":module_community"))
     implementation(project(":module_trip_assist"))
 
+    // ============ 高德地图 SDK ============
+    // 地图 + 定位 + 搜索 一体包（与 module_trip_assist 保持一致）
+    implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
+
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.48")
-    ksp("com.google.dagger:hilt-android-compiler:2.48")
+    implementation("com.google.dagger:hilt-android:2.51.1")
+    ksp("com.google.dagger:hilt-android-compiler:2.51.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
     // Core
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-process:2.6.2")
-    implementation("androidx.activity:activity-compose:1.8.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.7.0")
+    implementation("androidx.activity:activity-compose:1.8.2")
 
     // Compose
     implementation(platform("androidx.compose:compose-bom:2024.02.00"))
@@ -97,7 +101,7 @@ dependencies {
     testImplementation("io.mockk:mockk:1.13.8")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
-    testImplementation("androidx.lifecycle:lifecycle-runtime-testing:2.6.2")
+    testImplementation("androidx.lifecycle:lifecycle-runtime-testing:2.7.0")
 
     // Android Test
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
