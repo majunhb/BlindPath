@@ -11,7 +11,9 @@ data class LocationInfo(
     val accuracy: Float,    // 精度（米）
     val speed: Float,       // 速度（m/s）
     val bearing: Float,     // 方向（度）
-    val timestamp: Long
+    val timestamp: Long,
+    val address: String = "",   // 地址信息
+    val poiName: String = ""    // POI名称
 )
 
 /**
