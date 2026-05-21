@@ -1,23 +1,19 @@
 package com.blindpath.module_navigation.data
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
-import android.os.Looper
 import androidx.core.content.ContextCompat
+import com.amap.api.location.AMapLocation
+import com.amap.api.location.AMapLocationClient
+import com.amap.api.location.AMapLocationClientOption
+import com.amap.api.location.AMapLocationListener
 import com.blindpath.base.common.NavigationInfo
 import com.blindpath.base.common.Result
 import com.blindpath.base.config.AppConfig
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.NavigationState
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationResult
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,14 +24,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 高精度定位实现 — 专为视障人员步行导航设计
- *
- * 核心改进（Phase 1）：
- * 1. FusedLocationProviderClient（替代 LocationManager）— 自动融合 GPS、传感器、网络定位
- * 2. PRIORITY_HIGH_ACCURACY — 最高精度模式
- * 3. setMinUpdateDistanceMeters(0.5f) — 最小位移 0.5 米
- * 4. setMinUpdateIntervalMillis(1000L) — 最快 1 秒更新一次
- * 5. 实际精度由手机 GNSS 芯片决定，一般高端手机可达到 0.5~3 米
+ * 高精度定位实现 — 基于高德地图SDK
+ * 
+ * 专为视障人员步行导航设计，核心特性：
+ * 1. 高德融合定位（GPS + 网络 + 基站 + 传感器）
+ * 2. 定位精度可达 0.5~3 米（高端手机）
+ * 3. 连续定位模式，实时更新位置
+ * 4. GPS 质量分级语音反馈
  */
 @Singleton
 class NavigationRepositoryImpl @Inject constructor(
@@ -45,14 +40,12 @@ class NavigationRepositoryImpl @Inject constructor(
     private val _state = MutableStateFlow(NavigationState())
     override val navigationState: StateFlow<NavigationState> = _state.asStateFlow()
 
-    /** Google 高精度定位客户端 */
-    private lateinit var fusedLocationClient: FusedLocationProviderClient
+    /** 高德定位客户端 */
+    private var locationClient: AMapLocationClient? = null
 
     /** 当前定位结果 */
     private var currentLocation: Location? = null
-
-    /** 定位回调 */
-    private var locationCallback: LocationCallback? = null
+    private var currentAMapLocation: AMapLocation? = null
 
     /** 是否已初始化 */
     private var isInitialized = false
@@ -62,7 +55,7 @@ class NavigationRepositoryImpl @Inject constructor(
 
     override suspend fun startNavigation(): Result<Boolean> {
         return try {
-            Timber.d("Starting high-accuracy navigation...")
+            Timber.d("Starting AMap navigation...")
 
             // 检查定位权限
             if (!hasLocationPermission()) {
@@ -70,8 +63,8 @@ class NavigationRepositoryImpl @Inject constructor(
                 return Result.Error(message = "缺少定位权限")
             }
 
-            // 初始化定位
-            val initSuccess = initLocationSafe()
+            // 初始化高德定位
+            val initSuccess = initAMapLocation()
 
             _state.update {
                 it.copy(
@@ -139,99 +132,113 @@ class NavigationRepositoryImpl @Inject constructor(
     }
 
     /**
-     * 安全初始化高精度定位服务
-     * 使用 FusedLocationProviderClient 替代 LocationManager
+     * 初始化高德定位服务
      */
-    @SuppressLint("MissingPermission")
-    private fun initLocationSafe(): Boolean {
+    private fun initAMapLocation(): Boolean {
         if (isInitialized) {
             Timber.d("Location already initialized")
             return true
         }
 
         try {
-            // 获取 FusedLocationProviderClient
-            fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
+            // 设置隐私合规（高德SDK要求）
+            AMapLocationClient.updatePrivacyShow(context, true, true)
+            AMapLocationClient.updatePrivacyAgree(context, true)
 
-            // 构建高精度定位请求
-            // 关键参数：
-            // - Priority.PRIORITY_HIGH_ACCURACY: 优先使用 GPS（精度 0.5~3 米）
-            // - setMinUpdateDistanceMeters(0.5f): 最小移动 0.5 米才触发更新
-            // - setMinUpdateIntervalMillis(1000L): 最快每秒更新一次
-            val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
-                .setMinUpdateDistanceMeters(0.5f)   // ★ 核心：0.5 米精度
-                .setMaxUpdateDelayMillis(3000L)     // 网络延迟容忍
-                .build()
+            // 创建定位客户端
+            locationClient = AMapLocationClient(context)
 
-            // 创建定位回调
-            locationCallback = createLocationCallback()
-
-            // 请求位置更新
-            fusedLocationClient.requestLocationUpdates(
-                locationRequest,
-                locationCallback!!,
-                Looper.getMainLooper()
-            )
-
-            // 尝试获取上次已知位置（快速响应）
-            try {
-                fusedLocationClient.lastLocation.addOnSuccessListener { location ->
-                    if (location != null && currentLocation == null) {
-                        onLocationReceived(location)
-                        Timber.d("Using last known location: ${location.latitude}, ${location.longitude}, accuracy: ${location.accuracy}m")
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.w(e, "Failed to get last known location")
+            // 配置定位参数
+            val option = AMapLocationClientOption().apply {
+                // 高精度定位模式（GPS + 网络 + 基站）
+                locationMode = AMapLocationClientOption.AMapLocationMode.Hight_Accuracy
+                
+                // 连续定位
+                locationPurpose = AMapLocationClientOption.AMapLocationPurpose.Transport
+                
+                // 定位间隔（毫秒）
+                interval = AppConfig.Navigation.LOCATION_UPDATE_INTERVAL_MS
+                
+                // 最小位移距离（米）
+                isLocationCacheEnable = true
+                
+                // 返回地址信息
+                isNeedAddress = true
+                
+                // 返回逆地理编码
+                isGeoLanguage = AMapLocationClientOption.GeoLanguage.DEFAULT
+                
+                // 缓存定位
+                isLocationCacheEnable = true
+                
+                // 超时时间
+                httpTimeOut = 20000
+                
+                // 关闭单次定位
+                isOnceLocation = false
             }
 
+            locationClient?.setLocationOption(option)
+            locationClient?.setLocationListener(createLocationListener())
+            locationClient?.startLocation()
+
             isInitialized = true
-            Timber.d("FusedLocationProviderClient initialized with HIGH_ACCURACY + 0.5m")
+            Timber.d("AMap location client initialized with HIGH_ACCURACY mode")
             return true
         } catch (e: Exception) {
-            Timber.e(e, "Failed to initialize FusedLocationProviderClient")
+            Timber.e(e, "Failed to initialize AMap location client")
             _state.update { it.copy(lastError = "定位初始化失败: ${e.message}") }
             return false
         }
     }
 
     /**
-     * 创建定位回调 — 处理位置更新
+     * 创建高德定位监听器
      */
-    private fun createLocationCallback(): LocationCallback {
-        return object : LocationCallback() {
-            override fun onLocationResult(locationResult: LocationResult) {
-                locationResult.lastLocation?.let { location ->
-                    onLocationReceived(location)
-                }
-            }
-
-            override fun onLocationAvailability(availability: com.google.android.gms.location.LocationAvailability) {
-                if (!availability.isLocationAvailable) {
-                    Timber.w("Location not available")
-                    _state.update {
-                        it.copy(lastError = "GPS 信号弱，请在开阔地带重新定位")
-                    }
+    private fun createLocationListener(): AMapLocationListener {
+        return AMapLocationListener { aMapLocation ->
+            if (aMapLocation != null) {
+                if (aMapLocation.errorCode == 0) {
+                    // 定位成功
+                    onLocationReceived(aMapLocation)
                 } else {
-                    _state.update { it.copy(lastError = null) }
+                    // 定位失败
+                    Timber.e("AMap location failed: ${aMapLocation.errorCode} - ${aMapLocation.errorInfo}")
+                    _state.update {
+                        it.copy(lastError = "定位失败: ${aMapLocation.errorInfo}")
+                    }
                 }
             }
         }
     }
 
     /**
-     * 处理收到的新位置
+     * 处理收到的高德定位结果
      */
-    private fun onLocationReceived(location: Location) {
+    private fun onLocationReceived(aMapLocation: AMapLocation) {
+        currentAMapLocation = aMapLocation
+
+        // 转换为标准 Location 对象
+        val location = Location("AMap").apply {
+            latitude = aMapLocation.latitude
+            longitude = aMapLocation.longitude
+            accuracy = aMapLocation.accuracy
+            speed = aMapLocation.speed
+            bearing = aMapLocation.bearing
+            time = aMapLocation.time
+            altitude = aMapLocation.altitude
+        }
         currentLocation = location
 
         val locationInfo = com.blindpath.module_navigation.domain.model.LocationInfo(
-            latitude = location.latitude,
-            longitude = location.longitude,
-            accuracy = location.accuracy,
-            speed = location.speed,
-            bearing = location.bearing,
-            timestamp = location.time
+            latitude = aMapLocation.latitude,
+            longitude = aMapLocation.longitude,
+            accuracy = aMapLocation.accuracy,
+            speed = aMapLocation.speed,
+            bearing = aMapLocation.bearing,
+            timestamp = aMapLocation.time,
+            address = aMapLocation.address ?: "",
+            poiName = aMapLocation.poiName ?: ""
         )
 
         _state.update {
@@ -247,12 +254,12 @@ class NavigationRepositoryImpl @Inject constructor(
             updateNavigationInfo(location, dest)
         }
 
-        Timber.d("Location updated: ${location.latitude}, ${location.longitude}, accuracy: ${location.accuracy}m, GPS quality: ${evaluateGpsQuality(location.accuracy)}")
+        Timber.d("Location updated: ${aMapLocation.latitude}, ${aMapLocation.longitude}, " +
+                "accuracy: ${aMapLocation.accuracy}m, GPS quality: ${evaluateGpsQuality(aMapLocation.accuracy)}")
     }
 
     /**
      * 评估 GPS 信号质量
-     * 使用 GpsQuality.fromAccuracy() 静态方法进行分级
      */
     private fun evaluateGpsQuality(accuracy: Float): GpsQuality {
         return GpsQuality.fromAccuracy(accuracy)
@@ -263,13 +270,12 @@ class NavigationRepositoryImpl @Inject constructor(
      */
     private fun stopLocationUpdates() {
         try {
-            locationCallback?.let { callback ->
-                fusedLocationClient.removeLocationUpdates(callback)
-            }
+            locationClient?.stopLocation()
+            locationClient?.onDestroy()
         } catch (e: Exception) {
             Timber.w(e, "Error stopping location updates")
         }
-        locationCallback = null
+        locationClient = null
         isInitialized = false
     }
 
@@ -279,9 +285,9 @@ class NavigationRepositoryImpl @Inject constructor(
     private fun updateNavigationInfo(location: Location, destination: LatLonPoint) {
         try {
             val results = FloatArray(2)
-            LocationUtils.calculateLineDistance(
-                LatLonPoint(location.latitude, location.longitude),
-                destination,
+            Location.distanceBetween(
+                location.latitude, location.longitude,
+                destination.latitude, destination.longitude,
                 results
             )
 
@@ -324,16 +330,7 @@ class NavigationRepositoryImpl @Inject constructor(
     }
 }
 
-// 高德坐标点
+/**
+ * 坐标点
+ */
 class LatLonPoint(val latitude: Double, val longitude: Double)
-
-// 距离计算工具
-object LocationUtils {
-    fun calculateLineDistance(from: LatLonPoint, to: LatLonPoint, results: FloatArray) {
-        android.location.Location.distanceBetween(
-            from.latitude, from.longitude,
-            to.latitude, to.longitude,
-            results
-        )
-    }
-}

@@ -41,8 +41,8 @@ dependencies {
     implementation("com.google.dagger:hilt-android:2.51.1")
     ksp("com.google.dagger:hilt-android-compiler:2.51.1")
 
-    // Location
-    implementation("com.google.android.gms:play-services-location:21.0.1")
+    // 高德地图 SDK（地图 + 定位 + 搜索）
+    implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
 
     // Timber
     implementation("com.jakewharton.timber:timber:5.0.1")

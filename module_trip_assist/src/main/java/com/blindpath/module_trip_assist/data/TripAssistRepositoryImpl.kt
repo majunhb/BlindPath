@@ -482,7 +482,13 @@ class TripAssistRepositoryImpl @Inject constructor(
 
         /**
          * 和风天气 API Key
-         * TODO: 迁移到 BuildConfig 或 local.properties，不要硬编码
+         * 
+         * 获取方式：
+         * 1. 访问 https://dev.qweather.com/ 注册账号
+         * 2. 创建应用获取 API Key
+         * 3. 将下方 YOUR_QWEATHER_API_KEY 替换为您的 Key
+         * 
+         * 免费版限制：1000次/天，足够个人使用
          */
         private const val WEATHER_API_KEY = "YOUR_QWEATHER_API_KEY"
     }
