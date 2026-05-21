@@ -38,8 +38,8 @@ dependencies {
     implementation(project(":module_voice"))
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.50")
-    ksp("com.google.dagger:hilt-android-compiler:2.50")
+    implementation("com.google.dagger:hilt-android:2.51.1")
+    ksp("com.google.dagger:hilt-android-compiler:2.51.1")
 
     // Location
     implementation("com.google.android.gms:play-services-location:21.0.1")

@@ -54,7 +54,7 @@ dependencies {
     // ML Kit Image Labeling
     implementation("com.google.mlkit:image-labeling:17.0.7")
 
-    // 高德地图 SDK（组合包，已包含定位+搜索，Maven Central 可用）
+    // 高德地图 SDK（组合包，已包含定位+搜索，Maven Central 可用�?
     // 稳定版本 10.1.700，对应定位SDK 6.5.1 + 搜索SDK 9.7.4
     implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
 
@@ -64,17 +64,17 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:1.3.1")
     implementation("androidx.camera:camera-view:1.3.1")
 
-    // Google Play Services Location - 高精度定位
+    // Google Play Services Location - 高精度定�?
     implementation("com.google.android.gms:play-services-location:21.0.1")
 
-    // TensorFlow Lite - AI物体检测
+    // TensorFlow Lite - AI物体检�?
     implementation("org.tensorflow:tensorflow-lite:2.14.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
     implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
 
     // Hilt
-    implementation("com.google.dagger:hilt-android:2.50")
-    ksp("com.google.dagger:hilt-android-compiler:2.50")
+    implementation("com.google.dagger:hilt-android:2.51.1")
+    ksp("com.google.dagger:hilt-android-compiler:2.51.1")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
     // Core
