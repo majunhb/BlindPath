@@ -44,7 +44,6 @@ complexity:
   CyclomaticComplexMethod:
     active: true
     threshold: 15          # 障碍检测/导航逻辑控制流复杂，阈值适当放宽
-    allowedSimpleFunctions: true
   LargeClass:
     active: true
     threshold: 400         # 从 600 收紧 — 超过则需拆分
@@ -53,7 +52,8 @@ complexity:
     threshold: 50          # 从 60 收紧 — 50 行以上的方法需要重构
   LongParameterList:
     active: true
-    threshold: 6
+    functionThreshold: 6
+    constructorThreshold: 7
     ignoreDefaultParameters: true
     ignoreDataClasses: true
     ignoreAnnotated: ['Composable']  # Compose 函数允许更多参数
@@ -306,7 +306,6 @@ performance:
     active: true
   SpreadOperator:
     active: true
-    excludedClasses: ''
   UnnecessaryPartOfBinaryExpression:
     active: true
   UnnecessaryTemporaryInstantiation:
@@ -398,13 +397,9 @@ style:
     active: true
   NewLineAtEndOfFile:
     active: true
-  NotImplementedDeclaration:
-    active: true
   ObjectLiteralToLambda:
     active: true
   OptionalAbstractKeyword:
-    active: true
-  PrintStackTrace:
     active: true
   ProtectedMemberInFinalClass:
     active: true
@@ -466,10 +461,7 @@ style:
     active: true
   UseRequireNotNull:
     active: true
-  UseToFindFirstOrFirstOrNull:
-    active: true
   UselessCallOnNotNull:
-    active: true
   UtilityClassWithPublicConstructor:
     active: true
   VarCouldBeVal:
