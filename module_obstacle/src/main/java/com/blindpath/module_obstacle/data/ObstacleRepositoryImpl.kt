@@ -79,8 +79,12 @@ class ObstacleRepositoryImpl @Inject constructor(
                 
                 // 初始化AI检测器
                 val modelLoaded = aiDetector.loadModel()
-                if (!modelLoaded) {
-                    Timber.w("AI model failed to load, will use demo mode")
+                if (modelLoaded) {
+                    _state.update { it.copy(isModelLoaded = true) }
+                    Timber.d("AI model loaded successfully")
+                } else {
+                    Timber.w("AI model failed to load, will use ML Kit fallback")
+                    _state.update { it.copy(lastError = "AI模型加载失败，将使用ML Kit回退方案") }
                 }
 
                 isInitialized = true
@@ -92,40 +96,28 @@ class ObstacleRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun initialize(): Result<Boolean> {
-        return withContext(Dispatchers.IO) {
-            try {
-                Timber.d("Initializing obstacle repository")
-                val modelLoaded = aiDetector.loadModel()
-                if (modelLoaded) {
-                    _state.update { it.copy(isModelLoaded = true) }
-                    Timber.d("ObstacleRepository initialized successfully")
-                    Result.Success(true)
-                } else {
-                    Timber.w("AI模型加载失败，使用演示模式")
-                    _state.update { it.copy(lastError = "AI模型加载失败，将使用演示模式") }
-                    Result.Error(message = "模型加载失败")
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "ObstacleRepository initialization failed")
-                Result.Error(message = e.message ?: "初始化失败")
-            }
-        }
-    }
-
     override suspend fun startDetection(): Result<Boolean> {
         return withContext(Dispatchers.IO) {
             try {
                 Timber.d("Starting obstacle detection")
 
-                // 加载模型（失败也继续，使用演示模式）
-                val modelLoaded = aiDetector.loadModel()
-                if (!modelLoaded) {
-                    Timber.w("AI模型加载失败，将使用演示模式")
-                    _state.update { it.copy(lastError = "AI模型加载失败，将使用演示模式") }
+                // 确保已初始化
+                if (!isInitialized) {
+                    val initResult = initialize()
+                    if (initResult is Result.Error) {
+                        Timber.w("Initialization failed, but continuing with camera")
+                    }
                 }
 
-                _state.update { it.copy(isModelLoaded = true) }
+                // 检查模型是否已加载（可能使用了 ML Kit 回退）
+                val isModelReady = aiDetector.isModelLoaded()
+                if (isModelReady) {
+                    _state.update { it.copy(isModelLoaded = true) }
+                    Timber.d("Detection model is ready")
+                } else {
+                    Timber.w("Detection model not ready, camera will still start")
+                    _state.update { it.copy(lastError = "检测模型未就绪，请重启应用") }
+                }
 
                 // 启动摄像头（同步等待完成）
                 val cameraStarted = startCameraSync()
