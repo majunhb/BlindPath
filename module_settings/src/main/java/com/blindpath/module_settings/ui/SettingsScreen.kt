@@ -67,9 +67,8 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .semantics { contentDescription = "设置页面" }
         ) {
-
-        // 紧急联系人设置
-        SettingsSection(title = "紧急联系人") {
+            // 紧急联系人设置
+            SettingsSection(title = "紧急联系人") {
             EmergencyContactCard(
                 settings = uiState.settings,
                 onUpdate = { name, phone ->
