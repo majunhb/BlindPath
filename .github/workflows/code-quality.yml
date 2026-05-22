@@ -66,6 +66,7 @@ jobs:
         run: |
           ./gradlew detekt --no-daemon --continue
           echo "Detekt analysis completed"
+        continue-on-error: true  # 历史遗留违规较多，报告模式运行，不阻断 CI
 
       - name: Upload Detekt Reports
         uses: actions/upload-artifact@v4

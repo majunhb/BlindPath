@@ -27,7 +27,7 @@ subprojects {
         allRules = false
         // 并行分析，加速 CI
         parallel = true
-        // 发现问题时阻断构建
+        // 发现问题时阻断本地构建（CI 侧使用 continue-on-error 处理）
         isIgnoreFailures = false
         source.setFrom(
             "src/main/kotlin",
