@@ -124,8 +124,8 @@ fun CommunityScreen(
                         requests = uiState.requests,
                         onCancel = { viewModel.cancelRequest(it) },
                         onComplete = { viewModel.completeRequest(it) },
-                        onNewRequest = { title, description, urgency ->
-                            viewModel.createRequest(title, description, urgency)
+                        onNewRequest = { startLocation, endLocation, duration ->
+                            viewModel.requestAccompany(startLocation, endLocation, duration)
                         }
                     )
                     1 -> FindVolunteersTab(volunteers = uiState.volunteers)
