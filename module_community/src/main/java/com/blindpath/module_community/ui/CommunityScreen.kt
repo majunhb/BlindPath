@@ -61,21 +61,100 @@ fun CommunityScreen(
             )
         }
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(24.dp)
-                .verticalScroll(rememberScrollState())
-                .semantics { contentDescription = "社区互助页面" }
-        ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(24.dp)
+                    .verticalScroll(rememberScrollState())
+                    .semantics { contentDescription = "社区互助页面" }
+            ) {
 
-            // 角色切换标签
-            TabRow(
-                selectedTabIndex = currentTab,
-                modifier = Modifier.semantics {
-                    contentDescription = "功能切换标签"
+                // 角色切换标签
+                TabRow(
+                    selectedTabIndex = currentTab,
+                    modifier = Modifier.semantics {
+                        contentDescription = "功能切换标签"
+                    }
+                ) {
+                    Tab(
+                        selected = currentTab == 0,
+                        onClick = { currentTab = 0 },
+                        text = {
+                            Text(
+                                "我的请求",
+                                modifier = Modifier.semantics {
+                                    contentDescription = if (currentTab == 0) "我的请求，当前页面" else "我的请求"
+                                }
+                            )
+                        }
+                    )
+                    Tab(
+                        selected = currentTab == 1,
+                        onClick = { currentTab = 1 },
+                        text = {
+                            Text(
+                                "寻找志愿者",
+                                modifier = Modifier.semantics {
+                                    contentDescription = if (currentTab == 1) "寻找志愿者，当前页面" else "寻找志愿者"
+                                }
+                            )
+                        }
+                    )
+                    Tab(
+                        selected = currentTab == 2,
+                        onClick = { currentTab = 2 },
+                        text = {
+                            Text(
+                                "成为志愿者",
+                                modifier = Modifier.semantics {
+                                    contentDescription = if (currentTab == 2) "成为志愿者，当前页面" else "成为志愿者"
+                                }
+                            )
+                        }
+                    )
                 }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // 标签内容
+                when (currentTab) {
+                    0 -> MyRequestsTab(
+                        requests = uiState.requests,
+                        onCancel = { viewModel.cancelRequest(it) },
+                        onComplete = { viewModel.completeRequest(it) },
+                        onNewRequest = { title, description, urgency ->
+                            viewModel.createRequest(title, description, urgency)
+                        }
+                    )
+                    1 -> FindVolunteersTab(volunteers = uiState.volunteers)
+                    2 -> BecomeVolunteerTab(
+                        currentUser = uiState.currentUser,
+                        onRegister = { viewModel.registerAsVolunteer(it) },
+                        onSwitchBack = { viewModel.switchToBlindUser() }
+                    )
+                }
+            }
+
+            // 成功消息提示
+            uiState.showSuccessMessage?.let { message ->
+                Snackbar(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(16.dp)
+                        .semantics { contentDescription = message },
+                    action = {
+                        TextButton(onClick = { viewModel.dismissMessage() }) {
+                            Text("关闭")
+                        }
+                    }
+                ) {
+                    Text(message)
+                }
+            }
+        }
+    }
             ) {
                 Tab(
                     selected = currentTab == 0,
