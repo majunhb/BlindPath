@@ -62,6 +62,9 @@ dependencies {
     // OkHttp logging interceptor
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 
+    // Timber for logging
+    implementation("com.jakewharton.timber:timber:5.0.1")
+
     // 高德地图 SDK（组合包，已包含定位+搜索，Maven Central 可用）
     // 稳定版本 10.1.700，对应定位SDK 6.5.1 + 搜索SDK 9.7.4
     implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
