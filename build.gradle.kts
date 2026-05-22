@@ -33,6 +33,8 @@ subprojects {
             "src/main/kotlin",
             "src/main/java"
         )
+        // 排除生成代码和 build 目录
+        ignoredBuildTypes = listOf("release")
     }
 
     // ktlint 配置
