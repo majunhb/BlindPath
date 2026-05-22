@@ -148,11 +148,11 @@ class ObstacleRepositoryImpl @Inject constructor(
                     return@withContext Result.Error(message = "摄像头启动失败")
                 }
 
-                // 重置场景识别器
+                // 重置场景识别器（安全调用）
                 try {
                     sceneClassifier.reset()
                 } catch (e: Exception) {
-                    Timber.w(e, "Failed to reset scene classifier")
+                    Timber.w(e, "Failed to reset scene classifier, continuing anyway")
                 }
 
                 _state.update {
@@ -464,36 +464,65 @@ class ObstacleRepositoryImpl @Inject constructor(
         analysisJob?.cancel()
         analysisJob = scope.launch {
             try {
-                val bitmap = imageProxyToBitmap(imageProxy)
+                // 安全地转换图像
+                val bitmap = try {
+                    imageProxyToBitmap(imageProxy)
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to convert image to bitmap")
+                    null
+                }
+                
                 if (bitmap != null) {
-                    // AI目标检测
-                    val obstacles = aiDetector.detect(bitmap)
+                    // AI目标检测（安全调用）
+                    val obstacles = try {
+                        aiDetector.detect(bitmap)
+                    } catch (e: Exception) {
+                        Timber.e(e, "AI detection failed")
+                        emptyList()
+                    }
                     latestObstacles = obstacles
 
-                    // 场景识别
-                    val sceneResult = sceneClassifier.recognizeScene(bitmap, obstacles)
-
-                    // 更新状态
-                    _state.update {
-                        it.copy(
-                            detectedObstacles = obstacles,
-                            sceneRecognition = sceneResult,
-                            fps = try {
-                                (1000 / (imageProxy.imageInfo.timestamp / 1_000_000)).toInt().coerceIn(0, 60)
-                            } catch (e: Exception) {
-                                30
-                            }
-                        )
+                    // 场景识别（安全调用）
+                    val sceneResult = try {
+                        sceneClassifier.recognizeScene(bitmap, obstacles)
+                    } catch (e: Exception) {
+                        Timber.e(e, "Scene classification failed")
+                        null
                     }
 
-                    // 处理预警
-                    processAlert(obstacles)
+                    // 更新状态（安全调用）
+                    try {
+                        _state.update {
+                            it.copy(
+                                detectedObstacles = obstacles,
+                                sceneRecognition = sceneResult,
+                                fps = try {
+                                    (1000 / (imageProxy.imageInfo.timestamp / 1_000_000)).toInt().coerceIn(0, 60)
+                                } catch (e: Exception) {
+                                    30
+                                }
+                            )
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to update state")
+                    }
 
-                    // 处理场景变化
-                    processSceneChange(sceneResult)
+                    // 处理预警（安全调用）
+                    try {
+                        processAlert(obstacles)
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to process alert")
+                    }
+
+                    // 处理场景变化（安全调用）
+                    try {
+                        processSceneChange(sceneResult)
+                    } catch (e: Exception) {
+                        Timber.e(e, "Failed to process scene change")
+                    }
                 }
             } catch (e: Exception) {
-                Timber.e(e, "Image processing failed")
+                Timber.e(e, "Image processing failed: ${e.javaClass.simpleName}: ${e.message}")
             } finally {
                 try {
                     imageProxy.close()
@@ -601,9 +630,27 @@ class ObstacleRepositoryImpl @Inject constructor(
 
     private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
         return try {
-            val yBuffer = imageProxy.planes[0].buffer
-            val uBuffer = imageProxy.planes[1].buffer
-            val vBuffer = imageProxy.planes[2].buffer
+            // 安全地获取缓冲区
+            val yBuffer = try {
+                imageProxy.planes[0].buffer
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to get Y buffer")
+                return null
+            }
+            
+            val uBuffer = try {
+                imageProxy.planes[1].buffer
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to get U buffer")
+                return null
+            }
+            
+            val vBuffer = try {
+                imageProxy.planes[2].buffer
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to get V buffer")
+                return null
+            }
 
             val ySize = yBuffer.remaining()
             val uSize = uBuffer.remaining()
@@ -622,16 +669,27 @@ class ObstacleRepositoryImpl @Inject constructor(
             var bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
 
             // 旋转角度
-            val rotation = imageProxy.imageInfo.rotationDegrees
+            val rotation = try {
+                imageProxy.imageInfo.rotationDegrees
+            } catch (e: Exception) {
+                Timber.w(e, "Failed to get rotation")
+                0
+            }
+            
             if (rotation != 0 && bitmap != null) {
                 val matrix = Matrix()
                 matrix.postRotate(rotation.toFloat())
-                bitmap = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                bitmap = try {
+                    Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+                } catch (e: Exception) {
+                    Timber.w(e, "Failed to rotate bitmap")
+                    bitmap
+                }
             }
 
             bitmap
         } catch (e: Exception) {
-            Timber.e(e, "ImageProxy to Bitmap failed")
+            Timber.e(e, "ImageProxy to Bitmap failed: ${e.javaClass.simpleName}: ${e.message}")
             null
         }
     }
