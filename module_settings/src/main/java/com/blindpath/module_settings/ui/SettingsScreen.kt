@@ -69,56 +69,57 @@ fun SettingsScreen(
         ) {
             // 紧急联系人设置
             SettingsSection(title = "紧急联系人") {
-            EmergencyContactCard(
-                settings = uiState.settings,
-                onUpdate = { name, phone ->
-                    viewModel.updateEmergencyContact(name, phone)
-                }
-            )
+                EmergencyContactCard(
+                    settings = uiState.settings,
+                    onUpdate = { name, phone ->
+                        viewModel.updateEmergencyContact(name, phone)
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 语音设置
+            SettingsSection(title = "语音播报") {
+                VoiceSettingsCard(
+                    settings = uiState.settings,
+                    onSpeechRateChange = { viewModel.updateSpeechRate(it) },
+                    onSpeechPitchChange = { viewModel.updateSpeechPitch(it) },
+                    onVoiceEnabledChange = { viewModel.updateVoiceEnabled(it) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 振动设置
+            SettingsSection(title = "振动反馈") {
+                VibrationSettingsCard(
+                    settings = uiState.settings,
+                    onEnabledChange = { viewModel.updateVibrationEnabled(it) },
+                    onIntensityChange = { viewModel.updateVibrationIntensity(it) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 检测设置
+            SettingsSection(title = "障碍物检测") {
+                DetectionSettingsCard(
+                    settings = uiState.settings,
+                    onSensitivityChange = { sensitivity -> viewModel.updateDetectionSensitivity(sensitivity) },
+                    onDistanceChange = { distance -> viewModel.updateDetectionDistance(distance) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // 关于
+            SettingsSection(title = "关于") {
+                AboutCard()
+            }
+
+            Spacer(modifier = Modifier.height(48.dp))
         }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // 语音设置
-        SettingsSection(title = "语音播报") {
-            VoiceSettingsCard(
-                settings = uiState.settings,
-                onSpeechRateChange = { viewModel.updateSpeechRate(it) },
-                onSpeechPitchChange = { viewModel.updateSpeechPitch(it) },
-                onVoiceEnabledChange = { viewModel.updateVoiceEnabled(it) }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // 振动设置
-        SettingsSection(title = "振动反馈") {
-            VibrationSettingsCard(
-                settings = uiState.settings,
-                onEnabledChange = { viewModel.updateVibrationEnabled(it) },
-                onIntensityChange = { viewModel.updateVibrationIntensity(it) }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // 检测设置
-        SettingsSection(title = "障碍物检测") {
-            DetectionSettingsCard(
-                settings = uiState.settings,
-                onSensitivityChange = { sensitivity -> viewModel.updateDetectionSensitivity(sensitivity) },
-                onDistanceChange = { distance -> viewModel.updateDetectionDistance(distance) }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        // 关于
-        SettingsSection(title = "关于") {
-            AboutCard()
-        }
-
-        Spacer(modifier = Modifier.height(48.dp))
     }
 }
 
