@@ -14,6 +14,7 @@ import com.blindpath.base.error.BlindPathError
 import com.blindpath.base.error.DegradationManager
 import com.blindpath.base.power.FrameRateController
 import com.blindpath.base.power.PerformanceMode
+import com.blindpath.base.power.PowerManager
 import com.blindpath.base.tts.VibrationHelper
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.domain.VoiceRepository
@@ -103,7 +104,7 @@ class ObstacleService : Service() {
             try {
                 // 初始化检测器
                 val initResult = obstacleRepository.initialize()
-                if (initResult !is com.blindpath.base.common.Result.Success<*>) {
+                if (initResult !is com.blindpath.base.common.Result.Success) {
                     handleError(BlindPathError.ModelLoadError("初始化失败"))
                     return@launch
                 }
@@ -114,7 +115,7 @@ class ObstacleService : Service() {
 
                 // 开始检测
                 val result = obstacleRepository.startDetection()
-                if (result !is com.blindpath.base.common.Result.Success<*>) {
+                if (result !is com.blindpath.base.common.Result.Success) {
                     handleError(BlindPathError.CameraInitError())
                     stopObstacle()
                     return@launch

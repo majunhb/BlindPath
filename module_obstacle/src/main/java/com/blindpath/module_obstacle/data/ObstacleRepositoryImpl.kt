@@ -66,6 +66,31 @@ class ObstacleRepositoryImpl @Inject constructor(
 
     private var isCameraStarting = false
     private var isCameraStarted = false
+    private var isInitialized = false
+
+    override suspend fun initialize(): Result<Boolean> {
+        return withContext(Dispatchers.IO) {
+            try {
+                if (isInitialized) {
+                    return@withContext Result.Success(true)
+                }
+
+                Timber.d("Initializing obstacle repository")
+                
+                // 初始化AI检测器
+                val modelLoaded = aiDetector.loadModel()
+                if (!modelLoaded) {
+                    Timber.w("AI model failed to load, will use demo mode")
+                }
+
+                isInitialized = true
+                Result.Success(true)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize obstacle repository")
+                Result.Error(message = e.message ?: "初始化失败")
+            }
+        }
+    }
 
     override suspend fun initialize(): Result<Boolean> {
         return withContext(Dispatchers.IO) {
@@ -248,8 +273,21 @@ class ObstacleRepositoryImpl @Inject constructor(
                     return@withContext false
                 }
 
-                // 2. 先停止之前的摄像头
-                stopCameraUnsafe()
+                // 2. 检查摄像头硬件是否存在
+                val packageManager = context.packageManager
+                if (!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA)) {
+                    Timber.e("No camera hardware available")
+                    _state.update { it.copy(lastError = "设备没有摄像头硬件") }
+                    isCameraStarting = false
+                    return@withContext false
+                }
+
+                // 3. 先停止之前的摄像头
+                try {
+                    stopCameraUnsafe()
+                } catch (e: Exception) {
+                    Timber.w(e, "Error stopping previous camera")
+                }
 
                 cameraExecutor = Executors.newSingleThreadExecutor()
 
@@ -266,7 +304,7 @@ class ObstacleRepositoryImpl @Inject constructor(
                     isCameraStarting = false
                     return@withContext false
                 } catch (e: Exception) {
-                    Timber.e(e, "Failed to get camera provider")
+                    Timber.e(e, "Failed to get camera provider: ${e.javaClass.simpleName}")
                     _state.update { it.copy(lastError = "无法获取摄像头: ${e.message}") }
                     isCameraStarting = false
                     return@withContext false
@@ -281,60 +319,83 @@ class ObstacleRepositoryImpl @Inject constructor(
 
                 cameraProvider = provider
 
-                val cameraSelector = if (useFrontCamera) {
-                    CameraSelector.DEFAULT_FRONT_CAMERA
-                } else {
-                    CameraSelector.DEFAULT_BACK_CAMERA
-                }
-
-                // 创建 Preview 用例 - 用于显示相机预览
-                cameraPreview = androidx.camera.core.Preview.Builder()
-                    .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
-                    .build()
-
-                // 设置 SurfaceProvider（如果已有）
-                previewSurfaceProvider?.let { provider ->
-                    cameraPreview?.setSurfaceProvider(provider)
-                }
-
-                val imageAnalysis = ImageAnalysis.Builder()
-                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                    .build()
-
-                val executor = cameraExecutor!!
-                imageAnalysis.setAnalyzer(executor) { imageProxy ->
-                    try {
-                        processImage(imageProxy)
-                    } catch (e: Exception) {
-                        Timber.e(e, "Image analysis error")
-                        imageProxy.close()
-                    }
-                }
-
-                // 使用 ProcessLifecycleOwner 绑定生命周期
+                // 检查是否有可用的摄像头
                 try {
-                    // 先解绑所有之前的绑定
-                    cameraProvider?.unbindAll()
+                    val cameraSelector = if (useFrontCamera) {
+                        CameraSelector.DEFAULT_FRONT_CAMERA
+                    } else {
+                        CameraSelector.DEFAULT_BACK_CAMERA
+                    }
 
-                    val useCases = mutableListOf<androidx.camera.core.UseCase>()
-                    cameraPreview?.let { useCases.add(it) }
-                    useCases.add(imageAnalysis)
+                    // 验证摄像头是否存在
+                    val hasCamera = try {
+                        provider.hasCamera(cameraSelector)
+                    } catch (e: Exception) {
+                        Timber.w(e, "Failed to check camera availability")
+                        true // 假设存在，继续尝试
+                    }
 
-                    cameraProvider?.bindToLifecycle(
-                        androidx.lifecycle.ProcessLifecycleOwner.get(),
-                        cameraSelector,
-                        *useCases.toTypedArray()
-                    )
+                    if (!hasCamera) {
+                        Timber.e("Camera not available: ${if (useFrontCamera) "front" else "back"}")
+                        _state.update { it.copy(lastError = "${if (useFrontCamera) "前置" else "后置"}摄像头不可用") }
+                        isCameraStarting = false
+                        return@withContext false
+                    }
 
-                    isCameraStarted = true
-                    isCameraStarting = false
-                    _state.update { it.copy(isCameraReady = true) }
-                    Timber.d("Camera started successfully")
-                    true
+                    // 创建 Preview 用例 - 用于显示相机预览
+                    cameraPreview = androidx.camera.core.Preview.Builder()
+                        .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
+                        .build()
+
+                    // 设置 SurfaceProvider（如果已有）
+                    previewSurfaceProvider?.let { surfaceProvider ->
+                        cameraPreview?.setSurfaceProvider(surfaceProvider)
+                    }
+
+                    val imageAnalysis = ImageAnalysis.Builder()
+                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                        .build()
+
+                    val executor = cameraExecutor!!
+                    imageAnalysis.setAnalyzer(executor) { imageProxy ->
+                        try {
+                            processImage(imageProxy)
+                        } catch (e: Exception) {
+                            Timber.e(e, "Image analysis error")
+                            imageProxy.close()
+                        }
+                    }
+
+                    // 使用 ProcessLifecycleOwner 绑定生命周期
+                    try {
+                        // 先解绑所有之前的绑定
+                        cameraProvider?.unbindAll()
+
+                        val useCases = mutableListOf<androidx.camera.core.UseCase>()
+                        cameraPreview?.let { useCases.add(it) }
+                        useCases.add(imageAnalysis)
+
+                        cameraProvider?.bindToLifecycle(
+                            androidx.lifecycle.ProcessLifecycleOwner.get(),
+                            cameraSelector,
+                            *useCases.toTypedArray()
+                        )
+
+                        isCameraStarted = true
+                        isCameraStarting = false
+                        _state.update { it.copy(isCameraReady = true) }
+                        Timber.d("Camera started successfully")
+                        true
+                    } catch (e: Exception) {
+                        Timber.e(e, "Camera binding failed: ${e.javaClass.simpleName}: ${e.message}")
+                        _state.update { it.copy(lastError = "摄像头启动失败: ${e.message}") }
+                        isCameraStarting = false
+                        false
+                    }
                 } catch (e: Exception) {
-                    Timber.e(e, "Camera binding failed: ${e.javaClass.simpleName}: ${e.message}")
-                    _state.update { it.copy(lastError = "摄像头启动失败: ${e.message}") }
+                    Timber.e(e, "Camera setup failed: ${e.javaClass.simpleName}")
+                    _state.update { it.copy(lastError = "摄像头配置失败: ${e.message}") }
                     isCameraStarting = false
                     false
                 }

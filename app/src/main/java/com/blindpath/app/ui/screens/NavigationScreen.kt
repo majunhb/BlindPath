@@ -48,6 +48,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
+import timber.log.Timber
 import kotlin.coroutines.resume
 
 /**
@@ -101,7 +102,7 @@ fun NavigationScreen(
     var routeOverlayRef by remember { mutableStateOf<com.amap.api.maps.model.Polyline?>(null) }
 
     // 获取当前位置
-    suspend fun getCurrentPosition(): LatLonPoint? = withTimeoutOrNull(10000L) {
+    suspend fun getCurrentPosition(): LatLonPoint? = withTimeoutOrNull(15000L) {
         suspendCancellableCoroutine { cont ->
             try {
                 val client = AMapLocationClient(context)
@@ -109,21 +110,41 @@ fun NavigationScreen(
                     locationMode = AMapLocationClientOption.AMapLocationMode.Hight_Accuracy
                     isOnceLocation = true
                     isNeedAddress = false
+                    httpTimeOut = 12000
                 }
                 client.setLocationOption(option)
                 client.setLocationListener(object : AMapLocationListener {
                     override fun onLocationChanged(loc: AMapLocation?) {
-                        client.stopLocation(); client.onDestroy()
+                        client.stopLocation()
+                        client.onDestroy()
                         if (loc != null && loc.errorCode == 0) {
                             val point = LatLonPoint(loc.latitude, loc.longitude)
                             currentLocation = point
                             cont.resume(point) {}
-                        } else cont.resume(null) {}
+                        } else {
+                            val errorCode = loc?.errorCode ?: -1
+                            val errorMsg = when (errorCode) {
+                                4 -> "网络连接失败"
+                                5 -> "GPS未开启"
+                                6 -> "定位权限被拒绝"
+                                12 -> "缺少定位权限"
+                                13 -> "定位服务未开启"
+                                else -> "定位失败($errorCode)"
+                            }
+                            Timber.e("Navigation location failed: $errorMsg")
+                            cont.resume(null) {}
+                        }
                     }
                 })
                 client.startLocation()
-                cont.invokeOnCancellation { client.stopLocation(); client.onDestroy() }
-            } catch (e: Exception) { cont.resume(null) {} }
+                cont.invokeOnCancellation {
+                    client.stopLocation()
+                    client.onDestroy()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to get current position")
+                cont.resume(null) {}
+            }
         }
     }
 
@@ -334,9 +355,10 @@ fun NavigationScreen(
 
             val origin = getCurrentPosition()
             if (origin == null) {
-                announcement = "无法获取当前位置，请检查GPS权限"
-                voiceRepository.speak("无法获取当前位置，请检查GPS权限", queueMode = false)
-                isPlanning = false; return@launch
+                announcement = "无法获取当前位置。请检查：1. GPS是否开启 2. 位置权限是否授予 3. 是否在开阔区域"
+                voiceRepository.speak("无法获取当前位置，请检查GPS和权限设置", queueMode = false)
+                isPlanning = false
+                return@launch
             }
 
             aMapRef?.addMarker(MarkerOptions().position(LatLng(origin.latitude, origin.longitude)).title("我的位置").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)))
@@ -344,9 +366,10 @@ fun NavigationScreen(
             announcement = "正在解析目的地坐标..."
             val destPoint = geocodeDestination(destination)
             if (destPoint == null) {
-                announcement = "无法识别目的地：$destination，请尝试更详细的地址"
-                voiceRepository.speak("无法识别目的地，请尝试更详细的地址", queueMode = false)
-                isPlanning = false; return@launch
+                announcement = "无法识别目的地：$destination。建议：1. 使用更详细的地址 2. 添加城市名称 3. 使用地标名称"
+                voiceRepository.speak("无法识别目的地，请尝试更详细的地址或添加城市名称", queueMode = false)
+                isPlanning = false
+                return@launch
             }
 
             aMapRef?.addMarker(MarkerOptions().position(LatLng(destPoint.latitude, destPoint.longitude)).title(destination).icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)))
@@ -354,12 +377,15 @@ fun NavigationScreen(
             announcement = "正在规划步行路线..."
             val steps = planWalkRoute(origin, destPoint)
             if (steps.isEmpty()) {
-                announcement = "路线规划失败，请更换目的地"
-                voiceRepository.speak("路线规划失败，请更换目的地", queueMode = false)
-                isPlanning = false; return@launch
+                announcement = "路线规划失败。可能原因：1. 目的地太远 2. 无法步行到达 3. 网络问题。请更换目的地重试"
+                voiceRepository.speak("路线规划失败，请更换目的地或检查网络", queueMode = false)
+                isPlanning = false
+                return@launch
             }
 
-            routeSteps = steps; isNavigating = true; currentStep = 0
+            routeSteps = steps
+            isNavigating = true
+            currentStep = 0
             val msg = "路线规划成功！全程${totalDistance}，预计${totalDuration}到达${destination}。共${routeSteps.size}个步骤。"
             announcement = msg
             voiceRepository.speak(msg, queueMode = false)
@@ -426,12 +452,31 @@ fun NavigationScreen(
                     // 目的地输入
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("请输入目的地", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Text("智能导航", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "输入目的地后，系统将为您规划步行路线，并提供语音导航指引。",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(value = destination, onValueChange = { destination = it }, label = { Text("目的地") }, placeholder = { Text("例如：天安门广场、北京南站") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                            OutlinedTextField(
+                                value = destination,
+                                onValueChange = { destination = it },
+                                label = { Text("目的地") },
+                                placeholder = { Text("例如：天安门广场、北京南站") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                                supportingText = { Text("支持地址、地标、建筑名称") }
+                            )
                             Spacer(modifier = Modifier.height(12.dp))
-                            Button(onClick = { startNavigation() }, modifier = Modifier.fillMaxWidth().height(52.dp), enabled = destination.isNotBlank()) {
-                                Icon(Icons.Default.Navigation, contentDescription = null); Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = { startNavigation() },
+                                modifier = Modifier.fillMaxWidth().height(52.dp),
+                                enabled = destination.isNotBlank()
+                            ) {
+                                Icon(Icons.Default.Navigation, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text("开始导航", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                             }
                             Spacer(modifier = Modifier.height(8.dp))
@@ -442,6 +487,26 @@ fun NavigationScreen(
                                     AssistChip(onClick = { destination = p }, label = { Text(p, fontSize = 12.sp) })
                                 }
                             }
+                        }
+                    }
+                    
+                    // 使用说明
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.LocationOn, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("使用说明", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("• 需要开启GPS定位和位置权限", style = MaterialTheme.typography.bodySmall)
+                            Text("• 支持步行导航，自动偏航重规划", style = MaterialTheme.typography.bodySmall)
+                            Text("• 提供语音播报和振动提示", style = MaterialTheme.typography.bodySmall)
+                            Text("• 建议在开阔区域使用以获得更好定位", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 } else if (isNavigating) {

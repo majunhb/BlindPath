@@ -34,6 +34,7 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import timber.log.Timber
 
 /**
  * 实时定位界面 - 实景应用级
@@ -116,7 +117,18 @@ fun LocationScreen(
             voiceRepository.speak("正在定位，请稍候", queueMode = false)
 
             try {
-                val client = AMapLocationClient(context)
+                // 检查高德 SDK 是否初始化
+                val client = try {
+                    AMapLocationClient(context)
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to create AMapLocationClient")
+                    locationError = "定位服务初始化失败，请检查应用权限"
+                    lastAnnouncement = locationError ?: "定位服务初始化失败"
+                    isLocating = false
+                    voiceRepository.speak("定位服务初始化失败，请重启应用", queueMode = false)
+                    return@launch
+                }
+                
                 locationClient = client
                 val locationOption = AMapLocationClientOption().apply {
                     // 高精度模式：GPS + 北斗 + 网络
@@ -127,6 +139,8 @@ fun LocationScreen(
                     interval = 3000
                     // 需要地址信息
                     isNeedAddress = true
+                    // 设置超时时间
+                    httpTimeOut = 20000
                 }
                 client.setLocationOption(locationOption)
 
@@ -168,14 +182,27 @@ fun LocationScreen(
                                 voiceRepository.speak(voiceText, queueMode = false)
                             }
                         } else {
-                            val errorMsg = "定位失败：${location?.errorInfo ?: "未知错误"}"
+                            // 定位失败，提供详细错误信息
+                            val errorCode = location?.errorCode ?: -1
+                            val errorInfo = location?.errorInfo ?: "未知错误"
+                            val errorMsg = when (errorCode) {
+                                4 -> "网络连接失败，请检查网络设置"
+                                5 -> "GPS未开启，请在设置中开启GPS"
+                                6 -> "定位权限被拒绝，请在设置中授权"
+                                7 -> "定位失败，请到开阔区域重试"
+                                12 -> "缺少定位权限，请在设置中授权"
+                                13 -> "定位服务未开启，请在设置中开启定位"
+                                else -> "定位失败($errorCode)：$errorInfo"
+                            }
                             locationError = errorMsg
                             lastAnnouncement = errorMsg
                             isLocating = false
 
                             scope.launch {
-                                voiceRepository.speak("定位失败，请检查GPS是否开启", queueMode = false)
+                                voiceRepository.speak(errorMsg, queueMode = false)
                             }
+                            
+                            Timber.e("Location failed: code=$errorCode, info=$errorInfo")
                         }
                     }
                 })
@@ -192,6 +219,7 @@ fun LocationScreen(
                     }
                 }
             } catch (e: Exception) {
+                Timber.e(e, "Location exception")
                 locationError = "定位异常：${e.message}"
                 lastAnnouncement = locationError ?: "定位异常，请重试"
                 isLocating = false
