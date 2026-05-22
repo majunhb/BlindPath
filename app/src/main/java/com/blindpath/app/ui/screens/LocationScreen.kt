@@ -186,7 +186,7 @@ fun LocationScreen(
                                     try {
                                         val geocodeSearch = GeocodeSearch(context)
                                         val point = LatLonPoint(location.latitude, location.longitude)
-                                        val query = RegeocodeQuery(point, 200.0, GeocodeSearch.AMAP)
+                                        val query = RegeocodeQuery(point, 200.0f, GeocodeSearch.AMAP)
                                         
                                         val regeoResult = suspendCancellableCoroutine<RegeocodeResult?> { cont ->
                                             geocodeSearch.setOnGeocodeSearchListener(object : GeocodeSearch.OnGeocodeSearchListener {
