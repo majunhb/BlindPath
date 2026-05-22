@@ -107,8 +107,8 @@ fun SettingsScreen(
         SettingsSection(title = "障碍物检测") {
             DetectionSettingsCard(
                 settings = uiState.settings,
-                onSensitivityChange = { viewModel.updateDetectionSensitivity(it) },
-                onDistanceChange = { viewModel.updateDetectionDistance(it) }
+                onSensitivityChange = { sensitivity -> viewModel.updateDetectionSensitivity(sensitivity) },
+                onDistanceChange = { distance -> viewModel.updateDetectionDistance(distance) }
             )
         }
 
@@ -464,6 +464,5 @@ fun AboutCard() {
                 }
             )
         }
-    }
     }
 }
