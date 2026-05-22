@@ -22,6 +22,11 @@ interface ObstacleRepository {
     val obstacleState: Flow<ObstacleState>
 
     /**
+     * 初始化避障模块（加载模型、准备资源）
+     */
+    suspend fun initialize(): Result<Boolean>
+
+    /**
      * 启动避障检测
      */
     suspend fun startDetection(): Result<Boolean>

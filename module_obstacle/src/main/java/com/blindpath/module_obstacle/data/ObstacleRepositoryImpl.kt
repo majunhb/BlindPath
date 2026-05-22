@@ -67,6 +67,27 @@ class ObstacleRepositoryImpl @Inject constructor(
     private var isCameraStarting = false
     private var isCameraStarted = false
 
+    override suspend fun initialize(): Result<Boolean> {
+        return withContext(Dispatchers.IO) {
+            try {
+                Timber.d("Initializing obstacle repository")
+                val modelLoaded = aiDetector.loadModel()
+                if (modelLoaded) {
+                    _state.update { it.copy(isModelLoaded = true) }
+                    Timber.d("ObstacleRepository initialized successfully")
+                    Result.Success(true)
+                } else {
+                    Timber.w("AI模型加载失败，使用演示模式")
+                    _state.update { it.copy(lastError = "AI模型加载失败，将使用演示模式") }
+                    Result.Error(message = "模型加载失败")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "ObstacleRepository initialization failed")
+                Result.Error(message = e.message ?: "初始化失败")
+            }
+        }
+    }
+
     override suspend fun startDetection(): Result<Boolean> {
         return withContext(Dispatchers.IO) {
             try {
