@@ -26,8 +26,15 @@ android {
     }
 
     buildTypes {
-        release {
+        debug {
+            // Debug 版本也启用基础优化
             isMinifyEnabled = false
+            isShrinkResources = false
+        }
+        release {
+            // Release 版本启用完整优化
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -51,10 +58,33 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // 排除未使用的资源
+            excludes += "/META-INF/DEPENDENCIES"
+            excludes += "/META-INF/LICENSE"
+            excludes += "/META-INF/LICENSE.txt"
+            excludes += "/META-INF/NOTICE"
+            excludes += "/META-INF/NOTICE.txt"
         }
 
         jniLibs {
-            useLegacyPackaging = true
+            // 压缩 JNI 库（减少约 30% 体积）
+            useLegacyPackaging = false
+        }
+    }
+    
+    // Bundle 优化（AAB 格式）
+    bundle {
+        language {
+            // 启用语言资源分割，用户只下载设备语言资源
+            enableSplit = true
+        }
+        density {
+            // 启用密度资源分割，用户只下载设备密度资源
+            enableSplit = true
+        }
+        abi {
+            // 启用 ABI 分割，用户只下载设备架构资源
+            enableSplit = true
         }
     }
 }
@@ -70,7 +100,13 @@ dependencies {
     implementation(project(":module_trip_assist"))
 
     // ============ 高德地图 SDK ============
-    // 地图 + 定位 + 搜索 一体包（与 module_trip_assist 保持一致）
+    // 方案一：仅定位 + 搜索（减少约 20MB）
+    // 如果不需要地图显示，使用此方案
+    // implementation("com.amap.api:location:6.5.1")
+    // implementation("com.amap.api:search:9.7.4")
+    
+    // 方案二：一体包（包含地图显示，体积较大）
+    // 当前使用此方案，如需优化体积可切换到方案一
     implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
 
     // Hilt
