@@ -14,7 +14,6 @@ import com.blindpath.base.error.BlindPathError
 import com.blindpath.base.error.DegradationManager
 import com.blindpath.base.power.FrameRateController
 import com.blindpath.base.power.PerformanceMode
-import com.blindpath.base.power.PowerManager
 import com.blindpath.base.tts.VibrationHelper
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.domain.VoiceRepository

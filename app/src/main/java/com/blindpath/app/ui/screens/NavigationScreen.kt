@@ -149,21 +149,33 @@ fun NavigationScreen(
     }
 
     // 地理编码
-    suspend fun geocodeDestination(text: String): LatLonPoint? = withTimeoutOrNull(8000L) {
+    suspend fun geocodeDestination(text: String): LatLonPoint? = withTimeoutOrNull(15000L) {
         suspendCancellableCoroutine { cont ->
             try {
+                Timber.d("Geocoding destination: $text")
                 val search = GeocodeSearch(context)
                 search.setOnGeocodeSearchListener(object : GeocodeSearch.OnGeocodeSearchListener {
                     override fun onRegeocodeSearched(p0: RegeocodeResult?, p1: Int) {}
                     override fun onGeocodeSearched(result: GeocodeResult?, code: Int) {
                         if (code == 1000 && result != null && result.geocodeAddressList.isNotEmpty()) {
-                            cont.resume(result.geocodeAddressList[0].latLonPoint) {}
-                        } else cont.resume(null) {}
+                            val address = result.geocodeAddressList[0]
+                            val point = address.latLonPoint
+                            Timber.d("Geocode success: ${address.address} -> (${point.latitude}, ${point.longitude})")
+                            cont.resume(point) {}
+                        } else {
+                            Timber.e("Geocode failed: code=$code, result=$result")
+                            cont.resume(null) {}
+                        }
                     }
                 })
-                search.getFromLocationNameAsyn(GeocodeQuery(text, ""))
+                // 尝试不带城市参数
+                val query = GeocodeQuery(text, "")
+                search.getFromLocationNameAsyn(query)
                 cont.invokeOnCancellation {}
-            } catch (e: Exception) { cont.resume(null) {} }
+            } catch (e: Exception) {
+                Timber.e(e, "Geocode exception")
+                cont.resume(null) {}
+            }
         }
     }
 

@@ -148,15 +148,31 @@ fun LocationScreen(
                     override fun onLocationChanged(location: AMapLocation?) {
                         if (location != null && location.errorCode == 0) {
                             // 定位成功 - 提取真实数据
+                            // 构建地址信息（优先使用详细地址）
+                            val roadName = location.road?.takeIf { it.isNotBlank() }
+                                ?: location.street?.takeIf { it.isNotBlank() }
+                                ?: location.streetNumber?.takeIf { it.isNotBlank() }
+                                ?: "未知道路"
+                            
+                            val addressText = location.address?.takeIf { it.isNotBlank() }
+                                ?: buildString {
+                                    if (location.province?.isNotBlank() == true) append(location.province)
+                                    if (location.city?.isNotBlank() == true) append(location.city)
+                                    if (location.district?.isNotBlank() == true) append(location.district)
+                                    if (location.road?.isNotBlank() == true) append(location.road)
+                                }
+                            
                             val info = LocationDisplayInfo(
-                                road = location.road ?: "未知道路",
+                                road = roadName,
                                 direction = getDirectionText(location.bearing),
                                 coordinates = "${"%.6f".format(location.latitude)}, ${"%.6f".format(location.longitude)}",
                                 accuracy = "±${location.accuracy.toInt()}米",
-                                landmarks = location.poiName ?: location.aoiName ?: "暂无周边地标",
+                                landmarks = location.poiName?.takeIf { it.isNotBlank() }
+                                    ?: location.aoiName?.takeIf { it.isNotBlank() }
+                                    ?: "暂无周边地标",
                                 city = location.city ?: "",
                                 district = location.district ?: "",
-                                address = location.address ?: "",
+                                address = addressText,
                                 bearing = location.bearing,
                                 speed = location.speed
                             )
@@ -166,9 +182,13 @@ fun LocationScreen(
                             // 生成语音播报文本
                             val voiceText = buildString {
                                 append("定位成功。您当前位于")
-                                if (info.city.isNotEmpty()) append(info.city)
-                                if (info.district.isNotEmpty()) append(info.district)
-                                append(info.road)
+                                if (info.address.isNotBlank() && info.address != "未知道路") {
+                                    append(info.address)
+                                } else {
+                                    if (info.city.isNotEmpty()) append(info.city)
+                                    if (info.district.isNotEmpty()) append(info.district)
+                                    append(info.road)
+                                }
                                 append("，面向${info.direction}")
                                 if (info.landmarks.isNotEmpty() && info.landmarks != "暂无周边地标") {
                                     append("，附近有${info.landmarks}")
@@ -181,6 +201,8 @@ fun LocationScreen(
                             scope.launch {
                                 voiceRepository.speak(voiceText, queueMode = false)
                             }
+                            
+                            Timber.d("Location success: road=$roadName, address=$addressText")
                         } else {
                             // 定位失败，提供详细错误信息
                             val errorCode = location?.errorCode ?: -1
