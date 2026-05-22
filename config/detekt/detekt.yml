@@ -462,6 +462,7 @@ style:
   UseRequireNotNull:
     active: true
   UselessCallOnNotNull:
+    active: true
   UtilityClassWithPublicConstructor:
     active: true
   VarCouldBeVal:
