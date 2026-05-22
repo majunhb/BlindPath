@@ -148,27 +148,41 @@ fun LocationScreen(
                     override fun onLocationChanged(location: AMapLocation?) {
                         if (location != null && location.errorCode == 0) {
                             // 定位成功 - 提取真实数据
-                            // 构建地址信息（优先使用详细地址）
-                            val roadName = location.road?.takeIf { it.isNotBlank() }
-                                ?: location.street?.takeIf { it.isNotBlank() }
+                            Timber.d("Location success: lat=${location.latitude}, lng=${location.longitude}")
+                            Timber.d("Location details: province=${location.province}, city=${location.city}, district=${location.district}, road=${location.road}, street=${location.street}, address=${location.address}")
+                            
+                            // 构建道路名称（优先级：road > street > poiName > aoiName）
+                            val roadName = location.road?.takeIf { it.isNotBlank() && it != "不知名街道" && it != "无名道路" }
+                                ?: location.street?.takeIf { it.isNotBlank() && it != "不知名街道" && it != "无名道路" }
+                                ?: location.poiName?.takeIf { it.isNotBlank() }
+                                ?: location.aoiName?.takeIf { it.isNotBlank() }
                                 ?: "未知道路"
                             
-                            val addressText = location.address?.takeIf { it.isNotBlank() }
+                            // 构建完整地址（优先使用 address 字段）
+                            val addressText = location.address?.takeIf { it.isNotBlank() && it != "不知名街道" }
                                 ?: buildString {
-                                    if (location.province?.isNotBlank() == true) append(location.province)
-                                    if (location.city?.isNotBlank() == true) append(location.city)
-                                    if (location.district?.isNotBlank() == true) append(location.district)
-                                    if (location.road?.isNotBlank() == true) append(location.road)
-                                }
+                                    // 按照行政区划级别构建地址
+                                    location.province?.takeIf { it.isNotBlank() }?.let { append(it) }
+                                    location.city?.takeIf { it.isNotBlank() }?.let { 
+                                        if (it != province()) append(it) 
+                                    }
+                                    location.district?.takeIf { it.isNotBlank() }?.let { append(it) }
+                                    location.road?.takeIf { it.isNotBlank() && it != "不知名街道" }?.let { append(it) }
+                                    location.street?.takeIf { it.isNotBlank() && it != "不知名街道" }?.let { append(it) }
+                                }.takeIf { it.isNotBlank() }
+                                ?: "${location.province ?: ""}${location.city ?: ""}${location.district ?: ""}"
+                            
+                            // 构建地标信息
+                            val landmarkText = location.poiName?.takeIf { it.isNotBlank() }
+                                ?: location.aoiName?.takeIf { it.isNotBlank() }
+                                ?: "暂无周边地标"
                             
                             val info = LocationDisplayInfo(
                                 road = roadName,
                                 direction = getDirectionText(location.bearing),
                                 coordinates = "${"%.6f".format(location.latitude)}, ${"%.6f".format(location.longitude)}",
                                 accuracy = "±${location.accuracy.toInt()}米",
-                                landmarks = location.poiName?.takeIf { it.isNotBlank() }
-                                    ?: location.aoiName?.takeIf { it.isNotBlank() }
-                                    ?: "暂无周边地标",
+                                landmarks = landmarkText,
                                 city = location.city ?: "",
                                 district = location.district ?: "",
                                 address = addressText,
@@ -181,16 +195,17 @@ fun LocationScreen(
                             // 生成语音播报文本
                             val voiceText = buildString {
                                 append("定位成功。您当前位于")
-                                if (info.address.isNotBlank() && info.address != "未知道路") {
-                                    append(info.address)
+                                // 优先使用完整地址
+                                if (addressText.isNotBlank() && addressText != "未知道路") {
+                                    append(addressText)
                                 } else {
                                     if (info.city.isNotEmpty()) append(info.city)
                                     if (info.district.isNotEmpty()) append(info.district)
-                                    append(info.road)
+                                    if (info.road != "未知道路") append(info.road)
                                 }
                                 append("，面向${info.direction}")
-                                if (info.landmarks.isNotEmpty() && info.landmarks != "暂无周边地标") {
-                                    append("，附近有${info.landmarks}")
+                                if (landmarkText != "暂无周边地标") {
+                                    append("，附近有$landmarkText")
                                 }
                                 append("。定位精度${info.accuracy}")
                             }
@@ -200,6 +215,8 @@ fun LocationScreen(
                             scope.launch {
                                 voiceRepository.speak(voiceText, queueMode = false)
                             }
+                            
+                            Timber.d("Location display: road=$roadName, address=$addressText, landmark=$landmarkText")
                             
                             Timber.d("Location success: road=$roadName, address=$addressText")
                         } else {

@@ -103,20 +103,41 @@ class ObstacleRepositoryImpl @Inject constructor(
 
                 // 确保已初始化
                 if (!isInitialized) {
-                    val initResult = initialize()
-                    if (initResult is Result.Error) {
-                        Timber.w("Initialization failed, but continuing with camera")
+                    try {
+                        val initResult = initialize()
+                        if (initResult is Result.Error) {
+                            Timber.w("Initialization failed, but continuing with camera: ${initResult.message}")
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Initialization exception, continuing anyway")
                     }
                 }
 
                 // 检查模型是否已加载（可能使用了 ML Kit 回退）
-                val isModelReady = aiDetector.isModelLoaded()
-                if (isModelReady) {
-                    _state.update { it.copy(isModelLoaded = true) }
-                    Timber.d("Detection model is ready")
-                } else {
-                    Timber.w("Detection model not ready, camera will still start")
-                    _state.update { it.copy(lastError = "检测模型未就绪，请重启应用") }
+                try {
+                    val isModelReady = aiDetector.isModelLoaded()
+                    if (isModelReady) {
+                        _state.update { it.copy(isModelLoaded = true) }
+                        Timber.d("Detection model is ready")
+                    } else {
+                        Timber.w("Detection model not ready, will try to load")
+                        // 尝试重新加载模型
+                        try {
+                            val loaded = aiDetector.loadModel()
+                            if (loaded) {
+                                _state.update { it.copy(isModelLoaded = true) }
+                                Timber.d("Model loaded successfully on retry")
+                            } else {
+                                Timber.w("Model load failed on retry, camera will still start")
+                                _state.update { it.copy(lastError = "AI模型加载失败，将使用基础检测") }
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "Model load exception on retry")
+                            _state.update { it.copy(lastError = "AI模型加载异常，将使用基础检测") }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error checking model status")
                 }
 
                 // 启动摄像头（同步等待完成）
@@ -128,7 +149,11 @@ class ObstacleRepositoryImpl @Inject constructor(
                 }
 
                 // 重置场景识别器
-                sceneClassifier.reset()
+                try {
+                    sceneClassifier.reset()
+                } catch (e: Exception) {
+                    Timber.w(e, "Failed to reset scene classifier")
+                }
 
                 _state.update {
                     it.copy(
@@ -140,7 +165,7 @@ class ObstacleRepositoryImpl @Inject constructor(
 
                 Result.Success(true)
             } catch (e: Exception) {
-                Timber.e(e, "Failed to start detection")
+                Timber.e(e, "Failed to start detection: ${e.javaClass.simpleName}: ${e.message}")
                 _state.update { it.copy(lastError = "启动失败: ${e.message}") }
                 Result.Error(message = e.message ?: "启动失败")
             }

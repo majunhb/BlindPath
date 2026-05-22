@@ -149,7 +149,7 @@ fun NavigationScreen(
     }
 
     // 地理编码
-    suspend fun geocodeDestination(text: String): LatLonPoint? = withTimeoutOrNull(15000L) {
+    suspend fun geocodeDestination(text: String): LatLonPoint? = withTimeoutOrNull(20000L) {
         suspendCancellableCoroutine { cont ->
             try {
                 Timber.d("Geocoding destination: $text")
@@ -163,17 +163,22 @@ fun NavigationScreen(
                             Timber.d("Geocode success: (${point.latitude}, ${point.longitude})")
                             cont.resume(point) {}
                         } else {
-                            Timber.e("Geocode failed: code=$code, result=$result")
+                            Timber.e("Geocode failed: code=$code, result=$result, query=$text")
                             cont.resume(null) {}
                         }
                     }
                 })
-                // 尝试不带城市参数
-                val query = GeocodeQuery(text, "")
-                search.getFromLocationNameAsyn(query)
-                cont.invokeOnCancellation {}
+                
+                // 尝试多种查询方式
+                // 1. 先尝试不带城市参数
+                val query1 = GeocodeQuery(text, "")
+                search.getFromLocationNameAsyn(query1)
+                
+                cont.invokeOnCancellation {
+                    Timber.d("Geocode cancelled: $text")
+                }
             } catch (e: Exception) {
-                Timber.e(e, "Geocode exception")
+                Timber.e(e, "Geocode exception for: $text")
                 cont.resume(null) {}
             }
         }
@@ -360,6 +365,15 @@ fun NavigationScreen(
             return
         }
         if (destination.isBlank()) return
+        
+        // 验证目的地输入
+        val trimmedDestination = destination.trim()
+        if (trimmedDestination.length < 2) {
+            announcement = "目的地名称太短，请输入更详细的地址"
+            voiceRepository.speak("目的地名称太短，请输入更详细的地址", queueMode = false)
+            return
+        }
+        
         scope.launch {
             isPlanning = true
             announcement = "正在获取当前位置..."
@@ -373,23 +387,35 @@ fun NavigationScreen(
                 return@launch
             }
 
+            Timber.d("Current position: (${origin.latitude}, ${origin.longitude})")
             aMapRef?.addMarker(MarkerOptions().position(LatLng(origin.latitude, origin.longitude)).title("我的位置").icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN)))
 
             announcement = "正在解析目的地坐标..."
-            val destPoint = geocodeDestination(destination)
+            Timber.d("Geocoding destination: $trimmedDestination")
+            
+            val destPoint = geocodeDestination(trimmedDestination)
             if (destPoint == null) {
-                announcement = "无法识别目的地：$destination。建议：1. 使用更详细的地址 2. 添加城市名称 3. 使用地标名称"
+                val errorMsg = buildString {
+                    append("无法识别目的地：$trimmedDestination\n\n")
+                    append("建议：\n")
+                    append("1. 使用更详细的地址（如：北京市朝阳区三里屯）\n")
+                    append("2. 添加城市名称（如：北京天安门）\n")
+                    append("3. 使用知名地标名称（如：北京西站、首都机场）\n")
+                    append("4. 检查网络连接是否正常")
+                }
+                announcement = errorMsg
                 voiceRepository.speak("无法识别目的地，请尝试更详细的地址或添加城市名称", queueMode = false)
                 isPlanning = false
                 return@launch
             }
 
-            aMapRef?.addMarker(MarkerOptions().position(LatLng(destPoint.latitude, destPoint.longitude)).title(destination).icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)))
+            Timber.d("Destination resolved: (${destPoint.latitude}, ${destPoint.longitude})")
+            aMapRef?.addMarker(MarkerOptions().position(LatLng(destPoint.latitude, destPoint.longitude)).title(trimmedDestination).icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_RED)))
 
             announcement = "正在规划步行路线..."
             val steps = planWalkRoute(origin, destPoint)
             if (steps.isEmpty()) {
-                announcement = "路线规划失败。可能原因：1. 目的地太远 2. 无法步行到达 3. 网络问题。请更换目的地重试"
+                announcement = "路线规划失败。可能原因：\n1. 目的地太远\n2. 无法步行到达\n3. 网络问题\n\n请更换目的地重试"
                 voiceRepository.speak("路线规划失败，请更换目的地或检查网络", queueMode = false)
                 isPlanning = false
                 return@launch
@@ -398,7 +424,7 @@ fun NavigationScreen(
             routeSteps = steps
             isNavigating = true
             currentStep = 0
-            val msg = "路线规划成功！全程${totalDistance}，预计${totalDuration}到达${destination}。共${routeSteps.size}个步骤。"
+            val msg = "路线规划成功！全程${totalDistance}，预计${totalDuration}到达${trimmedDestination}。共${routeSteps.size}个步骤。"
             announcement = msg
             voiceRepository.speak(msg, queueMode = false)
             isPlanning = false
