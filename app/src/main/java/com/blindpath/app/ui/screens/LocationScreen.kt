@@ -30,6 +30,7 @@ import com.amap.api.location.AMapLocationListener
 import com.amap.api.services.core.LatLonPoint
 import com.amap.api.services.geocoder.GeocodeResult
 import com.amap.api.services.geocoder.GeocodeSearch
+import com.amap.api.services.geocoder.RegeocodeQuery
 import com.amap.api.services.geocoder.RegeocodeResult
 import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.hilt.EntryPoint
@@ -185,7 +186,7 @@ fun LocationScreen(
                                     try {
                                         val geocodeSearch = GeocodeSearch(context)
                                         val point = LatLonPoint(location.latitude, location.longitude)
-                                        val query = GeocodeSearch.RegeocodeQuery(point, 200.0, GeocodeSearch.AMAP)
+                                        val query = RegeocodeQuery(point, 200.0, GeocodeSearch.AMAP)
                                         
                                         val regeoResult = suspendCancellableCoroutine<RegeocodeResult?> { cont ->
                                             geocodeSearch.setOnGeocodeSearchListener(object : GeocodeSearch.OnGeocodeSearchListener {
@@ -205,8 +206,8 @@ fun LocationScreen(
                                         
                                         regeoResult?.regeocodeAddress?.let { regeoAddr ->
                                             // 更新道路名称
-                                            val newRoad = regeoAddr.road?.takeIf { it.isNotBlank() && it != "不知名街道" }
-                                                ?: regeoAddr.streetNumber?.road?.takeIf { it.isNotBlank() }
+                                            val newRoad = regeoAddr.roads?.firstOrNull()?.name?.takeIf { it.isNotBlank() && it != "不知名街道" }
+                                                ?: regeoAddr.streetNumber?.street?.takeIf { it.isNotBlank() }
                                                 ?: roadName
                                             
                                             // 更新地址
@@ -215,16 +216,16 @@ fun LocationScreen(
                                                     regeoAddr.province?.takeIf { it.isNotBlank() }?.let { append(it) }
                                                     regeoAddr.city?.takeIf { it.isNotBlank() }?.let { append(it) }
                                                     regeoAddr.district?.takeIf { it.isNotBlank() }?.let { append(it) }
-                                                    regeoAddr.road?.takeIf { it.isNotBlank() }?.let { append(it) }
+                                                    regeoAddr.roads?.firstOrNull()?.name?.takeIf { it.isNotBlank() }?.let { append(it) }
                                                     regeoAddr.streetNumber?.let { 
-                                                        if (it.road?.isNotBlank() == true) append(it.road)
+                                                        if (it.street?.isNotBlank() == true) append(it.street)
                                                     }
                                                 }.takeIf { it.isNotBlank() }
                                                 ?: addressText
                                             
                                             // 更新地标
-                                            val newLandmark = regeoAddr.poiList?.firstOrNull()?.title?.takeIf { it.isNotBlank() }
-                                                ?: regeoAddr.aoiName?.takeIf { it.isNotBlank() }
+                                            val newLandmark = regeoAddr.pois?.firstOrNull()?.title?.takeIf { it.isNotBlank() }
+                                                ?: regeoAddr.aois?.firstOrNull()?.aoiName?.takeIf { it.isNotBlank() }
                                                 ?: "暂无周边地标"
                                             
                                             // 更新显示信息
