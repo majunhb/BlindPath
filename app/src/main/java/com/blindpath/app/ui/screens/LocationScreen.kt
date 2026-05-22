@@ -151,7 +151,6 @@ fun LocationScreen(
                             // 构建地址信息（优先使用详细地址）
                             val roadName = location.road?.takeIf { it.isNotBlank() }
                                 ?: location.street?.takeIf { it.isNotBlank() }
-                                ?: location.streetNumber?.takeIf { it.isNotBlank() }
                                 ?: "未知道路"
                             
                             val addressText = location.address?.takeIf { it.isNotBlank() }

@@ -160,7 +160,7 @@ fun NavigationScreen(
                         if (code == 1000 && result != null && result.geocodeAddressList.isNotEmpty()) {
                             val address = result.geocodeAddressList[0]
                             val point = address.latLonPoint
-                            Timber.d("Geocode success: ${address.address} -> (${point.latitude}, ${point.longitude})")
+                            Timber.d("Geocode success: ${address.formattedAddress} -> (${point.latitude}, ${point.longitude})")
                             cont.resume(point) {}
                         } else {
                             Timber.e("Geocode failed: code=$code, result=$result")
