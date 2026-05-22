@@ -370,7 +370,9 @@ fun NavigationScreen(
         val trimmedDestination = destination.trim()
         if (trimmedDestination.length < 2) {
             announcement = "目的地名称太短，请输入更详细的地址"
-            voiceRepository.speak("目的地名称太短，请输入更详细的地址", queueMode = false)
+            scope.launch {
+                voiceRepository.speak("目的地名称太短，请输入更详细的地址", queueMode = false)
+            }
             return
         }
         

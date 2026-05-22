@@ -164,7 +164,7 @@ fun LocationScreen(
                                     // 按照行政区划级别构建地址
                                     location.province?.takeIf { it.isNotBlank() }?.let { append(it) }
                                     location.city?.takeIf { it.isNotBlank() }?.let { 
-                                        if (it != province()) append(it) 
+                                        if (it != location.province) append(it) 
                                     }
                                     location.district?.takeIf { it.isNotBlank() }?.let { append(it) }
                                     location.road?.takeIf { it.isNotBlank() && it != "不知名街道" }?.let { append(it) }
