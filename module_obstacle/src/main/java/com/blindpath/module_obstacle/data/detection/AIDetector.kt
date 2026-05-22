@@ -152,12 +152,17 @@ class AIDetector @Inject constructor(
                 setUseXNNPACK(true)  // 启用XNNPACK加速
 
                 // 尝试启用GPU加速（如果可用）
-                try {
-                    val gpuDelegate = GpuDelegate()
-                    addDelegate(gpuDelegate)
-                    Timber.d("GPU acceleration enabled")
-                } catch (e: Exception) {
-                    Timber.w("GPU acceleration not available: ${e.message}")
+                // 注意：GPU Delegate 在某些设备上可能不可用，需要安全降级
+                if (isGpuDelegateAvailable()) {
+                    try {
+                        val gpuDelegate = GpuDelegate()
+                        addDelegate(gpuDelegate)
+                        Timber.d("GPU acceleration enabled successfully")
+                    } catch (e: Exception) {
+                        Timber.w("GPU delegate creation failed, falling back to CPU: ${e.message}")
+                    }
+                } else {
+                    Timber.d("GPU acceleration not available on this device, using CPU only")
                 }
             }
 
@@ -239,6 +244,24 @@ class AIDetector @Inject constructor(
                 isLoaded = false
                 return false
             }
+        }
+    }
+
+    /**
+     * 检查 GPU Delegate 是否可用
+     * 某些设备可能不支持 GPU 加速，需要提前检查以避免崩溃
+     */
+    private fun isGpuDelegateAvailable(): Boolean {
+        return try {
+            // 尝试加载 GpuDelegate 类
+            Class.forName("org.tensorflow.lite.gpu.GpuDelegate")
+            // 尝试创建一个临时实例来验证
+            val delegate = GpuDelegate()
+            delegate.close() // 立即关闭测试实例
+            true
+        } catch (e: Throwable) {
+            Timber.w("GPU Delegate not available: ${e.javaClass.simpleName}: ${e.message}")
+            false
         }
     }
 
