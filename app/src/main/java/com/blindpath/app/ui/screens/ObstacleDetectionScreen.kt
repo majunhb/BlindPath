@@ -217,14 +217,26 @@ fun ObstacleDetectionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("障碍物检测") },
+                title = { Text("障碍物检测", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        isDetecting = false
-                        scope.launch { voiceRepository.speak("障碍物检测已关闭", queueMode = false) }
-                        onBackClick()
-                    }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    // 增强返回按钮视觉效果
+                    TextButton(
+                        onClick = {
+                            isDetecting = false
+                            scope.launch { voiceRepository.speak("障碍物检测已关闭", queueMode = false) }
+                            onBackClick()
+                        },
+                        modifier = Modifier.semantics {
+                            contentDescription = "返回主界面按钮"
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("返回", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
                 },
                 actions = {
@@ -245,7 +257,11 @@ fun ObstacleDetectionScreen(
                             Text(if (isDetecting) "停止检测" else "开始检测")
                         }
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             )
         }
     ) { padding ->

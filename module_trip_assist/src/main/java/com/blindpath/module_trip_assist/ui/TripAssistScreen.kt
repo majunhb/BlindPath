@@ -41,7 +41,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -81,21 +83,33 @@ fun TripAssistScreen(
                     Text(
                         text = "出行辅助",
                         style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
                         modifier = Modifier.semantics {
                             contentDescription = "出行辅助页面"
                         }
                     )
                 },
                 navigationIcon = {
-                    IconButton(
+                    // 增强返回按钮视觉效果
+                    TextButton(
                         onClick = onBackClick,
                         modifier = Modifier.semantics {
-                            contentDescription = "返回上一页"
+                            contentDescription = "返回主界面按钮"
                         }
                     ) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = null)
+                        Icon(
+                            Icons.Filled.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("返回", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             )
         }
     ) { paddingValues ->

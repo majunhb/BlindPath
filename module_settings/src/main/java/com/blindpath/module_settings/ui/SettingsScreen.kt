@@ -4,11 +4,14 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.*
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,28 +29,44 @@ fun SettingsScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp)
-            .verticalScroll(rememberScrollState())
-            .semantics { contentDescription = "设置页面" }
-    ) {
-        // 标题栏
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "设置",
-                style = MaterialTheme.typography.headlineMedium,
-                modifier = Modifier.semantics {
-                    contentDescription = "设置页面标题"
-                }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { 
+                    Text("设置", fontWeight = FontWeight.Bold) 
+                },
+                navigationIcon = {
+                    // 增强返回按钮视觉效果
+                    TextButton(
+                        onClick = onBackClick,
+                        modifier = Modifier.semantics {
+                            contentDescription = "返回主界面按钮"
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("返回", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             )
         }
-
-        Spacer(modifier = Modifier.height(24.dp))
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState())
+                .semantics { contentDescription = "设置页面" }
+        ) {
 
         // 紧急联系人设置
         SettingsSection(title = "紧急联系人") {
@@ -445,5 +464,6 @@ fun AboutCard() {
                 }
             )
         }
+    }
     }
 }

@@ -27,6 +27,10 @@ import com.amap.api.location.AMapLocation
 import com.amap.api.location.AMapLocationClient
 import com.amap.api.location.AMapLocationClientOption
 import com.amap.api.location.AMapLocationListener
+import com.amap.api.services.core.LatLonPoint
+import com.amap.api.services.geocoder.GeocodeResult
+import com.amap.api.services.geocoder.GeocodeSearch
+import com.amap.api.services.geocoder.RegeocodeResult
 import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -34,7 +38,9 @@ import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
+import kotlin.coroutines.resume
 
 /**
  * 实时定位界面 - 实景应用级
@@ -159,7 +165,7 @@ fun LocationScreen(
                                 ?: "未知道路"
                             
                             // 构建完整地址（优先使用 address 字段）
-                            val addressText = location.address?.takeIf { it.isNotBlank() && it != "不知名街道" }
+                            var addressText = location.address?.takeIf { it.isNotBlank() && it != "不知名街道" }
                                 ?: buildString {
                                     // 按照行政区划级别构建地址
                                     location.province?.takeIf { it.isNotBlank() }?.let { append(it) }
@@ -172,53 +178,143 @@ fun LocationScreen(
                                 }.takeIf { it.isNotBlank() }
                                 ?: "${location.province ?: ""}${location.city ?: ""}${location.district ?: ""}"
                             
-                            // 构建地标信息
-                            val landmarkText = location.poiName?.takeIf { it.isNotBlank() }
-                                ?: location.aoiName?.takeIf { it.isNotBlank() }
-                                ?: "暂无周边地标"
-                            
-                            val info = LocationDisplayInfo(
-                                road = roadName,
-                                direction = getDirectionText(location.bearing),
-                                coordinates = "${"%.6f".format(location.latitude)}, ${"%.6f".format(location.longitude)}",
-                                accuracy = "±${location.accuracy.toInt()}米",
-                                landmarks = landmarkText,
-                                city = location.city ?: "",
-                                district = location.district ?: "",
-                                address = addressText,
-                                bearing = location.bearing,
-                                speed = location.speed
-                            )
-                            locationInfo = info
-                            isLocating = false
-
-                            // 生成语音播报文本
-                            val voiceText = buildString {
-                                append("定位成功。您当前位于")
-                                // 优先使用完整地址
-                                if (addressText.isNotBlank() && addressText != "未知道路") {
-                                    append(addressText)
-                                } else {
-                                    if (info.city.isNotEmpty()) append(info.city)
-                                    if (info.district.isNotEmpty()) append(info.district)
-                                    if (info.road != "未知道路") append(info.road)
+                            // 如果地址信息不完整，尝试逆地理编码
+                            if (addressText.isBlank() || addressText == "不知名街道" || roadName == "未知道路") {
+                                Timber.d("Address incomplete, trying reverse geocoding...")
+                                scope.launch {
+                                    try {
+                                        val geocodeSearch = GeocodeSearch(context)
+                                        val point = LatLonPoint(location.latitude, location.longitude)
+                                        val query = GeocodeSearch.RegeocodeQuery(point, 200.0, GeocodeSearch.AMAP)
+                                        
+                                        val regeoResult = suspendCancellableCoroutine<RegeocodeResult?> { cont ->
+                                            geocodeSearch.setOnGeocodeSearchListener(object : GeocodeSearch.OnGeocodeSearchListener {
+                                                override fun onGeocodeSearched(p0: GeocodeResult?, p1: Int) {}
+                                                override fun onRegeocodeSearched(result: RegeocodeResult?, code: Int) {
+                                                    if (code == 1000 && result != null) {
+                                                        cont.resume(result) {}
+                                                    } else {
+                                                        Timber.w("Reverse geocoding failed: code=$code")
+                                                        cont.resume(null) {}
+                                                    }
+                                                }
+                                            })
+                                            geocodeSearch.getFromLocationAsyn(query)
+                                            cont.invokeOnCancellation { }
+                                        }
+                                        
+                                        regeoResult?.regeocodeAddress?.let { regeoAddr ->
+                                            // 更新道路名称
+                                            val newRoad = regeoAddr.road?.takeIf { it.isNotBlank() && it != "不知名街道" }
+                                                ?: regeoAddr.streetNumber?.road?.takeIf { it.isNotBlank() }
+                                                ?: roadName
+                                            
+                                            // 更新地址
+                                            val newAddress = regeoAddr.formatAddress?.takeIf { it.isNotBlank() }
+                                                ?: buildString {
+                                                    regeoAddr.province?.takeIf { it.isNotBlank() }?.let { append(it) }
+                                                    regeoAddr.city?.takeIf { it.isNotBlank() }?.let { append(it) }
+                                                    regeoAddr.district?.takeIf { it.isNotBlank() }?.let { append(it) }
+                                                    regeoAddr.road?.takeIf { it.isNotBlank() }?.let { append(it) }
+                                                    regeoAddr.streetNumber?.let { 
+                                                        if (it.road?.isNotBlank() == true) append(it.road)
+                                                    }
+                                                }.takeIf { it.isNotBlank() }
+                                                ?: addressText
+                                            
+                                            // 更新地标
+                                            val newLandmark = regeoAddr.poiList?.firstOrNull()?.title?.takeIf { it.isNotBlank() }
+                                                ?: regeoAddr.aoiName?.takeIf { it.isNotBlank() }
+                                                ?: "暂无周边地标"
+                                            
+                                            // 更新显示信息
+                                            val info = LocationDisplayInfo(
+                                                road = newRoad,
+                                                direction = getDirectionText(location.bearing),
+                                                coordinates = "${"%.6f".format(location.latitude)}, ${"%.6f".format(location.longitude)}",
+                                                accuracy = "±${location.accuracy.toInt()}米",
+                                                landmarks = newLandmark,
+                                                city = regeoAddr.city ?: location.city ?: "",
+                                                district = regeoAddr.district ?: location.district ?: "",
+                                                address = newAddress,
+                                                bearing = location.bearing,
+                                                speed = location.speed
+                                            )
+                                            locationInfo = info
+                                            
+                                            // 生成语音播报
+                                            val voiceText = buildString {
+                                                append("定位成功。您当前位于")
+                                                if (newAddress.isNotBlank() && newAddress != "未知道路") {
+                                                    append(newAddress)
+                                                } else {
+                                                    if (info.city.isNotEmpty()) append(info.city)
+                                                    if (info.district.isNotEmpty()) append(info.district)
+                                                    if (newRoad != "未知道路") append(newRoad)
+                                                }
+                                                append("，面向${info.direction}")
+                                                if (newLandmark != "暂无周边地标") {
+                                                    append("，附近有$newLandmark")
+                                                }
+                                                append("。定位精度${info.accuracy}")
+                                            }
+                                            lastAnnouncement = voiceText
+                                            voiceRepository.speak(voiceText, queueMode = false)
+                                            
+                                            Timber.d("Reverse geocoding success: road=$newRoad, address=$newAddress")
+                                        }
+                                    } catch (e: Exception) {
+                                        Timber.e(e, "Reverse geocoding failed")
+                                    }
                                 }
-                                append("，面向${info.direction}")
-                                if (landmarkText != "暂无周边地标") {
-                                    append("，附近有$landmarkText")
-                                }
-                                append("。定位精度${info.accuracy}")
-                            }
-                            lastAnnouncement = voiceText
+                            } else {
+                                // 地址信息完整，直接显示
+                                // 构建地标信息
+                                val landmarkText = location.poiName?.takeIf { it.isNotBlank() }
+                                    ?: location.aoiName?.takeIf { it.isNotBlank() }
+                                    ?: "暂无周边地标"
+                                
+                                val info = LocationDisplayInfo(
+                                    road = roadName,
+                                    direction = getDirectionText(location.bearing),
+                                    coordinates = "${"%.6f".format(location.latitude)}, ${"%.6f".format(location.longitude)}",
+                                    accuracy = "±${location.accuracy.toInt()}米",
+                                    landmarks = landmarkText,
+                                    city = location.city ?: "",
+                                    district = location.district ?: "",
+                                    address = addressText,
+                                    bearing = location.bearing,
+                                    speed = location.speed
+                                )
+                                locationInfo = info
+                                isLocating = false
 
-                            // TTS语音播报
-                            scope.launch {
-                                voiceRepository.speak(voiceText, queueMode = false)
+                                // 生成语音播报文本
+                                val voiceText = buildString {
+                                    append("定位成功。您当前位于")
+                                    // 优先使用完整地址
+                                    if (addressText.isNotBlank() && addressText != "未知道路") {
+                                        append(addressText)
+                                    } else {
+                                        if (info.city.isNotEmpty()) append(info.city)
+                                        if (info.district.isNotEmpty()) append(info.district)
+                                        if (info.road != "未知道路") append(info.road)
+                                    }
+                                    append("，面向${info.direction}")
+                                    if (landmarkText != "暂无周边地标") {
+                                        append("，附近有$landmarkText")
+                                    }
+                                    append("。定位精度${info.accuracy}")
+                                }
+                                lastAnnouncement = voiceText
+
+                                // TTS语音播报
+                                scope.launch {
+                                    voiceRepository.speak(voiceText, queueMode = false)
+                                }
+                                
+                                Timber.d("Location display: road=$roadName, address=$addressText, landmark=$landmarkText")
                             }
-                            
-                            Timber.d("Location display: road=$roadName, address=$addressText, landmark=$landmarkText")
-                            
-                            Timber.d("Location success: road=$roadName, address=$addressText")
                         } else {
                             // 定位失败，提供详细错误信息
                             val errorCode = location?.errorCode ?: -1
@@ -279,24 +375,43 @@ fun LocationScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("实时定位") },
+                title = { Text("实时定位", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        stopLocation()
-                        scope.launch { voiceRepository.speak("已退出定位", queueMode = false) }
-                        onBackClick()
-                    }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    // 增强返回按钮视觉效果
+                    TextButton(
+                        onClick = {
+                            stopLocation()
+                            scope.launch { voiceRepository.speak("已退出定位", queueMode = false) }
+                            onBackClick()
+                        },
+                        modifier = Modifier.semantics {
+                            contentDescription = "返回主界面按钮"
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("返回", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
                 },
                 actions = {
                     IconButton(
                         onClick = { startRealLocation() },
-                        enabled = !isLocating
+                        enabled = !isLocating,
+                        modifier = Modifier.semantics {
+                            contentDescription = "刷新定位"
+                        }
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "刷新定位")
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(28.dp))
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             )
         }
     ) { padding ->

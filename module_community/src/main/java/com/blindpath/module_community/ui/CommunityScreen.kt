@@ -31,46 +31,44 @@ fun CommunityScreen(
     val uiState by viewModel.uiState.collectAsState()
     var currentTab by remember { mutableStateOf(0) }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { 
+                    Text("社区互助", fontWeight = FontWeight.Bold) 
+                },
+                navigationIcon = {
+                    // 增强返回按钮视觉效果
+                    TextButton(
+                        onClick = onBackClick,
+                        modifier = Modifier.semantics {
+                            contentDescription = "返回主界面按钮"
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("返回", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+        }
+    ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .padding(padding)
                 .padding(24.dp)
                 .verticalScroll(rememberScrollState())
                 .semantics { contentDescription = "社区互助页面" }
         ) {
-            // 标题
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.People,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "社区互助",
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.semantics {
-                        contentDescription = "社区互助页面"
-                    }
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "志愿者陪伴，安全出行",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.semantics {
-                    contentDescription = "志愿者陪伴，安全出行"
-                }
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
 
             // 角色切换标签
             TabRow(

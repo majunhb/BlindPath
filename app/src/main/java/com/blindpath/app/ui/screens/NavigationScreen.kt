@@ -436,14 +436,35 @@ fun NavigationScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("智能导航") }, navigationIcon = {
-                IconButton(onClick = {
-                    isNavigating = false; routeOverlayRef?.remove(); routeOverlayRef = null
-                    stopLocationTracking()
-                    scope.launch { voiceRepository.speak("导航已退出", queueMode = false) }
-                    onBackClick()
-                }) { Icon(Icons.Default.ArrowBack, contentDescription = "返回") }
-            })
+            TopAppBar(
+                title = { Text("智能导航", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    // 增强返回按钮视觉效果
+                    TextButton(
+                        onClick = {
+                            isNavigating = false; routeOverlayRef?.remove(); routeOverlayRef = null
+                            stopLocationTracking()
+                            scope.launch { voiceRepository.speak("导航已退出", queueMode = false) }
+                            onBackClick()
+                        },
+                        modifier = Modifier.semantics {
+                            contentDescription = "返回主界面按钮"
+                        }
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowBack,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("返回", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
         }
     ) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
