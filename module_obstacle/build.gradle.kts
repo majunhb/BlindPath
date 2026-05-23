@@ -45,7 +45,7 @@ dependencies {
     implementation(libs.bundles.camerax)
     
     // ML Kit Object Detection
-    implementation(libs.mlkit.object.detection)
+    implementation(libs.mlkit.objectDetection)
     
     // TensorFlow Lite - 使用 version catalog bundle
     implementation(libs.bundles.tensorflow.lite)
