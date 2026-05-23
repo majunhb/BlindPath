@@ -212,14 +212,16 @@ class AIDetector @Inject constructor(
             // 4. 所有TFLite方法都失败，回退到ML Kit
             Timber.w("TFLite模型文件无法加载，尝试ML Kit回退")
             try {
+                // 使用流式模式 + 分类，适合实时视频检测
                 val options = ObjectDetectorOptions.Builder()
-                    .setDetectorMode(ObjectDetectorOptions.SINGLE_IMAGE_MODE)
-                    .enableMultipleObjects()
+                    .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
+                    .enableClassification()  // 启用物体分类（识别物体类型）
+                    .enableMultipleObjects()  // 启用多物体检测
                     .build()
                 mlKitDetector = ObjectDetection.getClient(options)
                 useMlKit = true
                 isLoaded = true
-                Timber.d("使用ML Kit目标检测作为回退方案")
+                Timber.i("ML Kit initialized successfully with STREAM_MODE + Classification")
                 return true
             } catch (e: Exception) {
                 Timber.e(e, "ML Kit回退也失败了")
@@ -230,14 +232,16 @@ class AIDetector @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "加载AI模型失败，尝试ML Kit回退")
             try {
+                // 使用流式模式 + 分类，适合实时视频检测
                 val options = ObjectDetectorOptions.Builder()
-                    .setDetectorMode(ObjectDetectorOptions.SINGLE_IMAGE_MODE)
-                    .enableMultipleObjects()
+                    .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
+                    .enableClassification()  // 启用物体分类（识别物体类型）
+                    .enableMultipleObjects()  // 启用多物体检测
                     .build()
                 mlKitDetector = ObjectDetection.getClient(options)
                 useMlKit = true
                 isLoaded = true
-                Timber.d("使用ML Kit目标检测作为回退方案（异常恢复）")
+                Timber.i("ML Kit initialized successfully with STREAM_MODE + Classification (exception recovery)")
                 return true
             } catch (e2: Exception) {
                 Timber.e(e2, "ML Kit回退也失败了（异常恢复）")
@@ -638,21 +642,66 @@ class AIDetector @Inject constructor(
                 
                 Timber.d("ML Kit: Detected ${detectedObjects?.size ?: 0} objects")
                 
+                if (detectedObjects.isNullOrEmpty()) {
+                    Timber.d("ML Kit: No objects detected")
+                    return@withContext emptyList()
+                }
+                
                 val results = mutableListOf<DetectedObstacle>()
 
-                detectedObjects?.forEach { obj ->
+                detectedObjects.forEach { obj ->
                     val labels = obj.labels
-                    Timber.d("ML Kit: Object with ${labels.size} labels, bounds: ${obj.boundingBox}")
+                    val bounds = obj.boundingBox
+                    
+                    Timber.d("ML Kit: Object detected - bounds: left=${bounds.left}, top=${bounds.top}, right=${bounds.right}, bottom=${bounds.bottom}")
+                    Timber.d("ML Kit: Object has ${labels.size} labels")
+                    
+                    if (labels.isEmpty()) {
+                        Timber.w("ML Kit: Object has no labels (classification may not be enabled)")
+                        // 如果没有标签，使用通用障碍物类型
+                        val distance = estimateDistance(ObstacleType.OBSTACLE, bounds.height().toFloat(), bitmap.height.toFloat())
+                        val direction = calculateDirection(bounds.centerX().toFloat(), bitmap.width.toFloat())
+                        
+                        results.add(DetectedObstacle(
+                            type = ObstacleType.OBSTACLE,
+                            confidence = 0.5f,
+                            distance = distance,
+                            direction = direction,
+                            boundingBox = BoundingBox(
+                                left = bounds.left.toFloat() / bitmap.width,
+                                top = bounds.top.toFloat() / bitmap.height,
+                                right = bounds.right.toFloat() / bitmap.width,
+                                bottom = bounds.bottom.toFloat() / bitmap.height
+                            )
+                        ))
+                        return@forEach
+                    }
                     
                     labels.forEach { label ->
-                        Timber.d("ML Kit: Label='${label.text}', confidence=${label.confidence}")
+                        Timber.d("ML Kit: Label='${label.text}', confidence=${label.confidence}, index=${label.index}")
                     }
                     
                     val label = labels.firstOrNull()?.text ?: "unknown"
                     val obstacleType = mlKitLabelToObstacle(label)
                     
                     if (obstacleType == null) {
-                        Timber.d("ML Kit: No mapping for label '$label', skipping")
+                        Timber.w("ML Kit: No mapping for label '$label', using OBSTACLE type")
+                        // 如果标签没有映射，使用通用障碍物类型
+                        val distance = estimateDistance(ObstacleType.OBSTACLE, bounds.height().toFloat(), bitmap.height.toFloat())
+                        val direction = calculateDirection(bounds.centerX().toFloat(), bitmap.width.toFloat())
+                        
+                        results.add(DetectedObstacle(
+                            type = ObstacleType.OBSTACLE,
+                            confidence = labels.firstOrNull()?.confidence ?: 0.5f,
+                            distance = distance,
+                            direction = direction,
+                            boundingBox = BoundingBox(
+                                left = bounds.left.toFloat() / bitmap.width,
+                                top = bounds.top.toFloat() / bitmap.height,
+                                right = bounds.right.toFloat() / bitmap.width,
+                                bottom = bounds.bottom.toFloat() / bitmap.height
+                            )
+                        ))
                         return@forEach
                     }
                     
@@ -664,11 +713,10 @@ class AIDetector @Inject constructor(
                         return@forEach
                     }
 
-                    val bounds = obj.boundingBox
                     val distance = estimateDistance(obstacleType, bounds.height().toFloat(), bitmap.height.toFloat())
                     val direction = calculateDirection(bounds.centerX().toFloat(), bitmap.width.toFloat())
 
-                    Timber.d("ML Kit: Detected ${obstacleType.chineseName} at ${distance}m, direction=${direction.getChineseName()}, confidence=$confidence")
+                    Timber.i("ML Kit: Detected ${obstacleType.chineseName} at ${distance}m, direction=${direction.getChineseName()}, confidence=$confidence")
 
                     results.add(DetectedObstacle(
                         type = obstacleType,
@@ -685,7 +733,7 @@ class AIDetector @Inject constructor(
                 }
 
                 val finalResults = nonMaxSuppression(results)
-                Timber.d("ML Kit: Returning ${finalResults.size} obstacles after NMS")
+                Timber.i("ML Kit: Returning ${finalResults.size} obstacles after NMS")
                 finalResults
             } catch (e: Exception) {
                 Timber.e(e, "ML Kit检测失败")
@@ -695,26 +743,111 @@ class AIDetector @Inject constructor(
     }
 
     // ============ ML Kit标签到ObstacleType的映射 ============
+    // ML Kit 支持的完整标签列表（基于 COCO 数据集）
     private val mlKitLabelMap = mapOf(
+        // 人物类
         "Person" to ObstacleType.PERSON,
+        
+        // 交通工具类（对视障用户威胁较大）
         "Bicycle" to ObstacleType.BICYCLE,
         "Car" to ObstacleType.VEHICLE,
         "Motorcycle" to ObstacleType.MOTORCYCLE,
+        "Airplane" to ObstacleType.VEHICLE,
         "Bus" to ObstacleType.BUS,
+        "Train" to ObstacleType.VEHICLE,
         "Truck" to ObstacleType.TRUCK,
+        "Boat" to ObstacleType.VEHICLE,
+        
+        // 交通设施
         "Traffic Light" to ObstacleType.TRAFFIC_LIGHT,
-        "Stop Sign" to ObstacleType.TRAFFIC_SIGN,
         "Fire Hydrant" to ObstacleType.PILLAR,
+        "Stop Sign" to ObstacleType.TRAFFIC_SIGN,
+        "Parking Meter" to ObstacleType.PILLAR,
+        
+        // 街道设施
         "Bench" to ObstacleType.BENCH,
-        "Chair" to ObstacleType.CHAIR,
-        "Couch" to ObstacleType.SOFA,
-        "Potted Plant" to ObstacleType.POTTTED_PLANT,
-        "Dining Table" to ObstacleType.TABLE,
+        
+        // 动物类（可能出现在道路上）
+        "Bird" to ObstacleType.OBSTACLE,
+        "Cat" to ObstacleType.OBSTACLE,
+        "Dog" to ObstacleType.OBSTACLE,
+        "Horse" to ObstacleType.OBSTACLE,
+        "Sheep" to ObstacleType.OBSTACLE,
+        "Cow" to ObstacleType.OBSTACLE,
+        "Elephant" to ObstacleType.OBSTACLE,
+        "Bear" to ObstacleType.OBSTACLE,
+        "Zebra" to ObstacleType.OBSTACLE,
+        "Giraffe" to ObstacleType.OBSTACLE,
+        
+        // 个人物品
         "Backpack" to ObstacleType.BACKPACK,
         "Umbrella" to ObstacleType.UMBRELLA,
         "Handbag" to ObstacleType.HANDBAG,
+        "Tie" to ObstacleType.OBSTACLE,
         "Suitcase" to ObstacleType.SUITCASE,
-        "Bottle" to ObstacleType.BOTTLE
+        
+        // 运动器材
+        "Frisbee" to ObstacleType.OBSTACLE,
+        "Skis" to ObstacleType.OBSTACLE,
+        "Snowboard" to ObstacleType.OBSTACLE,
+        "Sports Ball" to ObstacleType.OBSTACLE,
+        "Kite" to ObstacleType.OBSTACLE,
+        "Baseball Bat" to ObstacleType.OBSTACLE,
+        "Baseball Glove" to ObstacleType.OBSTACLE,
+        "Skateboard" to ObstacleType.OBSTACLE,
+        "Surfboard" to ObstacleType.OBSTACLE,
+        "Tennis Racket" to ObstacleType.OBSTACLE,
+        
+        // 餐具和容器
+        "Bottle" to ObstacleType.BOTTLE,
+        "Wine Glass" to ObstacleType.BOTTLE,
+        "Cup" to ObstacleType.BOTTLE,
+        "Fork" to ObstacleType.OBSTACLE,
+        "Knife" to ObstacleType.OBSTACLE,
+        "Spoon" to ObstacleType.OBSTACLE,
+        "Bowl" to ObstacleType.OBSTACLE,
+        
+        // 食物
+        "Banana" to ObstacleType.OBSTACLE,
+        "Apple" to ObstacleType.OBSTACLE,
+        "Sandwich" to ObstacleType.OBSTACLE,
+        "Orange" to ObstacleType.OBSTACLE,
+        "Broccoli" to ObstacleType.OBSTACLE,
+        "Carrot" to ObstacleType.OBSTACLE,
+        "Hot Dog" to ObstacleType.OBSTACLE,
+        "Pizza" to ObstacleType.OBSTACLE,
+        "Donut" to ObstacleType.OBSTACLE,
+        "Cake" to ObstacleType.OBSTACLE,
+        
+        // 家具类
+        "Chair" to ObstacleType.CHAIR,
+        "Couch" to ObstacleType.SOFA,
+        "Potted Plant" to ObstacleType.POTTTED_PLANT,
+        "Bed" to ObstacleType.BED,
+        "Dining Table" to ObstacleType.TABLE,
+        "Toilet" to ObstacleType.OBSTACLE,
+        
+        // 电子设备
+        "TV" to ObstacleType.OBSTACLE,
+        "Laptop" to ObstacleType.LAPTOP,
+        "Mouse" to ObstacleType.OBSTACLE,
+        "Remote" to ObstacleType.OBSTACLE,
+        "Keyboard" to ObstacleType.OBSTACLE,
+        "Cell Phone" to ObstacleType.PHONE,
+        "Microwave" to ObstacleType.OBSTACLE,
+        "Oven" to ObstacleType.OBSTACLE,
+        "Toaster" to ObstacleType.OBSTACLE,
+        "Sink" to ObstacleType.OBSTACLE,
+        "Refrigerator" to ObstacleType.OBSTACLE,
+        
+        // 其他物品
+        "Book" to ObstacleType.OBSTACLE,
+        "Clock" to ObstacleType.OBSTACLE,
+        "Vase" to ObstacleType.POTTTED_PLANT,
+        "Scissors" to ObstacleType.OBSTACLE,
+        "Teddy Bear" to ObstacleType.OBSTACLE,
+        "Hair Drier" to ObstacleType.OBSTACLE,
+        "Toothbrush" to ObstacleType.OBSTACLE
     )
 
     private fun mlKitLabelToObstacle(label: String): ObstacleType? = mlKitLabelMap[label]
