@@ -36,7 +36,12 @@ class SmartPowerManager @Inject constructor(
     private val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
     private val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
     
-    private val _powerState = MutableStateFlow(PowerState())
+    private val _powerState = MutableStateFlow(PowerState(
+        isCharging = false,
+        batteryLevel = 100,
+        isPowerSaveMode = false,
+        isLowBattery = false
+    ))
     val powerState: StateFlow<PowerState> = _powerState.asStateFlow()
     
     private val _powerSavingMode = MutableStateFlow(PowerSavingMode.NORMAL)
