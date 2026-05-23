@@ -16,6 +16,8 @@ dependencyResolutionManagement {
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://jitpack.io") }
+        // 百度语音 SDK Maven 仓库
+        maven { url = uri("https://maven.baidu.com/content/repositories/public/") }
     }
 }
 
