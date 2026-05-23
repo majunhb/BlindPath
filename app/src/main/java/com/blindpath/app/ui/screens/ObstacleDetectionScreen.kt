@@ -183,8 +183,22 @@ fun ObstacleDetectionScreen(
                             if (level != AlertLevel.SAFE && now - lastAlertTime > 3000) {
                                 lastAlertTime = now
                                 lastAnnouncement = alertMsg
+                                
+                                // 使用分级播报系统
+                                val voiceType = when (level) {
+                                    AlertLevel.DANGER -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_DANGER
+                                    AlertLevel.WARNING -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_NORMAL
+                                    else -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_LOW
+                                }
+                                
                                 scope.launch {
-                                    voiceRepository.speakObstacleAlert(alertMsg)
+                                    // 创建播报请求，包含去重键
+                                    val request = com.blindpath.module_voice.domain.model.VoiceRequest(
+                                        text = alertMsg,
+                                        type = voiceType,
+                                        deduplicationKey = nearest.type.getDeduplicationKey(nearest.direction)
+                                    )
+                                    voiceRepository.announce(request)
                                 }
                             } else if (level == AlertLevel.SAFE) {
                                 lastAnnouncement = "前方道路畅通，未检测到障碍物"

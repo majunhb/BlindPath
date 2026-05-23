@@ -14,6 +14,7 @@ import com.blindpath.base.error.BlindPathError
 import com.blindpath.base.error.DegradationManager
 import com.blindpath.base.power.FrameRateController
 import com.blindpath.base.power.PerformanceMode
+import com.blindpath.base.power.SmartPowerManager
 import com.blindpath.base.tts.VibrationHelper
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.domain.VoiceRepository
@@ -24,13 +25,15 @@ import timber.log.Timber
 import javax.inject.Inject
 
 /**
- * 避障前台服务（增强版）
+ * 避障前台服务（增强版 v2.0）
  * 
  * 新增功能：
+ * - 智能省电管理：自适应调整检测频率、传感器采样率
  * - 电量监控与自动降级
  * - 智能帧率控制
  * - 错误处理与恢复
  * - 性能监控
+ * - 温度监控：过热时自动降频
  */
 @AndroidEntryPoint
 class ObstacleService : Service() {
@@ -40,6 +43,9 @@ class ObstacleService : Service() {
 
     @Inject
     lateinit var voiceRepository: VoiceRepository
+
+    @Inject
+    lateinit var smartPowerManager: SmartPowerManager
 
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var isRunning = false
@@ -69,6 +75,9 @@ class ObstacleService : Service() {
         
         // 初始化帧率控制器
         frameRateController = FrameRateController()
+        
+        // 启动智能省电监控
+        smartPowerManager.startMonitoring(frameRateController = frameRateController)
         
         // 监控电量变化
         registerBatteryReceiver()
@@ -166,11 +175,13 @@ class ObstacleService : Service() {
     private fun handleAlert(level: AlertLevel, description: String) {
         val currentTime = System.currentTimeMillis()
 
-        // 低电量模式下减少播报频率
-        val minInterval = if (isLowPowerMode) {
-            alertRepeatMinInterval * 2
-        } else {
-            alertRepeatMinInterval
+        // 根据省电模式调整播报频率
+        val powerSavingMode = smartPowerManager.powerSavingMode.value
+        val minInterval = when (powerSavingMode.level) {
+            0 -> alertRepeatMinInterval           // 正常模式
+            1 -> alertRepeatMinInterval * 2        // 中度省电
+            2 -> alertRepeatMinInterval * 3        // 激进省电
+            else -> alertRepeatMinInterval * 4     // 超级省电
         }
 
         if (description == lastAlertMessage && currentTime - lastAlertTime < minInterval) {
@@ -180,13 +191,21 @@ class ObstacleService : Service() {
         lastAlertMessage = description
         lastAlertTime = currentTime
 
-        // 立即停止当前播报，播报预警
-        serviceScope.launch {
-            voiceRepository.speakObstacleAlert(description)
+        // 根据危险等级选择播报类型
+        val voiceType = when (level) {
+            AlertLevel.DANGER -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_DANGER
+            AlertLevel.WARNING -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_NORMAL
+            AlertLevel.SAFE -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_LOW
+            else -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_NORMAL
         }
 
-        // 低电量模式下减少振动
-        if (level != AlertLevel.SAFE && !isLowPowerMode) {
+        // 使用分级播报系统
+        serviceScope.launch {
+            voiceRepository.announce(description, voiceType)
+        }
+
+        // 根据省电模式决定是否振动
+        if (level != AlertLevel.SAFE && !smartPowerManager.shouldDisableVibration()) {
             VibrationHelper.vibrate(this, level)
         } else if (level == AlertLevel.DANGER) {
             // 危险级别始终振动
@@ -319,8 +338,17 @@ class ObstacleService : Service() {
         )
 
         val modeText = if (isLowPowerMode) " [省电模式]" else ""
+        val powerSavingMode = smartPowerManager.powerSavingMode.value
+        val modeIndicator = when (powerSavingMode.level) {
+            0 -> ""
+            1 -> " [省电]"
+            2 -> " [低功耗]"
+            3 -> " [超级省电]"
+            else -> ""
+        }
+        
         return NotificationCompat.Builder(this, CHANNEL_OBSTACLE)
-            .setContentTitle("避障功能运行中$modeText")
+            .setContentTitle("避障功能运行中$modeText$modeIndicator")
             .setContentText("正在为您检测周围障碍物")
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setContentIntent(pendingIntent)
@@ -333,10 +361,12 @@ class ObstacleService : Service() {
     private fun updateNotification(text: String) {
         val modeText = if (isLowPowerMode) " [省电模式]" else ""
         val batteryText = " 电量:$batteryLevel%"
+        val temperature = smartPowerManager.powerState.value.temperature
+        val tempText = if (temperature > 40) " 温度:${temperature.toInt()}°C" else ""
         
         val notification = NotificationCompat.Builder(this, CHANNEL_OBSTACLE)
             .setContentTitle("避障功能运行中$modeText")
-            .setContentText(text + batteryText)
+            .setContentText(text + batteryText + tempText)
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -365,6 +395,7 @@ class ObstacleService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        smartPowerManager.stopMonitoring()
         serviceScope.cancel()
         VibrationHelper.cancel(this)
     }

@@ -135,6 +135,15 @@ enum class ObstacleType(
     }
 
     /**
+     * 生成去重键（用于语音播报去重）
+     * 相同类型和方向的障碍物使用相同的去重键
+     */
+    fun getDeduplicationKey(direction: Direction? = null): String {
+        val directionKey = direction?.name ?: "NONE"
+        return "${name}_$directionKey"
+    }
+
+    /**
      * 获取危险级别描述
      */
     fun getSeverityDescription(): String {

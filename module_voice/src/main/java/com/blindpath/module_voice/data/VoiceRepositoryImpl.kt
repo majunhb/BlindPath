@@ -6,19 +6,25 @@ import android.speech.tts.UtteranceProgressListener
 import com.blindpath.base.common.Result
 import com.blindpath.base.config.AppConfig
 import com.blindpath.module_voice.domain.VoiceRepository
-import com.blindpath.module_voice.domain.model.VoiceState
+import com.blindpath.module_voice.domain.model.*
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 import timber.log.Timber
-import java.util.Locale
-import java.util.UUID
+import java.util.*
+import java.util.concurrent.PriorityBlockingQueue
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * 语音播报仓库实现（分级播报版）
+ * 
+ * 核心特性：
+ * - 四级优先级队列（P0-P3）
+ * - 智能去重与冷却机制
+ * - 打断与恢复策略
+ * - 播报统计与分析
+ */
 @Singleton
 class VoiceRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context
@@ -27,15 +33,40 @@ class VoiceRepositoryImpl @Inject constructor(
     private val _state = MutableStateFlow(VoiceState())
     override val voiceState: StateFlow<VoiceState> = _state.asStateFlow()
 
+    private val _statistics = MutableStateFlow(VoiceStatistics())
+    override val statistics: StateFlow<VoiceStatistics> = _statistics.asStateFlow()
+
     private var tts: TextToSpeech? = null
     private var isInitialized = false
+
+    // 优先级队列（按优先级排序）
+    private val announcementQueue = PriorityBlockingQueue<VoiceRequest>(
+        11,
+        compareBy { it.priority.level }
+    )
+
+    // 去重缓存：记录最近播报的内容
+    private val recentAnnouncements = mutableMapOf<String, Long>()
+
+    // 冷却计时器
+    private var lastAnnouncementTime = mutableMapOf<VoicePriority, Long>()
+
+    // 当前正在播报的请求
+    @Volatile
+    private var currentRequest: VoiceRequest? = null
+
+    // 播放协程作用域
+    private val playbackScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    // 队列处理协程
+    private var queueProcessorJob: Job? = null
 
     override suspend fun initialize(): Result<Boolean> = suspendCancellableCoroutine { continuation ->
         continuation.invokeOnCancellation {
             Timber.d("TTS initialization cancelled")
         }
         try {
-            Timber.d("Initializing Android TTS")
+            Timber.d("Initializing Android TTS with priority queue")
             
             tts = TextToSpeech(context) { status ->
                 if (status == TextToSpeech.SUCCESS) {
@@ -57,7 +88,11 @@ class VoiceRepositoryImpl @Inject constructor(
                         isInitialized = true
                         tts?.setSpeechRate(AppConfig.Voice.SPEECH_RATE)
                         _state.update { it.copy(isAvailable = true) }
-                        Timber.d("TTS initialized successfully")
+                        
+                        // 启动队列处理器
+                        startQueueProcessor()
+                        
+                        Timber.d("TTS initialized successfully with priority queue")
                         if (continuation.isActive) continuation.resume(Result.Success(true)) {}
                     }
                 } else {
@@ -73,7 +108,13 @@ class VoiceRepositoryImpl @Inject constructor(
                 }
 
                 override fun onDone(utteranceId: String?) {
-                    _state.update { it.copy(isSpeaking = false) }
+                    _state.update { 
+                        it.copy(
+                            isSpeaking = false,
+                            currentPriority = null
+                        )
+                    }
+                    currentRequest = null
                     Timber.d("TTS playback finished")
                 }
 
@@ -86,6 +127,7 @@ class VoiceRepositoryImpl @Inject constructor(
                             lastError = "语音播放错误"
                         )
                     }
+                    currentRequest = null
                 }
 
                 override fun onError(utteranceId: String?, errorCode: Int) {
@@ -96,6 +138,7 @@ class VoiceRepositoryImpl @Inject constructor(
                             lastError = "语音播放错误: $errorCode"
                         )
                     }
+                    currentRequest = null
                 }
             })
             
@@ -105,8 +148,163 @@ class VoiceRepositoryImpl @Inject constructor(
             if (continuation.isActive) continuation.resume(Result.Error(message = e.message ?: "语音初始化失败")) {}
         }
     }
-    
-    override suspend fun speak(text: String, queueMode: Boolean): Result<Boolean> {
+
+    /**
+     * 启动队列处理器
+     */
+    private fun startQueueProcessor() {
+        queueProcessorJob = playbackScope.launch {
+            while (isActive) {
+                try {
+                    // 从队列中取出最高优先级的请求
+                    val request = announcementQueue.poll()
+                    
+                    if (request != null) {
+                        processAnnouncement(request)
+                    } else {
+                        // 队列为空，等待
+                        delay(100)
+                    }
+                    
+                    // 更新队列大小
+                    _state.update { it.copy(queueSize = announcementQueue.size) }
+                } catch (e: Exception) {
+                    Timber.e(e, "Error processing announcement queue")
+                    delay(100)
+                }
+            }
+        }
+    }
+
+    /**
+     * 处理单个播报请求
+     */
+    private suspend fun processAnnouncement(request: VoiceRequest) {
+        // 检查去重
+        if (shouldDeduplicate(request)) {
+            Timber.d("Deduplicating announcement: ${request.text}")
+            _statistics.update { 
+                it.copy(deduplicatedCount = it.deduplicatedCount + 1) 
+            }
+            return
+        }
+
+        // 检查冷却
+        if (isInCooldown(request.priority)) {
+            Timber.d("Announcement in cooldown: ${request.priority}")
+            return
+        }
+
+        // 如果需要打断当前播报
+        if (request.interruptCurrent && _state.value.isSpeaking) {
+            Timber.d("Interrupting current announcement for: ${request.priority}")
+            tts?.stop()
+            _statistics.update { 
+                it.copy(interruptedCount = it.interruptedCount + 1) 
+            }
+            delay(100) // 等待停止完成
+        }
+
+        // 播报
+        currentRequest = request
+        _state.update { 
+            it.copy(currentPriority = request.priority) 
+        }
+
+        val utteranceId = UUID.randomUUID().toString()
+        tts?.speak(request.text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+
+        // 记录播报
+        recordAnnouncement(request)
+
+        // 更新统计
+        updateStatistics(request)
+
+        // 等待播报完成
+        while (_state.value.isSpeaking && currentRequest == request) {
+            delay(50)
+        }
+    }
+
+    /**
+     * 检查是否应该去重
+     */
+    private fun shouldDeduplicate(request: VoiceRequest): Boolean {
+        val key = request.deduplicationKey ?: request.text
+        val lastTime = recentAnnouncements[key]
+        
+        if (lastTime != null) {
+            val elapsed = System.currentTimeMillis() - lastTime
+            val cooldown = request.priority.getCooldownMs()
+            
+            if (elapsed < cooldown) {
+                return true
+            }
+        }
+        
+        return false
+    }
+
+    /**
+     * 检查是否在冷却期
+     */
+    private fun isInCooldown(priority: VoicePriority): Boolean {
+        val lastTime = lastAnnouncementTime[priority] ?: return false
+        val elapsed = System.currentTimeMillis() - lastTime
+        val cooldown = priority.getCooldownMs()
+        
+        return elapsed < cooldown
+    }
+
+    /**
+     * 记录播报（用于去重和冷却）
+     */
+    private fun recordAnnouncement(request: VoiceRequest) {
+        val now = System.currentTimeMillis()
+        
+        // 记录去重键
+        val key = request.deduplicationKey ?: request.text
+        recentAnnouncements[key] = now
+        
+        // 记录优先级冷却
+        lastAnnouncementTime[request.priority] = now
+        
+        // 清理过期的去重记录（保留最近 1 分钟）
+        val expireThreshold = now - 60000
+        recentAnnouncements.entries.removeAll { it.value < expireThreshold }
+    }
+
+    /**
+     * 更新统计信息
+     */
+    private fun updateStatistics(request: VoiceRequest) {
+        _statistics.update { stats ->
+            val newStats = when (request.priority) {
+                VoicePriority.EMERGENCY -> stats.copy(
+                    totalAnnouncements = stats.totalAnnouncements + 1,
+                    emergencyCount = stats.emergencyCount + 1
+                )
+                VoicePriority.IMPORTANT -> stats.copy(
+                    totalAnnouncements = stats.totalAnnouncements + 1,
+                    importantCount = stats.importantCount + 1
+                )
+                VoicePriority.NORMAL -> stats.copy(
+                    totalAnnouncements = stats.totalAnnouncements + 1,
+                    normalCount = stats.normalCount + 1
+                )
+                VoicePriority.BACKGROUND -> stats.copy(
+                    totalAnnouncements = stats.totalAnnouncements + 1,
+                    backgroundCount = stats.backgroundCount + 1
+                )
+            }
+            newStats
+        }
+    }
+
+    /**
+     * 分级播报（核心方法）
+     */
+    override suspend fun announce(request: VoiceRequest): Result<Boolean> {
         return try {
             if (!isInitialized) {
                 val initResult = initialize()
@@ -119,28 +317,60 @@ class VoiceRepositoryImpl @Inject constructor(
                 return Result.Error(message = "TTS 未初始化")
             }
 
-            val utteranceId = UUID.randomUUID().toString()
-
-            if (queueMode) {
-                // 队列模式
-                tts?.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId)
-            } else {
-                // 立即播放
-                tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
-            }
-
-            Timber.d("Speaking: $text")
+            // 加入优先级队列
+            announcementQueue.offer(request)
+            
+            // 更新队列大小
+            _state.update { it.copy(queueSize = announcementQueue.size) }
+            
+            Timber.d("Queued announcement: priority=${request.priority}, text=${request.text}")
             Result.Success(true)
         } catch (e: Exception) {
-            Timber.e(e, "Failed to speak")
+            Timber.e(e, "Failed to queue announcement")
             Result.Error(message = e.message ?: "语音播报失败")
         }
+    }
+
+    /**
+     * 清空播报队列
+     */
+    override suspend fun clearQueue(): Result<Boolean> {
+        return try {
+            announcementQueue.clear()
+            _state.update { it.copy(queueSize = 0) }
+            Timber.d("Announcement queue cleared")
+            Result.Success(true)
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to clear queue")
+            Result.Error(message = e.message ?: "清空队列失败")
+        }
+    }
+
+    /**
+     * 获取当前队列大小
+     */
+    override fun getQueueSize(): Int = announcementQueue.size
+
+    // ========== 保留旧方法以兼容现有代码 ==========
+
+    override suspend fun speak(text: String, queueMode: Boolean): Result<Boolean> {
+        // 旧方法默认使用 NORMAL 优先级
+        val type = if (queueMode) VoiceType.OBSTACLE_NORMAL else VoiceType.OBSTACLE_DANGER
+        return announce(text, type)
     }
 
     override suspend fun stop(): Result<Boolean> {
         return try {
             tts?.stop()
-            _state.update { it.copy(isSpeaking = false) }
+            announcementQueue.clear()
+            currentRequest = null
+            _state.update { 
+                it.copy(
+                    isSpeaking = false,
+                    currentPriority = null,
+                    queueSize = 0
+                )
+            }
             Result.Success(true)
         } catch (e: Exception) {
             Result.Error(message = e.message ?: "停止语音失败")
@@ -158,31 +388,22 @@ class VoiceRepositoryImpl @Inject constructor(
     }
 
     override fun release() {
+        queueProcessorJob?.cancel()
+        playbackScope.cancel()
+        
         tts?.stop()
         tts?.shutdown()
         tts = null
         isInitialized = false
+        
+        announcementQueue.clear()
+        recentAnnouncements.clear()
+        lastAnnouncementTime.clear()
+        currentRequest = null
+        
         _state.update { VoiceState() }
+        _statistics.update { VoiceStatistics() }
+        
         Timber.d("TTS released")
-    }
-
-    /**
-     * 播报避障预警（高优先级）
-     */
-    override suspend fun speakObstacleAlert(text: String) {
-        // 停止当前播报，立即播报预警
-        tts?.stop()
-        speak(text, queueMode = false)
-    }
-
-    /**
-     * 播报导航指令（低优先级）
-     */
-    override suspend fun speakNavigation(text: String) {
-        // 排队播报，不打断避障
-        if (_state.value.isSpeaking) {
-            return // 正在播报避障，不播导航
-        }
-        speak(text, queueMode = true)
     }
 }

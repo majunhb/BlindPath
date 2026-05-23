@@ -27,3 +27,53 @@ data class NavigationState(
     val currentInfo: NavigationInfo? = null,
     val lastError: String? = null
 )
+
+/**
+ * 离线地图状态
+ */
+data class OfflineMapState(
+    val isDownloading: Boolean = false,
+    val currentDownloadCity: String? = null,
+    val downloadProgress: Int = 0,          // 0-100
+    val hasUpdateAvailable: Boolean = false,
+    val lastDownloadSuccess: Boolean? = null,
+    val lastError: String? = null
+)
+
+/**
+ * 离线地图城市信息
+ */
+data class OfflineMapCityInfo(
+    val cityCode: String,
+    val cityName: String,
+    val province: String,
+    val size: Long,                          // 地图大小（字节）
+    val isDownloaded: Boolean = false,
+    val isDownloading: Boolean = false,
+    val progress: Int = 0,                   // 下载进度 0-100
+    val hasUpdate: Boolean = false
+) {
+    /**
+     * 获取格式化的大小字符串
+     */
+    fun getFormattedSize(): String {
+        val mb = size / (1024.0 * 1024.0)
+        return if (mb >= 1024) {
+            String.format("%.1f GB", mb / 1024)
+        } else {
+            String.format("%.1f MB", mb)
+        }
+    }
+}
+
+/**
+ * 离线地图下载状态
+ */
+enum class OfflineMapDownloadStatus {
+    NOT_STARTED,    // 未开始
+    DOWNLOADING,    // 下载中
+    PAUSED,         // 已暂停
+    COMPLETED,      // 已完成
+    FAILED,         // 失败
+    UPDATING        // 更新中
+}
