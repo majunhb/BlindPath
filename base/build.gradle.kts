@@ -43,52 +43,42 @@ android {
 }
 
 dependencies {
-    // Hilt
-    implementation("com.google.dagger:hilt-android:2.51.1")
-    ksp("com.google.dagger:hilt-android-compiler:2.51.1")
-    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
+    // Hilt - 使用 version catalog
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
 
     // WorkManager + Hilt Worker
-    implementation("androidx.work:work-runtime-ktx:2.9.0")
-    implementation("androidx.hilt:hilt-work:1.1.0")
-    ksp("androidx.hilt:hilt-compiler:1.1.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
+    implementation(libs.workmanager)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.compiler.androidx)
+    implementation(libs.androidx.lifecycle.viewmodel)
+    implementation(libs.androidx.lifecycle.runtime)
 
-    // Retrofit + OkHttp（天气API网络请求）
-    implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    // Retrofit + OkHttp - 使用 version catalog bundle
+    implementation(libs.bundles.network)
 
-    // DataStore（本地缓存）
-    implementation("androidx.datastore:datastore-preferences:1.0.0")
+    // DataStore
+    implementation(libs.datastore.preferences)
 
-    // Room 数据库
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    // Room - 使用 version catalog bundle
+    implementation(libs.bundles.room)
+    ksp(libs.room.compiler)
 
-    // Compose
-    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended:1.5.4")
+    // Compose - 使用 version catalog
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.bundles.compose)
+    implementation(libs.androidx.compose.material.icons)
 
     // Core
-    implementation("androidx.core:core-ktx:1.12.0")
+    implementation(libs.androidx.core.ktx)
 
     // Timber
-    implementation("com.jakewharton.timber:timber:5.0.1")
+    implementation(libs.timber)
 
     // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
+    implementation(libs.kotlinx.coroutines.android)
 
     // Test dependencies
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("io.mockk:mockk:1.13.9")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
-    testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation(libs.bundles.testing)
 }

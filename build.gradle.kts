@@ -13,6 +13,9 @@ plugins {
     id("org.jlleitschuh.gradle.ktlint") version "12.1.1" apply false
 }
 
+// Version catalog 已在 settings.gradle.kts 中配置
+// 所有版本号统一在 gradle/libs.versions.toml 中管理
+
 // ----------------------------------------------------------------
 // 对所有子模块统一应用 Detekt 和 ktlint
 // ----------------------------------------------------------------

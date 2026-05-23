@@ -5,13 +5,6 @@ plugins {
     id("com.google.devtools.ksp")
 }
 
-// ÐÞ¸´ Hilt KSP ÔöÁ¿¹¹½¨Ê±µÄ FileAlreadyExistsException ³åÍ»
-// ²Î¿¼£ºhttps://github.com/google/dagger/issues/3879
-ksp {
-    arg("dagger.fastInit", "enabled")
-    arg("dagger.hilt.android.internal.disableAndroidSuperclassValidation", "true")
-}
-
 android {
     namespace = "com.blindpath.module_obstacle"
     compileSdk = 34
@@ -44,45 +37,35 @@ dependencies {
     implementation(project(":base"))
     implementation(project(":module_voice"))
     
-    // Hilt
-    implementation("com.google.dagger:hilt-android:2.51.1")
-    ksp("com.google.dagger:hilt-android-compiler:2.51.1")
+    // Hilt - ä½¿ç”¨ version catalog
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
     
-    // CameraX
-    val cameraxVersion = "1.3.0"
-    implementation("androidx.camera:camera-core:$cameraxVersion")
-    implementation("androidx.camera:camera-camera2:$cameraxVersion")
-    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
-    implementation("androidx.camera:camera-view:$cameraxVersion")
+    // CameraX - ä½¿ç”¨ version catalog bundle
+    implementation(libs.bundles.camerax)
     
-    // ML Kit
-    implementation("com.google.mlkit:object-detection:17.0.0")
+    // ML Kit Object Detection
+    implementation(libs.mlkit.object.detection)
     
-    // TensorFlow Lite
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
-    implementation("org.tensorflow:tensorflow-lite-gpu:2.14.0")
-
+    // TensorFlow Lite - ä½¿ç”¨ version catalog bundle
+    implementation(libs.bundles.tensorflow.lite)
+    
     // Timber
-    implementation("com.jakewharton.timber:timber:5.0.1")
+    implementation(libs.timber)
     
     // OkHttp
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-
-    // Coroutines
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.0")
+    implementation(libs.okhttp)
+    
+    // Coroutines - ä½¿ç”¨ version catalog bundle
+    implementation(libs.bundles.coroutines)
+    implementation(libs.kotlinx.coroutines.play.services)
     
     // Core
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-service:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-process:2.7.0")
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime)
+    implementation(libs.androidx.lifecycle.service)
+    implementation(libs.androidx.lifecycle.process)
     
     // Test dependencies
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("io.mockk:mockk:1.13.9")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
-    testImplementation("androidx.arch.core:core-testing:2.2.0")
+    testImplementation(libs.bundles.testing)
 }

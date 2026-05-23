@@ -107,50 +107,38 @@ dependencies {
     
     // 方案二：一体包（包含地图显示，体积较大）
     // 当前使用此方案，如需优化体积可切换到方案一
-    implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
+    implementation(libs.amap.sdk)
 
-    // Hilt
-    implementation("com.google.dagger:hilt-android:2.51.1")
-    ksp("com.google.dagger:hilt-android-compiler:2.51.1")
-    implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
+    // Hilt - 使用 version catalog
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
 
-    // Core
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
-    implementation("androidx.lifecycle:lifecycle-process:2.7.0")
-    implementation("androidx.activity:activity-compose:1.8.2")
+    // Core - 使用 version catalog
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime)
+    implementation(libs.androidx.lifecycle.process)
+    implementation(libs.androidx.activity.compose)
 
     // Timber
-    implementation("com.jakewharton.timber:timber:5.0.1")
+    implementation(libs.timber)
 
-    // CameraX
-    implementation("androidx.camera:camera-core:1.3.1")
-    implementation("androidx.camera:camera-camera2:1.3.1")
-    implementation("androidx.camera:camera-lifecycle:1.3.1")
-    implementation("androidx.camera:camera-view:1.3.1")
+    // CameraX - 使用 version catalog bundle
+    implementation(libs.bundles.camerax)
 
-    // Compose
-    implementation(platform("androidx.compose:compose-bom:2024.02.00"))
-    implementation("androidx.compose.ui:ui")
-    implementation("androidx.compose.ui:ui-graphics")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended:1.5.4")
+    // Compose - 使用 version catalog
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.bundles.compose)
+    implementation(libs.androidx.compose.material.icons)
 
     // Debug
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    debugImplementation(libs.bundles.compose.debug)
 
-    // Test dependencies
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("io.mockk:mockk:1.13.9")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.0")
-    testImplementation("androidx.arch.core:core-testing:2.2.0")
-    testImplementation("androidx.lifecycle:lifecycle-runtime-testing:2.7.0")
+    // Test dependencies - 使用 version catalog
+    testImplementation(libs.bundles.testing)
 
     // Android Test
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    androidTestImplementation(platform("androidx.compose:compose-bom:2024.02.00"))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.bundles.android.testing)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
 }
