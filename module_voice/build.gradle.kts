@@ -40,12 +40,16 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     
+    // Baidu Voice
+    implementation(libs.baidu.voice)
+    
     // Timber
     implementation(libs.timber)
 
     // Core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime)
+    implementation(libs.androidx.lifecycle.viewmodel)
 
     // Coroutines - 使用 version catalog bundle
     implementation(libs.kotlinx.coroutines.android)

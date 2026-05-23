@@ -14,13 +14,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
 import com.blindpath.module_trip_assist.ui.TripAssistScreen
+import com.blindpath.module_voice.domain.model.VoiceCommand
+import com.blindpath.module_voice.domain.model.VoiceGuidance
+import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
+import timber.log.Timber
 
 /**
- * 主界面 - 视障友好极简设计 v2.0
+ * 主界面 - 视障友好极简设计 v3.0
  * 
  * 设计原则：
  * 1. 极简导航：核心功能一屏展示，减少层级跳转
@@ -28,14 +34,18 @@ import com.blindpath.module_trip_assist.ui.TripAssistScreen
  * 3. 高对比度：使用 Material 3 高对比度配色
  * 4. 语音反馈：所有按钮添加详细语义描述
  * 5. 一键操作：减少复杂交互，支持长按、双击等辅助手势
+ * 6. 语音交互：支持语音指令控制所有功能
  */
 @Composable
 fun MainScreen(
     obstacleRepository: ObstacleRepository,
     onObstacleDetectionClick: () -> Unit = {},
     onLocationClick: () -> Unit = {},
-    onSosClick: () -> Unit = {}
+    onSosClick: () -> Unit = {},
+    viewModel: VoiceInteractionViewModel = hiltViewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    
     var showSettings by remember { mutableStateOf(false) }
     var showCommunity by remember { mutableStateOf(false) }
     var showTripAssist by remember { mutableStateOf(false) }
@@ -43,6 +53,111 @@ fun MainScreen(
     var showLocation by remember { mutableStateOf(false) }
     var showNavigation by remember { mutableStateOf(false) }
     var showIndoorScreen by remember { mutableStateOf(false) }
+    
+    // 设置语音指令处理器
+    LaunchedEffect(Unit) {
+        viewModel.setCommandHandler { command ->
+            Timber.d("MainScreen: Handling voice command - ${command.name}")
+            when (command) {
+                VoiceCommand.START_OBSTACLE_DETECTION -> {
+                    showObstacleDetection = true
+                    viewModel.speak(VoiceGuidance.OBSTACLE_DETECTION_STARTED)
+                    true
+                }
+                VoiceCommand.STOP_OBSTACLE_DETECTION -> {
+                    showObstacleDetection = false
+                    viewModel.speak(VoiceGuidance.OBSTACLE_DETECTION_STOPPED)
+                    true
+                }
+                VoiceCommand.START_SONAR_DETECTION -> {
+                    // TODO: 实现声呐检测
+                    viewModel.speak("声呐检测功能即将上线")
+                    true
+                }
+                VoiceCommand.STOP_SONAR_DETECTION -> {
+                    // TODO: 实现声呐检测
+                    viewModel.speak("声呐检测已关闭")
+                    true
+                }
+                VoiceCommand.START_NAVIGATION -> {
+                    showNavigation = true
+                    viewModel.speak(VoiceGuidance.NAVIGATION_STARTED)
+                    true
+                }
+                VoiceCommand.STOP_NAVIGATION -> {
+                    showNavigation = false
+                    viewModel.speak(VoiceGuidance.NAVIGATION_STOPPED)
+                    true
+                }
+                VoiceCommand.WHERE_AM_I -> {
+                    showLocation = true
+                    true
+                }
+                VoiceCommand.SOS, VoiceCommand.CALL_SOS -> {
+                    onSosClick()
+                    viewModel.speak(VoiceGuidance.SOS_TRIGGERED)
+                    true
+                }
+                VoiceCommand.SHOW_MAP -> {
+                    showLocation = true
+                    viewModel.speak(VoiceGuidance.MAP_OPENED)
+                    true
+                }
+                VoiceCommand.HIDE_MAP -> {
+                    showLocation = false
+                    viewModel.speak(VoiceGuidance.MAP_CLOSED)
+                    true
+                }
+                VoiceCommand.OPEN_SETTINGS -> {
+                    showSettings = true
+                    viewModel.speak(VoiceGuidance.SETTINGS_OPENED)
+                    true
+                }
+                VoiceCommand.CLOSE_SETTINGS -> {
+                    showSettings = false
+                    viewModel.speak(VoiceGuidance.SETTINGS_CLOSED)
+                    true
+                }
+                VoiceCommand.HELP -> {
+                    viewModel.speakHelp()
+                    true
+                }
+                VoiceCommand.REPEAT -> {
+                    // TODO: 实现重复上一条播报
+                    viewModel.speak("暂无上一条播报")
+                    true
+                }
+                VoiceCommand.CANCEL -> {
+                    viewModel.speak("已取消")
+                    true
+                }
+                VoiceCommand.BACK -> {
+                    // 关闭所有子界面
+                    showSettings = false
+                    showCommunity = false
+                    showTripAssist = false
+                    showObstacleDetection = false
+                    showLocation = false
+                    showNavigation = false
+                    showIndoorScreen = false
+                    viewModel.speak("已返回主界面")
+                    true
+                }
+            }
+        }
+        
+        // 初始化语音交互
+        viewModel.initialize()
+    }
+    
+    // 播报欢迎消息（首次进入）
+    var hasAnnouncedWelcome by remember { mutableStateOf(false) }
+    LaunchedEffect(uiState.isInitialized) {
+        if (uiState.isInitialized && !hasAnnouncedWelcome) {
+            hasAnnouncedWelcome = true
+            viewModel.speak("已进入主界面，请说\"小智小智\"唤醒语音助手，或者说\"帮助\"查看可用指令")
+        }
+    }
 
     when {
         showSettings -> {
@@ -75,7 +190,10 @@ fun MainScreen(
                 onSettingsClick = { showSettings = true },
                 onCommunityClick = { showCommunity = true },
                 onTripAssistClick = { showTripAssist = true },
-                onIndoorClick = { showIndoorScreen = true }
+                onIndoorClick = { showIndoorScreen = true },
+                isListening = uiState.isListening,
+                onStartListening = { viewModel.startListening() },
+                onStopListening = { viewModel.stopListening() }
             )
         }
     }
@@ -90,7 +208,10 @@ private fun MainContent(
     onSettingsClick: () -> Unit,
     onCommunityClick: () -> Unit,
     onTripAssistClick: () -> Unit,
-    onIndoorClick: () -> Unit
+    onIndoorClick: () -> Unit,
+    isListening: Boolean = false,
+    onStartListening: () -> Unit = {},
+    onStopListening: () -> Unit = {}
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background
@@ -119,7 +240,7 @@ private fun MainContent(
                 ) {
                     LargeFeatureButton(
                         label = "障碍物检测",
-                        description = "开启摄像头，实时检测前方障碍物，语音播报预警信息",
+                        description = "开启摄像头，实时检测前方障碍物，语音播报预警信息。语音指令：开启障碍物检测",
                         icon = Icons.Default.Warning,
                         onClick = onObstacleDetectionClick,
                         containerColor = MaterialTheme.colorScheme.primary,
@@ -128,7 +249,7 @@ private fun MainContent(
 
                     LargeFeatureButton(
                         label = "实时定位",
-                        description = "获取当前位置，播报道路名称和方位信息",
+                        description = "获取当前位置，播报道路名称和方位信息。语音指令：我在哪里",
                         icon = Icons.Default.LocationOn,
                         onClick = onLocationClick,
                         containerColor = MaterialTheme.colorScheme.secondary,
@@ -143,7 +264,7 @@ private fun MainContent(
                 ) {
                     LargeFeatureButton(
                         label = "智能导航",
-                        description = "输入目的地，规划路线，语音引导前行",
+                        description = "输入目的地，规划路线，语音引导前行。语音指令：开启导航",
                         icon = Icons.Default.Navigation,
                         onClick = onNavigationClick,
                         containerColor = MaterialTheme.colorScheme.tertiary,
@@ -152,7 +273,7 @@ private fun MainContent(
 
                     LargeFeatureButton(
                         label = "紧急求助",
-                        description = "一键联系紧急联系人，发送位置信息，拨打急救电话",
+                        description = "一键联系紧急联系人，发送位置信息，拨打急救电话。语音指令：紧急救援",
                         icon = Icons.Default.Emergency,
                         onClick = onSosClick,
                         containerColor = MaterialTheme.colorScheme.error,
@@ -163,7 +284,7 @@ private fun MainContent(
                 // 第三行：室内模式
                 LargeFeatureButton(
                     label = "室内模式",
-                    description = "识别室内房间类型和家具障碍物，适合家庭环境使用",
+                    description = "识别室内房间类型和家具障碍物，适合家庭环境使用。语音指令：开启室内模式",
                     icon = Icons.Default.Home,
                     onClick = onIndoorClick,
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -180,7 +301,7 @@ private fun MainContent(
             ) {
                 AccessibleTextButton(
                     label = "设置",
-                    description = "应用设置，调整语音、导航、安全等选项",
+                    description = "应用设置，调整语音、导航、安全等选项。语音指令：设置",
                     icon = Icons.Default.Settings,
                     onClick = onSettingsClick,
                     modifier = Modifier.weight(1f)
