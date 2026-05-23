@@ -61,6 +61,9 @@ class VoiceInteractionViewModel @Inject constructor(
                         )
                     }
                 }
+                is Result.Loading -> {
+                    // 已经设置了 isInitializing = true，无需额外处理
+                }
             }
         }
     }
@@ -76,6 +79,9 @@ class VoiceInteractionViewModel @Inject constructor(
                 }
                 is Result.Error -> {
                     _uiState.update { it.copy(error = "启动语音识别失败") }
+                }
+                is Result.Loading -> {
+                    // 启动监听不会返回 Loading 状态
                 }
             }
         }

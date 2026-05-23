@@ -143,7 +143,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             // 检查语音识别是否可用
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
                 Timber.e("VoiceCommand: Speech recognition not available")
-                return@withContext Result.Error("设备不支持语音识别")
+                return@withContext Result.Error(message = "设备不支持语音识别")
             }
             
             // 创建语音识别器
@@ -155,13 +155,13 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "VoiceCommand: Initialization failed")
-            Result.Error("语音识别初始化失败：${e.message}")
+            Result.Error(message = "语音识别初始化失败：${e.message}")
         }
     }
     
     override suspend fun startListening(): Result<Boolean> = withContext(Dispatchers.Main) {
         if (!isInitialized || speechRecognizer == null) {
-            return@withContext Result.Error("语音识别未初始化")
+            return@withContext Result.Error(message = "语音识别未初始化")
         }
         
         try {
@@ -178,7 +178,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "VoiceCommand: Failed to start listening")
-            Result.Error("启动语音识别失败：${e.message}")
+            Result.Error(message = "启动语音识别失败：${e.message}")
         }
     }
     
@@ -190,14 +190,14 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "VoiceCommand: Failed to stop listening")
-            Result.Error("停止语音识别失败：${e.message}")
+            Result.Error(message = "停止语音识别失败：${e.message}")
         }
     }
     
     override suspend fun recognizeOnce(): Result<VoiceCommandResult> {
         val startResult = startListening()
         if (startResult is Result.Error) {
-            return Result.Error(startResult.message ?: "启动语音识别失败")
+            return Result.Error(message = startResult.message ?: "启动语音识别失败")
         }
         
         // 等待识别结果（最多 10 秒）
@@ -207,7 +207,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                 .map { it.lastCommand!! }
                 .first()
         }?.let { Result.Success(it) }
-            ?: Result.Error("语音识别超时")
+            ?: Result.Error(message = "语音识别超时")
     }
     
     override fun release() {

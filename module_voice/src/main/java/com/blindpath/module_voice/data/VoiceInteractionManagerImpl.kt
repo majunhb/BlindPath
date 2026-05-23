@@ -43,14 +43,14 @@ class VoiceInteractionManagerImpl @Inject constructor(
             val ttsResult = voiceRepository.initialize()
             if (ttsResult is Result.Error) {
                 Timber.e("VoiceInteraction: TTS initialization failed")
-                return Result.Error("TTS 初始化失败：${ttsResult.message}")
+                return Result.Error(message = "TTS 初始化失败：${ttsResult.message}")
             }
             
             // 初始化语音识别
             val commandResult = commandRepository.initialize()
             if (commandResult is Result.Error) {
                 Timber.e("VoiceInteraction: Command recognition initialization failed")
-                return Result.Error("语音识别初始化失败：${commandResult.message}")
+                return Result.Error(message = "语音识别初始化失败：${commandResult.message}")
             }
             
             // 监听语音识别结果
@@ -61,7 +61,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "VoiceInteraction: Initialization failed")
-            Result.Error("语音交互初始化失败：${e.message}")
+            Result.Error(message = "语音交互初始化失败：${e.message}")
         }
     }
     
