@@ -72,22 +72,28 @@ class ObstacleRepositoryImpl @Inject constructor(
         return withContext(Dispatchers.IO) {
             try {
                 if (isInitialized) {
+                    Timber.d("Obstacle repository already initialized")
                     return@withContext Result.Success(true)
                 }
 
                 Timber.d("Initializing obstacle repository")
                 
-                // 初始化AI检测器
+                // 初始化AI检测器（会自动尝试 YOLOv8，失败则回退到 ML Kit）
                 val modelLoaded = aiDetector.loadModel()
                 if (modelLoaded) {
                     _state.update { it.copy(isModelLoaded = true) }
-                    Timber.d("AI model loaded successfully")
+                    Timber.i("AI detector initialized successfully (YOLOv8 or ML Kit)")
                 } else {
-                    Timber.w("AI model failed to load, will use ML Kit fallback")
-                    _state.update { it.copy(lastError = "AI模型加载失败，将使用ML Kit回退方案") }
+                    Timber.e("AI detector initialization failed completely")
+                    _state.update { it.copy(
+                        isModelLoaded = false,
+                        lastError = "AI检测器初始化失败，无法进行障碍物检测"
+                    ) }
+                    return@withContext Result.Error(message = "AI检测器初始化失败")
                 }
 
                 isInitialized = true
+                Timber.i("Obstacle repository initialized successfully")
                 Result.Success(true)
             } catch (e: Exception) {
                 Timber.e(e, "Failed to initialize obstacle repository")

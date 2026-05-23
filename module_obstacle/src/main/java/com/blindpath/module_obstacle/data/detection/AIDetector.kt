@@ -383,12 +383,17 @@ class AIDetector @Inject constructor(
      */
     suspend fun detect(bitmap: Bitmap): List<DetectedObstacle> {
         if (!isLoaded) {
+            Timber.w("AIDetector: Model not loaded, cannot detect")
             return emptyList()
         }
 
-        return if (useMlKit && interpreter == null) {
+        val startTime = System.currentTimeMillis()
+        
+        val results = if (useMlKit && interpreter == null) {
+            Timber.d("AIDetector: Using ML Kit for detection")
             detectWithMlKit(bitmap)
         } else if (interpreter != null) {
+            Timber.d("AIDetector: Using YOLOv8 TFLite for detection")
             try {
                 // 预处理图像
                 val inputBuffer = preprocessImage(bitmap)
@@ -405,12 +410,24 @@ class AIDetector @Inject constructor(
                 // 后处理
                 postProcess(outputBuffer[0], bitmap.width, bitmap.height)
             } catch (e: Exception) {
-                Timber.e(e, "Detection failed")
-                emptyList()
+                Timber.e(e, "YOLOv8 detection failed, falling back to ML Kit")
+                // 如果 YOLOv8 失败，尝试 ML Kit
+                if (mlKitDetector != null) {
+                    useMlKit = true
+                    detectWithMlKit(bitmap)
+                } else {
+                    emptyList()
+                }
             }
         } else {
+            Timber.w("AIDetector: No detector available (interpreter=$interpreter, mlKitDetector=$mlKitDetector, useMlKit=$useMlKit)")
             emptyList()
         }
+        
+        val elapsed = System.currentTimeMillis() - startTime
+        Timber.d("AIDetector: Detection completed in ${elapsed}ms, found ${results.size} obstacles")
+        
+        return results
     }
 
     /**
@@ -614,19 +631,44 @@ class AIDetector @Inject constructor(
     private suspend fun detectWithMlKit(bitmap: Bitmap): List<DetectedObstacle> {
         return withContext(Dispatchers.IO) {
             try {
+                Timber.d("ML Kit: Starting detection on ${bitmap.width}x${bitmap.height} bitmap")
+                
                 val image = InputImage.fromBitmap(bitmap, 0)
                 val detectedObjects = mlKitDetector?.process(image)?.await()
+                
+                Timber.d("ML Kit: Detected ${detectedObjects?.size ?: 0} objects")
+                
                 val results = mutableListOf<DetectedObstacle>()
 
                 detectedObjects?.forEach { obj ->
-                    val label = obj.labels.firstOrNull()?.text ?: "unknown"
-                    val obstacleType = mlKitLabelToObstacle(label) ?: return@forEach
-                    val confidence = obj.labels.firstOrNull()?.confidence ?: 0f
-                    if (confidence < confidenceThreshold) return@forEach  // 使用统一的置信度阈值
+                    val labels = obj.labels
+                    Timber.d("ML Kit: Object with ${labels.size} labels, bounds: ${obj.boundingBox}")
+                    
+                    labels.forEach { label ->
+                        Timber.d("ML Kit: Label='${label.text}', confidence=${label.confidence}")
+                    }
+                    
+                    val label = labels.firstOrNull()?.text ?: "unknown"
+                    val obstacleType = mlKitLabelToObstacle(label)
+                    
+                    if (obstacleType == null) {
+                        Timber.d("ML Kit: No mapping for label '$label', skipping")
+                        return@forEach
+                    }
+                    
+                    val confidence = labels.firstOrNull()?.confidence ?: 0f
+                    
+                    // 降低置信度阈值以便测试（从 0.5 降到 0.3）
+                    if (confidence < 0.3f) {
+                        Timber.d("ML Kit: Confidence $confidence below threshold 0.3, skipping")
+                        return@forEach
+                    }
 
                     val bounds = obj.boundingBox
                     val distance = estimateDistance(obstacleType, bounds.height().toFloat(), bitmap.height.toFloat())
                     val direction = calculateDirection(bounds.centerX().toFloat(), bitmap.width.toFloat())
+
+                    Timber.d("ML Kit: Detected ${obstacleType.chineseName} at ${distance}m, direction=${direction.getChineseName()}, confidence=$confidence")
 
                     results.add(DetectedObstacle(
                         type = obstacleType,
@@ -642,7 +684,9 @@ class AIDetector @Inject constructor(
                     ))
                 }
 
-                nonMaxSuppression(results)
+                val finalResults = nonMaxSuppression(results)
+                Timber.d("ML Kit: Returning ${finalResults.size} obstacles after NMS")
+                finalResults
             } catch (e: Exception) {
                 Timber.e(e, "ML Kit检测失败")
                 emptyList()
