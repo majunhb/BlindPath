@@ -40,9 +40,6 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     
-    // Baidu Voice
-    implementation(libs.baidu.voice)
-    
     // Timber
     implementation(libs.timber)
 
