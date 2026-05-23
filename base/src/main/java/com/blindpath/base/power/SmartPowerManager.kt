@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import com.blindpath.base.config.AppConfig
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import timber.log.Timber
@@ -31,7 +32,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class SmartPowerManager @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) {
     private val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
     private val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
