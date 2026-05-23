@@ -1,0 +1,145 @@
+name: Cleanup Workflow Runs
+
+# 此工作流只能手动触发，用于清理失败的工作流记录
+on:
+  workflow_dispatch:
+    inputs:
+      delete_failed_only:
+        description: '只删除失败的工作流记录'
+        required: true
+        default: true
+        type: boolean
+      days_old:
+        description: '删除多少天前的记录（0表示所有）'
+        required: true
+        default: '0'
+        type: string
+      dry_run:
+        description: '模拟运行（不实际删除）'
+        required: true
+        default: true
+        type: boolean
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install requests
+          pip install python-dateutil
+      
+      - name: List workflow runs to be deleted
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          DELETE_FAILED_ONLY: ${{ inputs.delete_failed_only }}
+          DAYS_OLD: ${{ inputs.days_old }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          python3 << 'EOF'
+          import requests
+          import os
+          import json
+          from datetime import datetime, timedelta
+          
+          token = os.environ['GITHUB_TOKEN']
+          repo = os.environ['REPO']
+          delete_failed_only = os.environ['DELETE_FAILED_ONLY'].lower() == 'true'
+          days_old = int(os.environ['DAYS_OLD'])
+          dry_run = os.environ['DRY_RUN'].lower() == 'true'
+          
+          headers = {
+              'Authorization': f'token {token}',
+              'Accept': 'application/vnd.github.v3+json'
+          }
+          
+          runs_url = f'https://api.github.com/repos/{repo}/actions/runs'
+          
+          deleted_count = 0
+          kept_count = 0
+          page = 1
+          
+          print("=" * 60)
+          print("工作流清理报告")
+          print("=" * 60)
+          print(f"仓库: {repo}")
+          print(f"只删除失败记录: {delete_failed_only}")
+          print(f"删除 {days_old} 天前的记录 (0=全部)")
+          print(f"模拟运行: {dry_run}")
+          print("=" * 60)
+          
+          while True:
+              params = {'per_page': 100, 'page': page}
+              response = requests.get(runs_url, headers=headers, params=params)
+              runs = response.json()
+              
+              if not runs.get('workflow_runs', []):
+                  break
+              
+              for run in runs['workflow_runs']:
+                  run_id = run['id']
+                  name = run['name']
+                  status = run['status']
+                  conclusion = run.get('conclusion', 'running')
+                  created_at = datetime.strptime(run['created_at'], '%Y-%m-%dT%H:%M:%SZ')
+                  
+                  should_delete = True
+                  reason = ""
+                  
+                  if delete_failed_only and conclusion != 'failure':
+                      should_delete = False
+                      reason = "不是失败记录"
+                  
+                  if days_old > 0 and should_delete:
+                      cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+                      if created_at > cutoff_date:
+                          should_delete = False
+                          reason = f"未超过 {days_old} 天"
+                  
+                  if should_delete:
+                      print(f"[将删除] ID: {run_id}, 名称: {name}, 状态: {conclusion}, 时间: {created_at}")
+                      
+                      if not dry_run:
+                          delete_url = f'https://api.github.com/repos/{repo}/actions/runs/{run_id}'
+                          del_response = requests.delete(delete_url, headers=headers)
+                          if del_response.status_code == 204:
+                              print(f"  ✓ 已删除")
+                              deleted_count += 1
+                          else:
+                              print(f"  ✗ 删除失败: {del_response.status_code}")
+                      else:
+                          deleted_count += 1
+                  else:
+                      kept_count += 1
+              
+              page += 1
+          
+          print("=" * 60)
+          print(f"统计结果:")
+          print(f"  - 将删除/已删除: {deleted_count} 条记录")
+          print(f"  - 保留: {kept_count} 条记录")
+          if dry_run:
+              print(f"  - 这是模拟运行，未实际删除")
+          print("=" * 60)
+          EOF
+      
+      - name: Summary
+        run: |
+          echo "清理操作完成！"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "这是模拟运行，未实际删除任何记录。"
+            echo "如需实际删除，请重新运行并取消勾选 '模拟运行' 选项。"
+          fi
