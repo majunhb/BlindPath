@@ -15,7 +15,9 @@ data class PowerState(
     val isCharging: Boolean,
     val batteryLevel: Int,          // 0-100
     val isPowerSaveMode: Boolean,
-    val isLowBattery: Boolean       // 低于20%
+    val isLowBattery: Boolean,      // 低于20%
+    val temperature: Float = 25f,   // 电池温度（摄氏度）
+    val isOverheating: Boolean = false  // 是否过热
 ) {
     val batteryPercentage: Float
         get() = batteryLevel / 100f
@@ -27,7 +29,7 @@ data class PowerState(
         get() {
             return when {
                 isCharging -> PerformanceMode.HIGH
-                isLowBattery || isPowerSaveMode -> PerformanceMode.LOW
+                isOverheating || isLowBattery || isPowerSaveMode -> PerformanceMode.LOW
                 batteryLevel < 50 -> PerformanceMode.MEDIUM
                 else -> PerformanceMode.HIGH
             }
@@ -76,11 +78,16 @@ class PowerManager(
         
         val isLowBattery = batteryLevel <= 20
         
+        val temperature = getBatteryTemperature()
+        val isOverheating = temperature > 45f
+        
         return PowerState(
             isCharging = isCharging,
             batteryLevel = batteryLevel,
             isPowerSaveMode = isPowerSaveMode,
-            isLowBattery = isLowBattery
+            isLowBattery = isLowBattery,
+            temperature = temperature,
+            isOverheating = isOverheating
         )
     }
     

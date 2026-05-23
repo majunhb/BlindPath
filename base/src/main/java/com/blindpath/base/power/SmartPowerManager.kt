@@ -163,7 +163,7 @@ class SmartPowerManager @Inject constructor(
         frameRateController?.setPerformanceMode(mode.performanceMode)
         
         // 调整传感器采样率
-        sensorController?.setSamplingRate(mode.sensorSamplingRate)
+        sensorController?.setGlobalSamplingRate(mode.sensorSamplingRate)
         
         // 其他优化措施
         when (mode) {
@@ -312,31 +312,6 @@ class SmartPowerManager @Inject constructor(
 }
 
 /**
- * 电源状态（增强版）
- */
-data class PowerState(
-    val isCharging: Boolean = false,
-    val batteryLevel: Int = 100,
-    val isPowerSaveMode: Boolean = false,
-    val isLowBattery: Boolean = false,
-    val temperature: Float = 25f,
-    val isOverheating: Boolean = false
-) {
-    val batteryPercentage: Float
-        get() = batteryLevel / 100f
-    
-    val recommendedPerformanceMode: PerformanceMode
-        get() {
-            return when {
-                isCharging -> PerformanceMode.HIGH
-                isOverheating || isLowBattery || isPowerSaveMode -> PerformanceMode.LOW
-                batteryLevel < 50 -> PerformanceMode.MEDIUM
-                else -> PerformanceMode.HIGH
-            }
-        }
-}
-
-/**
  * 省电模式
  */
 enum class PowerSavingMode(val level: Int) {
@@ -352,21 +327,11 @@ enum class PowerSavingMode(val level: Int) {
             AGGRESSIVE, ULTRA -> PerformanceMode.LOW
         }
     
-    val sensorSamplingRate: SensorSamplingRate
+    val sensorSamplingRate: SensorController.SamplingRate
         get() = when (this) {
-            NORMAL -> SensorSamplingRate.HIGH
-            MODERATE -> SensorSamplingRate.MEDIUM
-            AGGRESSIVE -> SensorSamplingRate.LOW
-            ULTRA -> SensorSamplingRate.MINIMAL
+            NORMAL -> SensorController.SamplingRate.UI
+            MODERATE -> SensorController.SamplingRate.NORMAL
+            AGGRESSIVE -> SensorController.SamplingRate.NORMAL
+            ULTRA -> SensorController.SamplingRate.NORMAL
         }
-}
-
-/**
- * 传感器采样率
- */
-enum class SensorSamplingRate(val intervalMs: Long) {
-    HIGH(16),      // 60 Hz
-    MEDIUM(33),    // 30 Hz
-    LOW(100),      // 10 Hz
-    MINIMAL(200)   // 5 Hz
 }
