@@ -60,7 +60,7 @@ class AIDetector @Inject constructor(
 
     // ============ COCO 80类 到 视障障碍物类型 的映射 ============
     // COCO类别参考: https://cocodataset.org/#home
-    // 只映射与视障导航相关的类别
+    // 映射所有与视障导航相关的类别，未映射的类别降级为 OBSTACLE 上报（不再静默丢弃）
     private val cocoToObstacle = mapOf(
         // 人物类
         0 to ObstacleType.PERSON,        // person
@@ -69,36 +69,50 @@ class AIDetector @Inject constructor(
         1 to ObstacleType.BICYCLE,       // bicycle
         2 to ObstacleType.VEHICLE,       // car
         3 to ObstacleType.MOTORCYCLE,    // motorcycle
-        5 to ObstacleType.VEHICLE,       // bus
-        7 to ObstacleType.VEHICLE,       // truck
+        5 to ObstacleType.BUS,           // bus -> 具体识别为公交车
+        6 to ObstacleType.VEHICLE,       // train -> 归类为大型车辆
+        7 to ObstacleType.TRUCK,         // truck -> 具体识别为卡车
 
-        // 【重要】COCO class 9 是 traffic light，映射到红绿灯
+        // 交通设施
         9 to ObstacleType.TRAFFIC_LIGHT, // traffic light
-
-        // 交通标志
         10 to ObstacleType.TRAFFIC_SIGN, // stop sign
+        11 to ObstacleType.PILLAR,       // fire hydrant -> 归类为柱状障碍
+        12 to ObstacleType.PARKING_METER,// parking meter -> 路边柱状设施
+        13 to ObstacleType.BENCH,        // bench
 
-        // 街道设施
-        11 to ObstacleType.PILLAR,       // fire hydrant (归类为柱子/障碍)
-        12 to ObstacleType.BENCH,        // bench
+        // 宠物和动物（盲人步行常见）
+        14 to ObstacleType.ANIMAL,       // bird -> 小动物
+        15 to ObstacleType.PET,          // cat -> 宠物
+        16 to ObstacleType.PET,          // dog -> 宠物
+        17 to ObstacleType.ANIMAL,       // horse -> 大型动物
+        18 to ObstacleType.ANIMAL,       // sheep
+        19 to ObstacleType.ANIMAL,       // cow
+        20 to ObstacleType.ANIMAL,       // elephant
+        21 to ObstacleType.ANIMAL,       // bear
+        22 to ObstacleType.ANIMAL,       // zebra
+        23 to ObstacleType.ANIMAL,       // giraffe
+
+        // 路面障碍物
+        36 to ObstacleType.ROAD_HAZARD,  // skateboard -> 路面障碍（可能绊脚）
 
         // 家居物品（可能阻挡路径）
         56 to ObstacleType.CHAIR,        // chair
         57 to ObstacleType.SOFA,         // sofa
-        58 to ObstacleType.POTTTED_PLANT, // potted plant
+        58 to ObstacleType.POTTTED_PLANT, // potted plant -> 道路旁常见
         59 to ObstacleType.BED,          // bed
         60 to ObstacleType.TABLE,        // dining table
 
         // 个人物品
         24 to ObstacleType.BACKPACK,     // backpack
         25 to ObstacleType.UMBRELLA,     // umbrella
-        26 to ObstacleType.HANDBAG,     // handbag
+        26 to ObstacleType.HANDBAG,      // handbag
         28 to ObstacleType.SUITCASE,     // suitcase
 
-        // 电子设备
-        39 to ObstacleType.BOTTLE,      // bottle
-        63 to ObstacleType.LAPTOP,      // laptop
-        67 to ObstacleType.PHONE        // cell phone
+        // 小型物品（地面上可能绊脚）
+        39 to ObstacleType.BOTTLE,       // bottle
+        41 to ObstacleType.ROAD_HAZARD,  // cup -> 路面小障碍
+        75 to ObstacleType.POTTTED_PLANT,// vase -> 类似盆栽
+        77 to ObstacleType.PET           // teddy bear -> 类似小动物/玩具
     )
 
     // ============ 障碍物已知高度（用于单目测距） ============
@@ -119,12 +133,18 @@ class AIDetector @Inject constructor(
         ObstacleType.TRAFFIC_SIGN to 0.6f,   // 交通标志高度约0.6m
         ObstacleType.PILLAR to 0.3f,        // 石墩直径约0.3m
         ObstacleType.BENCH to 0.8f,         // 长椅高度约0.8m
+        ObstacleType.PARKING_METER to 1.2f,  // 停车收费桩高度约1.2m
+
+        // 宠物和动物
+        ObstacleType.PET to 0.4f,           // 猫/狗平均肩高约0.4m
+        ObstacleType.ANIMAL to 0.5f,        // 小型动物约0.5m
 
         // 地面障碍物
         ObstacleType.STEP_UP to 0.2f,       // 台阶高度约0.2m
         ObstacleType.STEP_DOWN to 0.2f,     // 下台阶同理
         ObstacleType.STAIRS to 0.18f,       // 楼梯台阶高度
         ObstacleType.CURB to 0.15f,         // 路沿高度约0.15m
+        ObstacleType.ROAD_HAZARD to 0.1f,   // 路面小障碍约0.1m
 
         // 家居物品
         ObstacleType.CHAIR to 0.9f,         // 椅子高度约0.9m
@@ -486,8 +506,11 @@ class AIDetector @Inject constructor(
             // 检查置信度
             if (maxScore < confidenceThreshold) continue
 
-            // 获取类别映射
-            val obstacleType = cocoToObstacle[maxClass] ?: continue
+            // 获取类别映射（未映射的 COCO 类别降级为 OBSTACLE 上报，不再静默丢弃）
+            val obstacleType = cocoToObstacle[maxClass] ?: run {
+                Timber.v("COCO class $maxClass not mapped, reporting as OBSTACLE (confidence=${"%.2f".format(maxScore)})")
+                ObstacleType.OBSTACLE
+            }
 
             // 解析边界框
             val cx = output[0][i] / inputSize * imageWidth
@@ -762,30 +785,30 @@ class AIDetector @Inject constructor(
         "Traffic Light" to ObstacleType.TRAFFIC_LIGHT,
         "Fire Hydrant" to ObstacleType.PILLAR,
         "Stop Sign" to ObstacleType.TRAFFIC_SIGN,
-        "Parking Meter" to ObstacleType.PILLAR,
-        
+        "Parking Meter" to ObstacleType.PARKING_METER,
+
         // 街道设施
         "Bench" to ObstacleType.BENCH,
-        
+
         // 动物类（可能出现在道路上）
-        "Bird" to ObstacleType.OBSTACLE,
-        "Cat" to ObstacleType.OBSTACLE,
-        "Dog" to ObstacleType.OBSTACLE,
-        "Horse" to ObstacleType.OBSTACLE,
-        "Sheep" to ObstacleType.OBSTACLE,
-        "Cow" to ObstacleType.OBSTACLE,
-        "Elephant" to ObstacleType.OBSTACLE,
-        "Bear" to ObstacleType.OBSTACLE,
-        "Zebra" to ObstacleType.OBSTACLE,
-        "Giraffe" to ObstacleType.OBSTACLE,
-        
+        "Bird" to ObstacleType.ANIMAL,
+        "Cat" to ObstacleType.PET,
+        "Dog" to ObstacleType.PET,
+        "Horse" to ObstacleType.ANIMAL,
+        "Sheep" to ObstacleType.ANIMAL,
+        "Cow" to ObstacleType.ANIMAL,
+        "Elephant" to ObstacleType.ANIMAL,
+        "Bear" to ObstacleType.ANIMAL,
+        "Zebra" to ObstacleType.ANIMAL,
+        "Giraffe" to ObstacleType.ANIMAL,
+
         // 个人物品
         "Backpack" to ObstacleType.BACKPACK,
         "Umbrella" to ObstacleType.UMBRELLA,
         "Handbag" to ObstacleType.HANDBAG,
         "Tie" to ObstacleType.OBSTACLE,
         "Suitcase" to ObstacleType.SUITCASE,
-        
+
         // 运动器材
         "Frisbee" to ObstacleType.OBSTACLE,
         "Skis" to ObstacleType.OBSTACLE,
@@ -794,19 +817,19 @@ class AIDetector @Inject constructor(
         "Kite" to ObstacleType.OBSTACLE,
         "Baseball Bat" to ObstacleType.OBSTACLE,
         "Baseball Glove" to ObstacleType.OBSTACLE,
-        "Skateboard" to ObstacleType.OBSTACLE,
+        "Skateboard" to ObstacleType.ROAD_HAZARD,
         "Surfboard" to ObstacleType.OBSTACLE,
         "Tennis Racket" to ObstacleType.OBSTACLE,
-        
+
         // 餐具和容器
         "Bottle" to ObstacleType.BOTTLE,
         "Wine Glass" to ObstacleType.BOTTLE,
-        "Cup" to ObstacleType.BOTTLE,
+        "Cup" to ObstacleType.ROAD_HAZARD,
         "Fork" to ObstacleType.OBSTACLE,
         "Knife" to ObstacleType.OBSTACLE,
         "Spoon" to ObstacleType.OBSTACLE,
         "Bowl" to ObstacleType.OBSTACLE,
-        
+
         // 食物
         "Banana" to ObstacleType.OBSTACLE,
         "Apple" to ObstacleType.OBSTACLE,
@@ -818,7 +841,7 @@ class AIDetector @Inject constructor(
         "Pizza" to ObstacleType.OBSTACLE,
         "Donut" to ObstacleType.OBSTACLE,
         "Cake" to ObstacleType.OBSTACLE,
-        
+
         // 家具类
         "Chair" to ObstacleType.CHAIR,
         "Couch" to ObstacleType.SOFA,
@@ -826,7 +849,7 @@ class AIDetector @Inject constructor(
         "Bed" to ObstacleType.BED,
         "Dining Table" to ObstacleType.TABLE,
         "Toilet" to ObstacleType.OBSTACLE,
-        
+
         // 电子设备
         "TV" to ObstacleType.OBSTACLE,
         "Laptop" to ObstacleType.LAPTOP,
@@ -839,13 +862,13 @@ class AIDetector @Inject constructor(
         "Toaster" to ObstacleType.OBSTACLE,
         "Sink" to ObstacleType.OBSTACLE,
         "Refrigerator" to ObstacleType.OBSTACLE,
-        
+
         // 其他物品
         "Book" to ObstacleType.OBSTACLE,
         "Clock" to ObstacleType.OBSTACLE,
         "Vase" to ObstacleType.POTTTED_PLANT,
         "Scissors" to ObstacleType.OBSTACLE,
-        "Teddy Bear" to ObstacleType.OBSTACLE,
+        "Teddy Bear" to ObstacleType.PET,
         "Hair Drier" to ObstacleType.OBSTACLE,
         "Toothbrush" to ObstacleType.OBSTACLE
     )

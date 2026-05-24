@@ -30,6 +30,8 @@ enum class ObstacleType(
 
     // ============ 道路用户 ============
     PERSON("行人", 2, 5),
+    PET("宠物", 2, 4),             // 猫、狗等宠物
+    ANIMAL("动物", 1, 7),           // 其他动物
 
     // ============ 街道设施 ============
     PILLAR("石墩/柱子", 3, 2),
@@ -38,6 +40,10 @@ enum class ObstacleType(
     TRAFFIC_SIGN("交通标志", 1, 7),
     BENCH("长椅", 1, 7),
     HANDRAIL("扶手", 1, 6),
+    PARKING_METER("停车收费桩", 2, 6),  // 路边柱状设施
+
+    // ============ 路面障碍物 ============
+    ROAD_HAZARD("路面障碍", 2, 3),    // 滑板、施工锥等
 
     // ============ 家居物品（可能阻挡路径） ============
     CHAIR("椅子", 2, 6),
@@ -109,6 +115,33 @@ enum class ObstacleType(
 
             // 移动物体 - 需要特别提醒
             PERSON -> if (distance < 1.5f) "前方${distanceInt}米有行人" else "注意，前方有行人"
+
+            // 宠物和动物
+            PET -> when {
+                distance < 1f -> "注意脚下，有宠物"
+                distance < 2f -> "前方${distanceInt}米有宠物，请小心"
+                else -> "注意，前方有宠物"
+            }
+            ANIMAL -> "前方${distanceInt}米有动物，请注意"
+
+            // 街道设施
+            PILLAR -> "$directionPrefix${distanceInt}米有石墩，请绕行"
+            ELECTRIC_POLE -> "$directionPrefix${distanceInt}米有电线杆"
+            TRAFFIC_LIGHT -> when {
+                distance < 3f -> "红绿灯，前方${distanceInt}米"
+                else -> "注意，前方有红绿灯"
+            }
+            TRAFFIC_SIGN -> "注意，前方${distanceInt}米有交通标志"
+            BENCH -> "$directionPrefix${distanceInt}米有长椅"
+            HANDRAIL -> "$directionPrefix${distanceInt}米有扶手"
+            PARKING_METER -> "$directionPrefix${distanceInt}米有停车桩，注意脚下"
+
+            // 路面障碍
+            ROAD_HAZARD -> when {
+                distance < 1f -> "注意脚下有障碍物"
+                distance < 2f -> "前方${distanceInt}米有路面障碍，请绕行"
+                else -> "前方${distanceInt}米有障碍"
+            }
 
             // 家居物品
             CHAIR -> "$directionPrefix${distanceInt}米有椅子"
