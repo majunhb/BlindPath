@@ -146,11 +146,11 @@ class VoiceInteractionManagerImpl @Inject constructor(
                 state.lastCommand?.let { result ->
                     if (result.isSuccess) {
                         result.command?.let { command ->
-                            executeCommand(command)
+                            handleCommand(command)
+                        }
+                    }
+                }
             }
-        }
-    }
-}
         }
     }
 }
