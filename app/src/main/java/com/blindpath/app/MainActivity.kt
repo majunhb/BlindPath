@@ -20,10 +20,13 @@ import com.blindpath.base.sos.SosHelper
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.domain.VoiceRepository
+import com.blindpath.module_voice.domain.VoiceInteractionManager
+import com.blindpath.module_voice.domain.model.VoiceCommand
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -37,6 +40,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var obstacleRepository: ObstacleRepository
+
+    @Inject
+    lateinit var voiceInteractionManager: VoiceInteractionManager
 
     private var pendingAction: String? = null
 
@@ -58,11 +64,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 初始化语音
-        CoroutineScope(Dispatchers.Main).launch {
-            voiceRepository.initialize()
-            voiceRepository.speak("智行助盲应用已启动", queueMode = false)
-        }
+        // 请求语音识别权限并初始化
+        requestVoicePermissionsAndInitialize()
 
         setContent {
             BlindPathTheme {
@@ -77,6 +80,151 @@ class MainActivity : ComponentActivity() {
                         onSosClick = { requestPermissionAndAction("sos") }
                     )
                 }
+            }
+        }
+    }
+
+    /**
+     * 请求语音识别权限并初始化语音交互
+     */
+    private fun requestVoicePermissionsAndInitialize() {
+        val permissions = arrayOf(
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.MODIFY_AUDIO_SETTINGS
+        )
+
+        val allGranted = permissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+
+        if (allGranted) {
+            initializeVoiceInteraction()
+        } else {
+            voicePermissionLauncher.launch(permissions)
+        }
+    }
+
+    private val voicePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val allGranted = permissions.all { it.value }
+        if (allGranted) {
+            initializeVoiceInteraction()
+        } else {
+            Toast.makeText(this, "需要麦克风权限才能使用语音唤醒功能", Toast.LENGTH_LONG).show()
+            Timber.w("Voice permissions denied")
+        }
+    }
+
+    /**
+     * 初始化语音交互系统
+     */
+    private fun initializeVoiceInteraction() {
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                // 初始化语音交互管理器
+                val result = voiceInteractionManager.initialize()
+                if (result.isSuccess) {
+                    Timber.i("Voice interaction initialized successfully")
+                    
+                    // 设置指令执行器
+                    voiceInteractionManager.setCommandExecutor(object : com.blindpath.module_voice.domain.VoiceCommandExecutor {
+                        override suspend fun executeCommand(command: VoiceCommand): Boolean {
+                            return handleVoiceCommand(command)
+                        }
+                    })
+                    
+                    // 播报欢迎消息
+                    voiceInteractionManager.speakWelcome()
+                } else {
+                    Timber.e("Voice interaction initialization failed: ${result.message}")
+                    voiceRepository.speak("语音交互初始化失败，请检查权限设置", queueMode = false)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to initialize voice interaction")
+                voiceRepository.speak("语音交互初始化异常", queueMode = false)
+            }
+        }
+    }
+
+    /**
+     * 处理语音指令
+     */
+    private suspend fun handleVoiceCommand(command: VoiceCommand): Boolean {
+        Timber.d("Handling voice command: ${command.name}")
+        
+        return when (command) {
+            VoiceCommand.START_OBSTACLE_DETECTION -> {
+                startObstacleDetection()
+                true
+            }
+            VoiceCommand.STOP_OBSTACLE_DETECTION -> {
+                stopObstacleDetection()
+                true
+            }
+            VoiceCommand.START_NAVIGATION -> {
+                startLocationService()
+                true
+            }
+            VoiceCommand.STOP_NAVIGATION -> {
+                stopLocationService()
+                true
+            }
+            VoiceCommand.WHERE_AM_I -> {
+                announceCurrentLocation()
+                true
+            }
+            VoiceCommand.SOS, VoiceCommand.CALL_SOS -> {
+                performSos()
+                true
+            }
+            VoiceCommand.HELP -> {
+                voiceInteractionManager.speakHelp()
+                true
+            }
+            else -> {
+                Timber.w("Unhandled command: ${command.name}")
+                false
+            }
+        }
+    }
+
+    private fun stopObstacleDetection() {
+        val intent = Intent(this, com.blindpath.module_obstacle.service.ObstacleService::class.java).apply {
+            action = com.blindpath.module_obstacle.service.ObstacleService.ACTION_STOP
+        }
+        startService(intent)
+        Toast.makeText(this, "障碍物检测已关闭", Toast.LENGTH_SHORT).show()
+        CoroutineScope(Dispatchers.Main).launch {
+            voiceRepository.speak("障碍物检测已关闭", queueMode = false)
+        }
+    }
+
+    private fun stopLocationService() {
+        val intent = Intent(this, com.blindpath.module_navigation.service.NavigationService::class.java).apply {
+            action = com.blindpath.module_navigation.service.NavigationService.ACTION_STOP
+        }
+        startService(intent)
+        Toast.makeText(this, "导航服务已关闭", Toast.LENGTH_SHORT).show()
+        CoroutineScope(Dispatchers.Main).launch {
+            voiceRepository.speak("导航服务已关闭", queueMode = false)
+        }
+    }
+
+    private fun announceCurrentLocation() {
+        CoroutineScope(Dispatchers.Main).launch {
+            try {
+                val location = navigationRepository.getCurrentLocation()
+                if (location != null) {
+                    val address = navigationRepository.getAddressFromLocation(location)
+                    val message = "您当前位置：${address ?: "未知位置"}"
+                    voiceRepository.speak(message, queueMode = false)
+                } else {
+                    voiceRepository.speak("无法获取当前位置，请检查定位权限", queueMode = false)
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to get current location")
+                voiceRepository.speak("获取位置失败", queueMode = false)
             }
         }
     }
