@@ -83,12 +83,13 @@ data class VoiceCommandResult(
  * 语音交互状态
  */
 data class VoiceInteractionState(
+    val isInitialized: Boolean = false,
     val isListening: Boolean = false,
-    val isWakeWordDetected: Boolean = false,
-    val lastCommand: VoiceCommandResult? = null,
-    val lastError: String? = null,
+    val isWakeWordEnabled: Boolean = true,
+    val isWakeWordDetected: Boolean = false,  // 唤醒词是否被检测到
     val wakeWord: String = "小智小智",  // 唤醒词
-    val isWakeWordEnabled: Boolean = true
+    val lastCommand: VoiceCommandResult? = null,
+    val lastError: String? = null
 )
 
 /**

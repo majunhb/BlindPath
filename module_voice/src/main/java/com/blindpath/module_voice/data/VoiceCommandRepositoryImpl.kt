@@ -34,6 +34,11 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     private var isInitialized = false
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     
+    // 持续监听模式
+    private var isContinuousListeningEnabled = false
+    private var isWaitingForWakeWord = true  // true: 等待唤醒词, false: 等待指令
+    private var listeningJob: Job? = null
+    
     // 语音识别监听器
     private val recognitionListener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
@@ -90,25 +95,71 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                 
                 Timber.d("VoiceCommand: Recognized text: $rawText, confidence: $confidence")
                 
-                // 解析指令
-                val command = VoiceCommand.fromSpokenText(rawText)
-                val result = VoiceCommandResult(
-                    command = command,
-                    confidence = confidence,
-                    rawText = rawText
-                )
+                // 检查是否是唤醒词
+                val wakeWord = _interactionState.value.wakeWord
+                val normalizedText = rawText.trim().replace(" ", "")
+                val normalizedWakeWord = wakeWord.trim().replace(" ", "")
                 
-                _interactionState.update { 
-                    it.copy(
-                        lastCommand = result,
-                        isListening = false
+                if (isWaitingForWakeWord && normalizedText.contains(normalizedWakeWord, ignoreCase = true)) {
+                    // 检测到唤醒词
+                    Timber.i("VoiceCommand: Wake word detected - $rawText")
+                    isWaitingForWakeWord = false
+                    _interactionState.update { 
+                        it.copy(
+                            isWakeWordDetected = true,
+                            isListening = false
+                        )
+                    }
+                    
+                    // 自动开始监听指令
+                    scope.launch {
+                        delay(500) // 短暂延迟
+                        startListening()
+                    }
+                } else if (!isWaitingForWakeWord) {
+                    // 等待指令模式：解析指令
+                    val command = VoiceCommand.fromSpokenText(rawText)
+                    val result = VoiceCommandResult(
+                        command = command,
+                        confidence = confidence,
+                        rawText = rawText
                     )
-                }
-                
-                if (result.isSuccess) {
-                    Timber.i("VoiceCommand: Command recognized - ${command?.name}")
+                    
+                    _interactionState.update { 
+                        it.copy(
+                            lastCommand = result,
+                            isListening = false,
+                            isWakeWordDetected = false
+                        )
+                    }
+                    
+                    isWaitingForWakeWord = true // 重置为等待唤醒词模式
+                    
+                    if (result.isSuccess) {
+                        Timber.i("VoiceCommand: Command recognized - ${command?.name}")
+                    } else {
+                        Timber.w("VoiceCommand: Command not recognized - ${result.failureReason}")
+                    }
+                    
+                    // 如果启用了持续监听，继续监听下一次唤醒
+                    if (isContinuousListeningEnabled) {
+                        scope.launch {
+                            delay(1000) // 给用户一点时间
+                            startListening()
+                        }
+                    }
                 } else {
-                    Timber.w("VoiceCommand: Command not recognized - ${result.failureReason}")
+                    // 等待唤醒词模式，但没检测到唤醒词
+                    Timber.d("VoiceCommand: Not wake word, continuing to listen")
+                    _interactionState.update { it.copy(isListening = false) }
+                    
+                    // 持续监听模式：继续监听
+                    if (isContinuousListeningEnabled) {
+                        scope.launch {
+                            delay(300)
+                            startListening()
+                        }
+                    }
                 }
             } else {
                 Timber.w("VoiceCommand: No speech recognized")
@@ -117,6 +168,14 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                         isListening = false,
                         lastError = "未识别到语音"
                     )
+                }
+                
+                // 持续监听模式：继续监听
+                if (isContinuousListeningEnabled) {
+                    scope.launch {
+                        delay(500)
+                        startListening()
+                    }
                 }
             }
         }
@@ -226,5 +285,39 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     override fun setWakeWordEnabled(enabled: Boolean) {
         _interactionState.update { it.copy(isWakeWordEnabled = enabled) }
         Timber.d("VoiceCommand: Wake word enabled = $enabled")
+        
+        if (enabled) {
+            // 启用持续监听模式
+            startContinuousListening()
+        } else {
+            // 禁用持续监听模式
+            stopContinuousListening()
+        }
+    }
+    
+    /**
+     * 启动持续监听模式
+     */
+    private fun startContinuousListening() {
+        if (isContinuousListeningEnabled) return
+        
+        isContinuousListeningEnabled = true
+        isWaitingForWakeWord = true
+        Timber.i("VoiceCommand: Continuous listening started")
+        
+        listeningJob = scope.launch {
+            delay(500) // 短暂延迟后开始
+            startListening()
+        }
+    }
+    
+    /**
+     * 停止持续监听模式
+     */
+    private fun stopContinuousListening() {
+        isContinuousListeningEnabled = false
+        listeningJob?.cancel()
+        listeningJob = null
+        Timber.i("VoiceCommand: Continuous listening stopped")
     }
 }

@@ -53,11 +53,14 @@ class VoiceInteractionManagerImpl @Inject constructor(
                 return Result.Error(message = "语音识别初始化失败：${commandResult.message}")
             }
             
+            // 启用唤醒词检测（持续监听模式）
+            commandRepository.setWakeWordEnabled(true)
+            
             // 监听语音识别结果
             startCommandProcessing()
             
             _isInitialized = true
-            Timber.i("VoiceInteraction: Initialized successfully")
+            Timber.i("VoiceInteraction: Initialized successfully with continuous listening enabled")
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "VoiceInteraction: Initialization failed")
@@ -128,13 +131,28 @@ class VoiceInteractionManagerImpl @Inject constructor(
      * 启动指令处理协程
      */
     private fun startCommandProcessing() {
+        commandProcessingJob?.cancel()
         commandProcessingJob = scope.launch {
-            commandRepository.interactionState
-                .filter { it.lastCommand != null && it.lastCommand!!.isSuccess }
-                .collect { state ->
-                    val command = state.lastCommand!!.command!!
-                    handleCommand(command)
+            commandRepository.interactionState.collect { state ->
+                _interactionState.value = state
+                
+                // 检测到唤醒词时播放提示音
+                if (state.isWakeWordDetected) {
+                    Timber.i("VoiceInteraction: Wake word detected, ready for command")
+                    speak("我在，请说指令", VoiceType.SYSTEM_STATUS)
                 }
+                
+                // 处理识别到的指令
+                state.lastCommand?.let { result ->
+                    if (result.isSuccess) {
+                        result.command?.let { command ->
+                            executeCommand(command)
+                        }
+                    }
+                }
+            }
+        }
+    }
         }
     }
 }
