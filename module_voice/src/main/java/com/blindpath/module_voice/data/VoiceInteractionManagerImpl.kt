@@ -142,12 +142,35 @@ class VoiceInteractionManagerImpl @Inject constructor(
                     speak("我在，请说指令", VoiceType.SYSTEM_STATUS)
                 }
                 
-                // 处理识别到的指令
+                // 处理识别到的指令（只处理一次）
                 state.lastCommand?.let { result ->
-                    if (result.isSuccess) {
-                        result.command?.let { command ->
-                            handleCommand(command)
+                    if (result.isSuccess && result.command != null) {
+                        val command = result.command!!
+                        Timber.i("VoiceInteraction: Command recognized - ${command.spokenText}")
+                        
+                        // 清除 lastCommand 防止重复处理
+                        _interactionState.update { it.copy(lastCommand = null) }
+                        
+                        // 播报指令识别结果
+                        speak("正在执行：${command.spokenText}", VoiceType.SYSTEM_STATUS)
+                        
+                        // 执行指令
+                        val success = handleCommand(command)
+                        
+                        // 播报执行结果
+                        if (success) {
+                            speak("指令执行成功", VoiceType.SYSTEM_STATUS)
+                        } else {
+                            speak("指令执行失败", VoiceType.SYSTEM_STATUS)
                         }
+                    } else if (!result.isSuccess) {
+                        // 指令识别失败
+                        Timber.w("VoiceInteraction: Command not recognized - ${result.failureReason}")
+                        
+                        // 清除 lastCommand 防止重复处理
+                        _interactionState.update { it.copy(lastCommand = null) }
+                        
+                        speak("未识别的指令，请重新说", VoiceType.SYSTEM_STATUS)
                     }
                 }
             }
