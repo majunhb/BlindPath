@@ -137,7 +137,8 @@ class MainActivity : ComponentActivity() {
                     // 播报欢迎消息
                     voiceInteractionManager.speakWelcome()
                 } else {
-                    Timber.e("Voice interaction initialization failed: ${result.message}")
+                    val errorMsg = (result as? com.blindpath.base.common.Result.Error)?.message ?: "未知错误"
+                    Timber.e("Voice interaction initialization failed: $errorMsg")
                     voiceRepository.speak("语音交互初始化失败，请检查权限设置", queueMode = false)
                 }
             } catch (e: Exception) {
@@ -216,8 +217,7 @@ class MainActivity : ComponentActivity() {
             try {
                 val location = navigationRepository.getCurrentLocation()
                 if (location != null) {
-                    val address = navigationRepository.getAddressFromLocation(location)
-                    val message = "您当前位置：${address ?: "未知位置"}"
+                    val message = "您当前位置：纬度${String.format("%.4f", location.latitude)}，经度${String.format("%.4f", location.longitude)}"
                     voiceRepository.speak(message, queueMode = false)
                 } else {
                     voiceRepository.speak("无法获取当前位置，请检查定位权限", queueMode = false)
