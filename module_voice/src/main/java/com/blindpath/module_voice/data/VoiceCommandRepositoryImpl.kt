@@ -433,6 +433,14 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         consecutiveErrors = 0
         Timber.i("VoiceCommand: Continuous listening started")
         
+        // ====== 调试：通过状态通知外部 ======
+        _interactionState.update { 
+            it.copy(
+                lastError = "持续监听已启动",  // 利用 lastError 字段传递调试信息
+                isWakeWordEnabled = true
+            )
+        }
+        
         listeningJob = scope.launch {
             delay(500) // 短暂延迟后开始
             startListening()

@@ -148,6 +148,11 @@ class VoiceInteractionManagerImpl @Inject constructor(
         
         // 现在安全地启用唤醒词检测（持续监听模式）
         commandRepository.setWakeWordEnabled(true)
+        
+        // ====== 调试：播报监听已启动 ======
+        speak("监听已启动，请说小智小智", VoiceType.SYSTEM_STATUS)
+        delay(1000)
+        
         Timber.i("VoiceInteraction: Welcome speech done, continuous listening enabled")
     }
     
@@ -220,11 +225,25 @@ class VoiceInteractionManagerImpl @Inject constructor(
     private fun startCommandProcessing() {
         commandProcessingJob?.cancel()
         commandProcessingJob = scope.launch {
+            var lastListeningState = false
+            var lastWakeWordState = false
+            
             commandRepository.interactionState.collect { state ->
                 _interactionState.value = state
                 
+                // ====== 调试：监听状态变化播报 ======
+                if (state.isListening != lastListeningState) {
+                    lastListeningState = state.isListening
+                    if (state.isListening) {
+                        Timber.i("VoiceInteraction: Listening started (wakeWord=${state.isWakeWordEnabled})")
+                        // 播报监听状态（仅在调试模式）
+                        // speak("开始监听", VoiceType.SYSTEM_STATUS)
+                    }
+                }
+                
                 // ====== 修复：唤醒词检测带去抖 ======
-                if (state.isWakeWordDetected) {
+                if (state.isWakeWordDetected && !lastWakeWordState) {
+                    lastWakeWordState = true
                     val now = System.currentTimeMillis()
                     if (now - lastWakeWordDetectedTime > wakeWordDebounceMs) {
                         lastWakeWordDetectedTime = now
@@ -242,6 +261,8 @@ class VoiceInteractionManagerImpl @Inject constructor(
                     } else {
                         Timber.d("VoiceInteraction: Wake word debounced")
                     }
+                } else if (!state.isWakeWordDetected) {
+                    lastWakeWordState = false
                 }
                 
                 // 处理识别到的指令
@@ -286,6 +307,15 @@ class VoiceInteractionManagerImpl @Inject constructor(
                             delay(1500)
                             notifyTtsStop()
                         }
+                    }
+                }
+                
+                // ====== 调试：错误状态播报 ======
+                state.lastError?.let { error ->
+                    if (error.isNotBlank()) {
+                        Timber.e("VoiceInteraction: Error detected - $error")
+                        // 清除错误防止重复播报
+                        _interactionState.update { it.copy(lastError = "") }
                     }
                 }
             }
