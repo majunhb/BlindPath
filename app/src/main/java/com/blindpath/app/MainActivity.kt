@@ -122,20 +122,17 @@ class MainActivity : ComponentActivity() {
     private fun initializeVoiceInteraction() {
         CoroutineScope(Dispatchers.Main).launch {
             try {
-                // 初始化语音交互管理器
+                // 设置指令执行器（必须在初始化前设置）
+                voiceInteractionManager.setCommandExecutor(object : com.blindpath.module_voice.domain.VoiceCommandExecutor {
+                    override suspend fun executeCommand(command: VoiceCommand): Boolean {
+                        return handleVoiceCommand(command)
+                    }
+                })
+                
+                // 初始化语音交互管理器（会自动播报欢迎消息并启动监听）
                 val result = voiceInteractionManager.initialize()
                 if (result.isSuccess) {
                     Timber.i("Voice interaction initialized successfully")
-                    
-                    // 设置指令执行器
-                    voiceInteractionManager.setCommandExecutor(object : com.blindpath.module_voice.domain.VoiceCommandExecutor {
-                        override suspend fun executeCommand(command: VoiceCommand): Boolean {
-                            return handleVoiceCommand(command)
-                        }
-                    })
-                    
-                    // 播报欢迎消息
-                    voiceInteractionManager.speakWelcome()
                 } else {
                     val errorMsg = (result as? com.blindpath.base.common.Result.Error)?.message ?: "未知错误"
                     Timber.e("Voice interaction initialization failed: $errorMsg")
