@@ -307,8 +307,9 @@ class VoiceInteractionManagerImpl @Inject constructor(
                             delay(1500)
                             notifyTtsStop()
                         }
+                    } else {
+                        // 其他情况（result.isSuccess 但 command 为 null）不做处理
                     }
-                    // 其他情况（result.isSuccess 但 command 为 null）不做处理
                 }
                 
                 // ====== 调试：错误状态播报 ======
