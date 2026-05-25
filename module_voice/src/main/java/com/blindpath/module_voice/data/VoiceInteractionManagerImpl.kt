@@ -92,14 +92,24 @@ class VoiceInteractionManagerImpl @Inject constructor(
         // 播报欢迎消息
         speak(VoiceGuidance.WELCOME_MESSAGE, VoiceType.SYSTEM_STATUS)
         
-        // 等待欢迎消息播报完成（给足够时间）
-        delay(2000)
+        // 等待欢迎消息播报完成（TTS 是异步的，需要等待 isSpeaking 变为 false）
+        var waitCount = 0
+        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
+            delay(100)
+            waitCount++
+        }
+        delay(500) // 额外等待确保播报完成
         
         // 播报唤醒词提示
         speak(VoiceGuidance.WAKE_WORD_PROMPT, VoiceType.SYSTEM_STATUS)
         
         // 等待唤醒词提示播报完成
-        delay(2000)
+        waitCount = 0
+        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
+            delay(100)
+            waitCount++
+        }
+        delay(500) // 额外等待确保播报完成
         
         // ====== 修复：欢迎语播报完成后才启用持续监听 ======
         notifyTtsStop()
