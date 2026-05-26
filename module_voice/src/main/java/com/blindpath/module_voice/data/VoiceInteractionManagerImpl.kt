@@ -73,7 +73,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
         
         // 等待欢迎消息播报完成
         var waitCount = 0
-        while (voiceRepository.voiceState.value.isSpeaking && waitCount < 100) {
+        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
             delay(100)
             waitCount++
         }
@@ -84,7 +84,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
         
         // 等待唤醒词提示播报完成
         waitCount = 0
-        while (voiceRepository.voiceState.value.isSpeaking && waitCount < 100) {
+        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
             delay(100)
             waitCount++
         }
