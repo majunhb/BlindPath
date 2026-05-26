@@ -16,12 +16,6 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * 语音指令识别实现
- * 
- * 使用 Android SpeechRecognizer API 进行离线语音识别
- * 支持唤醒词检测和指令识别
- */
 @Singleton
 class VoiceCommandRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context
@@ -32,14 +26,12 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     
     private var speechRecognizer: SpeechRecognizer? = null
     private var isInitialized = false
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob()) // 必须使用 Main 线程
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     
-    // 持续监听模式
     private var isContinuousListeningEnabled = false
-    private var isWaitingForWakeWord = true  // true: 等待唤醒词, false: 等待指令
+    private var isWaitingForWakeWord = true
     private var listeningJob: Job? = null
     
-    // 错误重连机制
     private var retryCount = 0
     private val maxRetries = 5
     private var healthCheckJob: Job? = null
@@ -49,31 +41,21 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     private var isTtsSpeaking = false
     private var ttsResumeJob: Job? = null
     
-    // 语音识别监听器（延迟初始化避免循环引用）
     private val recognitionListener: RecognitionListener by lazy {
         object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {
                 Timber.d("VoiceCommand: Ready for speech")
                 _interactionState.update { it.copy(isListening = true) }
             }
-            
             override fun onBeginningOfSpeech() {
                 Timber.d("VoiceCommand: Beginning of speech")
             }
-            
-            override fun onRmsChanged(rmsdB: Float) {
-                // 音量变化，可用于 UI 反馈
-            }
-            
-            override fun onBufferReceived(buffer: ByteArray?) {
-                // 接收到音频数据
-            }
-            
+            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {
                 Timber.d("VoiceCommand: End of speech")
                 _interactionState.update { it.copy(isListening = false) }
             }
-            
             override fun onError(error: Int) {
                 val errorMessage = when (error) {
                     SpeechRecognizer.ERROR_AUDIO -> "音频录制错误"
@@ -89,25 +71,16 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                 }
                 Timber.e("VoiceCommand: Recognition error - $errorMessage (retry: $retryCount/$maxRetries)")
                 _interactionState.update { 
-                    it.copy(
-                        isListening = false,
-                        lastError = errorMessage
-                    )
+                    it.copy(isListening = false, lastError = errorMessage)
                 }
-                
-                // 自动重连机制
                 if (isContinuousListeningEnabled) {
                     retryCount++
                     if (retryCount <= maxRetries) {
-                        val delayMs = minOf(1000L * retryCount, 5000L) // 递增延迟，最多 5 秒
-                        Timber.i("VoiceCommand: Retrying in ${delayMs}ms (attempt $retryCount/$maxRetries)")
+                        val delayMs = minOf(1000L * retryCount, 5000L)
                         scope.launch {
                             delay(delayMs)
-                            if (isContinuousListeningEnabled && !isTtsSpeaking) {
-                                // 如果错误严重，重建识别器
-                                if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || 
-                                    error == SpeechRecognizer.ERROR_CLIENT) {
-                                    Timber.w("VoiceCommand: Rebuilding speech recognizer due to error")
+                            if (isContinuousListeningEnabled) {
+                                if (error == SpeechRecognizer.ERROR_RECOGNIZER_BUSY || error == SpeechRecognizer.ERROR_CLIENT) {
                                     speechRecognizer?.destroy()
                                     speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
                                     speechRecognizer?.setRecognitionListener(recognitionListener)
@@ -116,124 +89,68 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                             }
                         }
                     } else {
-                        Timber.w("VoiceCommand: Max retries reached, resetting")
                         retryCount = 0
-                        // 重置后继续尝试
                         scope.launch {
                             delay(1000)
-                            if (isContinuousListeningEnabled && !isTtsSpeaking) {
-                                startListening()
-                            }
+                            if (isContinuousListeningEnabled) startListening()
                         }
                     }
                 }
             }
-            
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val confidences = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
-                
                 if (!matches.isNullOrEmpty()) {
                     val rawText = matches[0]
                     val confidence = confidences?.getOrNull(0) ?: 0.5f
-                    
                     Timber.d("VoiceCommand: Recognized text: $rawText, confidence: $confidence")
-                    
-                    // 检查是否是唤醒词
                     val wakeWord = _interactionState.value.wakeWord
                     val normalizedText = rawText.trim().replace(" ", "")
                     val normalizedWakeWord = wakeWord.trim().replace(" ", "")
-                    
                     if (isWaitingForWakeWord && normalizedText.contains(normalizedWakeWord, ignoreCase = true)) {
-                        // 检测到唤醒词
                         Timber.i("VoiceCommand: Wake word detected - $rawText")
                         isWaitingForWakeWord = false
-                        retryCount = 0 // 重置重试计数
-                        _interactionState.update { 
-                            it.copy(
-                                isWakeWordDetected = true,
-                                isListening = false
-                            )
-                        }
-                        
-                        // 自动开始监听指令（必须在主线程，延迟 800ms）
+                        retryCount = 0
+                        _interactionState.update { it.copy(isWakeWordDetected = true, isListening = false) }
                         scope.launch {
-                            delay(800) // 给用户反应时间
+                            delay(800)
                             Timber.i("VoiceCommand: Starting command listening after wake word")
                             startListening()
                         }
                     } else if (!isWaitingForWakeWord) {
-                        // 等待指令模式：解析指令
                         val command = VoiceCommand.fromSpokenText(rawText)
-                        val result = VoiceCommandResult(
-                            command = command,
-                            confidence = confidence,
-                            rawText = rawText
-                        )
-                        
-                        _interactionState.update { 
-                            it.copy(
-                                lastCommand = result,
-                                isListening = false,
-                                isWakeWordDetected = false
-                            )
-                        }
-                        
-                        isWaitingForWakeWord = true // 重置为等待唤醒词模式
-                        
+                        val result = VoiceCommandResult(command = command, confidence = confidence, rawText = rawText)
+                        _interactionState.update { it.copy(lastCommand = result, isListening = false, isWakeWordDetected = false) }
+                        isWaitingForWakeWord = true
                         if (result.isSuccess) {
                             Timber.i("VoiceCommand: Command recognized - ${command?.name}")
                         } else {
                             Timber.w("VoiceCommand: Command not recognized - ${result.failureReason}")
                         }
-                        
-                        // 如果启用了持续监听，继续监听下一次唤醒
                         if (isContinuousListeningEnabled) {
-                            scope.launch {
-                                delay(1000) // 给用户一点时间
-                                startListening()
-                            }
+                            scope.launch { delay(1000); startListening() }
                         }
                     } else {
-                        // 等待唤醒词模式，但没检测到唤醒词
                         Timber.d("VoiceCommand: Not wake word, continuing to listen")
                         _interactionState.update { it.copy(isListening = false) }
-                        
-                        // 持续监听模式：继续监听
                         if (isContinuousListeningEnabled) {
-                            scope.launch {
-                                delay(300)
-                                startListening()
-                            }
+                            scope.launch { delay(300); startListening() }
                         }
                     }
                 } else {
                     Timber.w("VoiceCommand: No speech recognized")
-                    _interactionState.update { 
-                        it.copy(
-                            isListening = false,
-                            lastError = "未识别到语音"
-                        )
-                    }
-                    
-                    // 持续监听模式：继续监听
+                    _interactionState.update { it.copy(isListening = false, lastError = "未识别到语音") }
                     if (isContinuousListeningEnabled) {
-                        scope.launch {
-                            delay(500)
-                            startListening()
-                        }
+                        scope.launch { delay(500); startListening() }
                     }
                 }
             }
-            
             override fun onPartialResults(partialResults: Bundle?) {
-                // 部分识别结果（实时反馈）
                 val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 if (!matches.isNullOrEmpty()) {
                     Timber.d("VoiceCommand: Partial result - ${matches[0]}")
                 }
             }
-            
             override fun onEvent(eventType: Int, params: Bundle?) {
                 Timber.d("VoiceCommand: Event - $eventType")
             }
@@ -241,21 +158,13 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     }
     
     override suspend fun initialize(): Result<Boolean> = withContext(Dispatchers.Main) {
-        if (isInitialized) {
-            return@withContext Result.Success(true)
-        }
-        
+        if (isInitialized) return@withContext Result.Success(true)
         try {
-            // 检查语音识别是否可用
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-                Timber.e("VoiceCommand: Speech recognition not available")
                 return@withContext Result.Error(message = "设备不支持语音识别")
             }
-            
-            // 创建语音识别器
             speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
             speechRecognizer?.setRecognitionListener(recognitionListener)
-            
             isInitialized = true
             Timber.i("VoiceCommand: Initialized successfully")
             Result.Success(true)
@@ -269,21 +178,16 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         if (!isInitialized || speechRecognizer == null) {
             return@withContext Result.Error(message = "语音识别未初始化")
         }
-        
-        // 如果 TTS 正在播报，等待 TTS 停止
+        // TTS 协调：如果 TTS 正在播报，等待
         if (isTtsSpeaking) {
-            Timber.d("VoiceCommand: TTS is speaking, waiting before starting listening")
+            Timber.d("VoiceCommand: TTS speaking, waiting before startListening")
             var waitCount = 0
-            while (isTtsSpeaking && waitCount < 50) { // 最多等待 5 秒
-                delay(100)
-                waitCount++
-            }
+            while (isTtsSpeaking && waitCount < 50) { delay(100); waitCount++ }
             if (isTtsSpeaking) {
-                Timber.w("VoiceCommand: TTS still speaking after wait, cannot start listening")
-                return@withContext Result.Error(message = "TTS 正在播报，无法启动语音识别")
+                Timber.w("VoiceCommand: TTS still speaking, aborting startListening")
+                return@withContext Result.Error(message = "TTS 正在播报")
             }
         }
-        
         try {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -292,7 +196,6 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
                 putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             }
-            
             speechRecognizer?.startListening(intent)
             Timber.d("VoiceCommand: Started listening")
             Result.Success(true)
@@ -306,28 +209,18 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         try {
             speechRecognizer?.stopListening()
             _interactionState.update { it.copy(isListening = false) }
-            Timber.d("VoiceCommand: Stopped listening")
             Result.Success(true)
         } catch (e: Exception) {
-            Timber.e(e, "VoiceCommand: Failed to stop listening")
             Result.Error(message = "停止语音识别失败：${e.message}")
         }
     }
     
     override suspend fun recognizeOnce(): Result<VoiceCommandResult> {
         val startResult = startListening()
-        if (startResult is Result.Error) {
-            return Result.Error(message = startResult.message ?: "启动语音识别失败")
-        }
-        
-        // 等待识别结果（最多 10 秒）
+        if (startResult is Result.Error) return Result.Error(message = startResult.message ?: "启动语音识别失败")
         return withTimeoutOrNull(10_000) {
-            interactionState
-                .filter { it.lastCommand != null }
-                .map { it.lastCommand!! }
-                .first()
-        }?.let { Result.Success(it) }
-            ?: Result.Error(message = "语音识别超时")
+            interactionState.filter { it.lastCommand != null }.map { it.lastCommand!! }.first()
+        }?.let { Result.Success(it) } ?: Result.Error(message = "语音识别超时")
     }
     
     override fun release() {
@@ -340,46 +233,27 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     
     override fun setWakeWord(word: String) {
         _interactionState.update { it.copy(wakeWord = word) }
-        Timber.d("VoiceCommand: Wake word set to '$word'")
     }
     
     override fun setWakeWordEnabled(enabled: Boolean) {
         _interactionState.update { it.copy(isWakeWordEnabled = enabled) }
-        Timber.d("VoiceCommand: Wake word enabled = $enabled")
-        
-        if (enabled) {
-            // 启用持续监听模式
-            startContinuousListening()
-        } else {
-            // 禁用持续监听模式
-            stopContinuousListening()
-        }
+        if (enabled) startContinuousListening() else stopContinuousListening()
     }
     
-    /**
-     * 通知 TTS 开始播报 - 暂停语音识别
-     */
+    /** TTS 开始播报时调用 */
     fun notifyTtsStart() {
         isTtsSpeaking = true
         ttsResumeJob?.cancel()
         Timber.d("VoiceCommand: TTS started, pausing recognition")
-        
-        // 如果正在监听，停止监听
         if (_interactionState.value.isListening) {
-            scope.launch {
-                stopListening()
-            }
+            scope.launch { stopListening() }
         }
     }
     
-    /**
-     * 通知 TTS 停止播报 - 恢复语音识别
-     */
+    /** TTS 停止播报时调用 */
     fun notifyTtsStop() {
         isTtsSpeaking = false
-        Timber.d("VoiceCommand: TTS stopped, will resume recognition after delay")
-        
-        // 延迟 600ms 后恢复监听，避免音频焦点冲突
+        Timber.d("VoiceCommand: TTS stopped, will resume recognition")
         ttsResumeJob = scope.launch {
             delay(600)
             if (isContinuousListeningEnabled && !isTtsSpeaking) {
@@ -389,51 +263,30 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         }
     }
     
-    /**
-     * 启动持续监听模式
-     */
     private fun startContinuousListening() {
         if (isContinuousListeningEnabled) return
-        
         isContinuousListeningEnabled = true
         isWaitingForWakeWord = true
         retryCount = 0
         Timber.i("VoiceCommand: Continuous listening started")
-        
-        // 启动监听（如果 TTS 正在播报，startListening 内部会等待）
         listeningJob = scope.launch {
-            delay(500) // 短暂延迟后开始
-            if (!isTtsSpeaking) {
-                startListening()
-            }
+            delay(500)
+            startListening()
         }
-        
-        // 启动健康检查定时器（8秒无状态变化自动重启）
         healthCheckJob?.cancel()
         healthCheckJob = scope.launch {
             var lastStateTime = System.currentTimeMillis()
             var lastListeningState = _interactionState.value.isListening
-            
             while (isContinuousListeningEnabled) {
-                delay(2000) // 每 2 秒检查一次
-                
-                // 如果 TTS 正在播报，跳过检查
-                if (isTtsSpeaking) {
-                    lastStateTime = System.currentTimeMillis()
-                    continue
-                }
-                
+                delay(2000)
                 val currentState = _interactionState.value.isListening
                 if (currentState != lastListeningState) {
-                    // 状态有变化，更新时间
                     lastStateTime = System.currentTimeMillis()
                     lastListeningState = currentState
                 } else {
-                    // 状态无变化
                     val elapsed = System.currentTimeMillis() - lastStateTime
                     if (elapsed > 8000 && !currentState) {
-                        // 8 秒无变化且不在监听，重启监听
-                        Timber.w("VoiceCommand: Health check triggered, restarting listening (inactive for ${elapsed}ms)")
+                        Timber.w("VoiceCommand: Health check restart (inactive ${elapsed}ms)")
                         lastStateTime = System.currentTimeMillis()
                         startListening()
                     }
@@ -442,9 +295,6 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         }
     }
     
-    /**
-     * 停止持续监听模式
-     */
     private fun stopContinuousListening() {
         isContinuousListeningEnabled = false
         listeningJob?.cancel()
