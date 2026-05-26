@@ -76,18 +76,13 @@ class VoiceInteractionManagerImpl @Inject constructor(
         // 播报欢迎消息
         speak(VoiceGuidance.WELCOME_MESSAGE, VoiceType.SYSTEM_STATUS)
         
-        // 等待欢迎消息播报完成
-        var waitCount = 0
-        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
-            delay(100)
-            waitCount++
-        }
-        delay(500) // 额外等待确保播报完成
+        // 等待队列处理完成（关键修复：等待TTS真正开始并结束）
+        waitForTtsComplete()
         
         // 通知识别器 TTS 停止播报
         (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
         
-        // 等待 600ms 让识别器恢复（notifyTtsStop 内部也有 600ms 延迟）
+        // 额外等待确保音频焦点释放
         delay(800)
         
         // 现在启动持续监听（TTS 播报完成后）
@@ -102,16 +97,40 @@ class VoiceInteractionManagerImpl @Inject constructor(
         speak(VoiceGuidance.WAKE_WORD_PROMPT, VoiceType.SYSTEM_STATUS)
         
         // 等待播报完成
-        waitCount = 0
-        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
-            delay(100)
-            waitCount++
-        }
-        delay(500)
+        waitForTtsComplete()
         
         (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
         
         Timber.i("VoiceInteraction: Welcome sequence completed, listening active")
+    }
+    
+    /**
+     * 等待TTS播报完成（关键修复方法）
+     * 先等待TTS开始播报，再等待播报结束
+     */
+    private suspend fun waitForTtsComplete() {
+        // 第一步：等待TTS开始播报（最多等3秒）
+        var waitCount = 0
+        while (!voiceRepository.voiceState.first().isSpeaking && waitCount < 30) {
+            delay(100)
+            waitCount++
+        }
+        
+        if (voiceRepository.voiceState.first().isSpeaking) {
+            Timber.d("VoiceInteraction: TTS started speaking, waiting for completion")
+            // 第二步：等待TTS播报完成
+            waitCount = 0
+            while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
+                delay(100)
+                waitCount++
+            }
+            Timber.d("VoiceInteraction: TTS finished speaking")
+        } else {
+            Timber.w("VoiceInteraction: TTS did not start speaking within 3 seconds")
+        }
+        
+        // 额外等待确保队列处理完成
+        delay(500)
     }
     
     override suspend fun speakHelp() {
@@ -119,12 +138,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
         speak(VoiceGuidance.HELP_MESSAGE, VoiceType.SYSTEM_STATUS)
         
         // 等待播报完成
-        var waitCount = 0
-        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
-            delay(100)
-            waitCount++
-        }
-        delay(500)
+        waitForTtsComplete()
         
         (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
     }
@@ -196,12 +210,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
                     speak("我在，请说指令", VoiceType.SYSTEM_STATUS)
                     
                     // 等待播报完成
-                    var waitCount = 0
-                    while (voiceRepository.voiceState.first().isSpeaking && waitCount < 50) {
-                        delay(100)
-                        waitCount++
-                    }
-                    delay(300)
+                    waitForTtsComplete()
                     
                     (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
                 }
@@ -220,12 +229,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
                         speak("正在执行：${command.spokenText}", VoiceType.SYSTEM_STATUS)
                         
                         // 等待播报完成
-                        var waitCount = 0
-                        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 50) {
-                            delay(100)
-                            waitCount++
-                        }
-                        delay(300)
+                        waitForTtsComplete()
                         (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
                         
                         // 执行指令
@@ -240,12 +244,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
                         }
                         
                         // 等待播报完成
-                        waitCount = 0
-                        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 50) {
-                            delay(100)
-                            waitCount++
-                        }
-                        delay(300)
+                        waitForTtsComplete()
                         (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
                         
                     } else if (!result.isSuccess) {
@@ -259,12 +258,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
                         speak("未识别的指令，请重新说", VoiceType.SYSTEM_STATUS)
                         
                         // 等待播报完成
-                        var waitCount = 0
-                        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 50) {
-                            delay(100)
-                            waitCount++
-                        }
-                        delay(300)
+                        waitForTtsComplete()
                         (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
                     }
                 }
