@@ -129,10 +129,12 @@ class MainActivity : ComponentActivity() {
                     }
                 })
                 
-                // 初始化语音交互管理器（会自动播报欢迎消息并启动监听）
+                // 初始化语音交互管理器（会自动启动监听）
                 val result = voiceInteractionManager.initialize()
                 if (result.isSuccess) {
                     Timber.i("Voice interaction initialized successfully")
+                    // 播报欢迎消息
+                    voiceInteractionManager.speakWelcome()
                 } else {
                     val errorMsg = (result as? com.blindpath.base.common.Result.Error)?.message ?: "未知错误"
                     Timber.e("Voice interaction initialization failed: $errorMsg")

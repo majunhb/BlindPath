@@ -56,6 +56,10 @@ class VoiceInteractionManagerImpl @Inject constructor(
             // 监听语音识别结果
             startCommandProcessing()
             
+            // 启动持续监听（确保监听在任何初始化路径下都会启动）
+            Timber.i("VoiceInteraction: Starting continuous listening")
+            commandRepository.setWakeWordEnabled(true)
+            
             _isInitialized = true
             Timber.i("VoiceInteraction: Initialized successfully")
             Result.Success(true)
@@ -90,9 +94,8 @@ class VoiceInteractionManagerImpl @Inject constructor(
         }
         delay(500) // 额外等待确保播报完成
         
-        // 播报完成后再启动持续监听，避免 TTS 和识别器音频焦点冲突
-        Timber.i("VoiceInteraction: Starting continuous listening after welcome message")
-        commandRepository.setWakeWordEnabled(true)
+        // 注意：监听已在 initialize() 中启动，此处无需重复启动
+        Timber.i("VoiceInteraction: Welcome message completed, listening already started")
         
         // 添加调试播报，确认监听已启动
         delay(1000)
