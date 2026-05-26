@@ -67,14 +67,36 @@ class VoiceInteractionManagerImpl @Inject constructor(
     
     override suspend fun speakWelcome() {
         Timber.i("VoiceInteraction: Speaking welcome message")
+        
+        // 播报欢迎消息
         speak(VoiceGuidance.WELCOME_MESSAGE, VoiceType.SYSTEM_STATUS)
-        delay(1500) // 等待欢迎消息播报完成
+        
+        // 等待欢迎消息播报完成
+        var waitCount = 0
+        while (voiceRepository.voiceState.value.isSpeaking && waitCount < 100) {
+            delay(100)
+            waitCount++
+        }
+        delay(500) // 额外等待确保播报完成
+        
+        // 播报唤醒词提示
         speak(VoiceGuidance.WAKE_WORD_PROMPT, VoiceType.SYSTEM_STATUS)
-        delay(1000) // 等待唤醒提示播报完成
+        
+        // 等待唤醒词提示播报完成
+        waitCount = 0
+        while (voiceRepository.voiceState.value.isSpeaking && waitCount < 100) {
+            delay(100)
+            waitCount++
+        }
+        delay(500) // 额外等待确保播报完成
         
         // 播报完成后再启动持续监听，避免 TTS 和识别器音频焦点冲突
         Timber.i("VoiceInteraction: Starting continuous listening after welcome message")
         commandRepository.setWakeWordEnabled(true)
+        
+        // 添加调试播报，确认监听已启动
+        delay(1000)
+        speak("监听已启动，请说小智小智", VoiceType.SYSTEM_STATUS)
     }
     
     override suspend fun speakHelp() {
