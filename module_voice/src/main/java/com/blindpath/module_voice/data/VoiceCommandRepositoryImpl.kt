@@ -44,8 +44,9 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     private val maxRetries = 5
     private var healthCheckJob: Job? = null
     
-    // 语音识别监听器
-    private val recognitionListener: RecognitionListener = object : RecognitionListener {
+    // 语音识别监听器（延迟初始化避免循环引用）
+    private val recognitionListener: RecognitionListener by lazy {
+        object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
             Timber.d("VoiceCommand: Ready for speech")
             _interactionState.update { it.copy(isListening = true) }
@@ -231,6 +232,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         override fun onEvent(eventType: Int, params: Bundle?) {
             Timber.d("VoiceCommand: Event - $eventType")
         }
+    }
     }
     
     override suspend fun initialize(): Result<Boolean> = withContext(Dispatchers.Main) {
