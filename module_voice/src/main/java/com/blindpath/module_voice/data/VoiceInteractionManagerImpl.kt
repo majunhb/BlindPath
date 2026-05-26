@@ -56,12 +56,10 @@ class VoiceInteractionManagerImpl @Inject constructor(
             // 监听语音识别结果
             startCommandProcessing()
             
-            // 启动持续监听（确保监听在任何初始化路径下都会启动）
-            Timber.i("VoiceInteraction: Starting continuous listening")
-            commandRepository.setWakeWordEnabled(true)
+            // 注意：不再在此处启动监听，改到 speakWelcome() 中 TTS 播报完成后启动
+            Timber.i("VoiceInteraction: Initialized successfully, listening will start after welcome")
             
             _isInitialized = true
-            Timber.i("VoiceInteraction: Initialized successfully")
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "VoiceInteraction: Initialization failed")
@@ -71,6 +69,9 @@ class VoiceInteractionManagerImpl @Inject constructor(
     
     override suspend fun speakWelcome() {
         Timber.i("VoiceInteraction: Speaking welcome message")
+        
+        // 通知识别器 TTS 开始播报
+        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStart()
         
         // 播报欢迎消息
         speak(VoiceGuidance.WELCOME_MESSAGE, VoiceType.SYSTEM_STATUS)
@@ -83,27 +84,49 @@ class VoiceInteractionManagerImpl @Inject constructor(
         }
         delay(500) // 额外等待确保播报完成
         
-        // 播报唤醒词提示
+        // 通知识别器 TTS 停止播报
+        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
+        
+        // 等待 600ms 让识别器恢复（notifyTtsStop 内部也有 600ms 延迟）
+        delay(800)
+        
+        // 现在启动持续监听（TTS 播报完成后）
+        Timber.i("VoiceInteraction: Starting continuous listening after welcome message")
+        commandRepository.setWakeWordEnabled(true)
+        
+        // 等待监听启动
+        delay(500)
+        
+        // 播报唤醒词提示（此时监听已启动）
+        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStart()
         speak(VoiceGuidance.WAKE_WORD_PROMPT, VoiceType.SYSTEM_STATUS)
         
-        // 等待唤醒词提示播报完成
+        // 等待播报完成
         waitCount = 0
         while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
             delay(100)
             waitCount++
         }
-        delay(500) // 额外等待确保播报完成
+        delay(500)
         
-        // 注意：监听已在 initialize() 中启动，此处无需重复启动
-        Timber.i("VoiceInteraction: Welcome message completed, listening already started")
+        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
         
-        // 添加调试播报，确认监听已启动
-        delay(1000)
-        speak("监听已启动，请说小智小智", VoiceType.SYSTEM_STATUS)
+        Timber.i("VoiceInteraction: Welcome sequence completed, listening active")
     }
     
     override suspend fun speakHelp() {
+        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStart()
         speak(VoiceGuidance.HELP_MESSAGE, VoiceType.SYSTEM_STATUS)
+        
+        // 等待播报完成
+        var waitCount = 0
+        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
+            delay(100)
+            waitCount++
+        }
+        delay(500)
+        
+        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
     }
     
     override suspend fun speak(text: String, type: VoiceType) {
@@ -167,7 +190,20 @@ class VoiceInteractionManagerImpl @Inject constructor(
                 // 检测到唤醒词时播放提示音
                 if (state.isWakeWordDetected) {
                     Timber.i("VoiceInteraction: Wake word detected, ready for command")
+                    
+                    // 使用 notifyTtsStart/Stop 协调
+                    (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStart()
                     speak("我在，请说指令", VoiceType.SYSTEM_STATUS)
+                    
+                    // 等待播报完成
+                    var waitCount = 0
+                    while (voiceRepository.voiceState.first().isSpeaking && waitCount < 50) {
+                        delay(100)
+                        waitCount++
+                    }
+                    delay(300)
+                    
+                    (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
                 }
                 
                 // 处理识别到的指令（只处理一次）
@@ -180,17 +216,38 @@ class VoiceInteractionManagerImpl @Inject constructor(
                         _interactionState.update { it.copy(lastCommand = null) }
                         
                         // 播报指令识别结果
+                        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStart()
                         speak("正在执行：${command.spokenText}", VoiceType.SYSTEM_STATUS)
+                        
+                        // 等待播报完成
+                        var waitCount = 0
+                        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 50) {
+                            delay(100)
+                            waitCount++
+                        }
+                        delay(300)
+                        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
                         
                         // 执行指令
                         val success = handleCommand(command)
                         
                         // 播报执行结果
+                        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStart()
                         if (success) {
                             speak("指令执行成功", VoiceType.SYSTEM_STATUS)
                         } else {
                             speak("指令执行失败", VoiceType.SYSTEM_STATUS)
                         }
+                        
+                        // 等待播报完成
+                        waitCount = 0
+                        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 50) {
+                            delay(100)
+                            waitCount++
+                        }
+                        delay(300)
+                        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
+                        
                     } else if (!result.isSuccess) {
                         // 指令识别失败
                         Timber.w("VoiceInteraction: Command not recognized - ${result.failureReason}")
@@ -198,7 +255,17 @@ class VoiceInteractionManagerImpl @Inject constructor(
                         // 清除 lastCommand 防止重复处理
                         _interactionState.update { it.copy(lastCommand = null) }
                         
+                        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStart()
                         speak("未识别的指令，请重新说", VoiceType.SYSTEM_STATUS)
+                        
+                        // 等待播报完成
+                        var waitCount = 0
+                        while (voiceRepository.voiceState.first().isSpeaking && waitCount < 50) {
+                            delay(100)
+                            waitCount++
+                        }
+                        delay(300)
+                        (commandRepository as? VoiceCommandRepositoryImpl)?.notifyTtsStop()
                     }
                 }
             }
