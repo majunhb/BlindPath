@@ -115,6 +115,7 @@ class WakeWordEngineManager(private val context: Context) {
             apiKey = config.baiduApiKey,
             secretKey = config.baiduSecretKey,
             wakeWordAssetPath = config.baiduWakeWordAsset,
+            wakeWord = config.wakeWord,
             onWakeWordDetected = { keyword ->
                 onWakeWordDetected?.invoke(keyword)
             }
