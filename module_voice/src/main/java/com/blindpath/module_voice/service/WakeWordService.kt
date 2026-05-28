@@ -12,7 +12,6 @@ import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.ActivityCompat
@@ -148,12 +147,8 @@ class WakeWordService : Service() {
         // 释放音频焦点
         audioFocusManager.abandonFocus("wakeword")
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(Service.STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
+        // 停止前台服务
+        stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
     
@@ -246,19 +241,17 @@ class WakeWordService : Service() {
     }
     
     private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                "语音唤醒服务",
-                NotificationManager.IMPORTANCE_LOW
-            ).apply {
-                description = "保持语音唤醒功能在后台运行"
-                setShowBadge(false)
-            }
-            
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.createNotificationChannel(channel)
+        val channel = NotificationChannel(
+            NOTIFICATION_CHANNEL_ID,
+            "语音唤醒服务",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "保持语音唤醒功能在后台运行"
+            setShowBadge(false)
         }
+        
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.createNotificationChannel(channel)
     }
     
     private fun createNotification(): Notification {

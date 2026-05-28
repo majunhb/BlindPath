@@ -2,9 +2,9 @@ package com.blindpath.module_voice.service
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
-import androidx.annotation.RequiresApi
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,8 +31,7 @@ class AudioFocusManager @Inject constructor(
     private val _audioFocusState = MutableStateFlow(AudioFocusState.LOSS)
     val audioFocusState: StateFlow<AudioFocusState> = _audioFocusState.asStateFlow()
     
-    // 使用 Any 类型存储 AudioFocusRequest (API 26+)，避免类加载问题
-    private var currentFocusRequest: Any? = null
+    private var currentFocusRequest: AudioFocusRequest? = null
     private var focusChangeListener: AudioManager.OnAudioFocusChangeListener? = null
     
     // 音频模块优先级（数值越大优先级越高）
@@ -59,11 +58,7 @@ class AudioFocusManager @Inject constructor(
             }
         }
         
-        val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            requestFocusApi26(moduleId)
-        } else {
-            requestFocusLegacy(moduleId)
-        }
+        val result = requestFocusInternal(moduleId)
         
         if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             currentHolder = moduleId
@@ -85,11 +80,7 @@ class AudioFocusManager @Inject constructor(
             return
         }
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            abandonFocusApi26()
-        } else {
-            abandonFocusLegacy()
-        }
+        abandonFocusInternal()
         
         currentHolder = null
         _audioFocusState.value = AudioFocusState.LOSS
@@ -108,12 +99,11 @@ class AudioFocusManager @Inject constructor(
      */
     fun getCurrentHolder(): String? = currentHolder
     
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun requestFocusApi26(moduleId: String): Int {
+    private fun requestFocusInternal(moduleId: String): Int {
         val listener = createFocusChangeListener(moduleId)
         focusChangeListener = listener
         
-        val focusRequest = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+        val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
@@ -127,32 +117,11 @@ class AudioFocusManager @Inject constructor(
         return audioManager.requestAudioFocus(focusRequest)
     }
     
-    @Suppress("DEPRECATION")
-    private fun requestFocusLegacy(moduleId: String): Int {
-        val listener = createFocusChangeListener(moduleId)
-        focusChangeListener = listener
-        
-        return audioManager.requestAudioFocus(
-            listener,
-            AudioManager.STREAM_MUSIC,
-            AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
-        )
-    }
-    
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun abandonFocusApi26() {
+    private fun abandonFocusInternal() {
         currentFocusRequest?.let {
-            audioManager.abandonAudioFocusRequest(it as android.media.AudioFocusRequest)
+            audioManager.abandonAudioFocusRequest(it)
         }
         currentFocusRequest = null
-        focusChangeListener = null
-    }
-    
-    @Suppress("DEPRECATION")
-    private fun abandonFocusLegacy() {
-        focusChangeListener?.let {
-            audioManager.abandonAudioFocus(it)
-        }
         focusChangeListener = null
     }
     
