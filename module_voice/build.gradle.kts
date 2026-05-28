@@ -35,11 +35,11 @@ android {
 
 dependencies {
     implementation(project(":base"))
-    
+
     // Hilt - 使用 version catalog
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
-    
+
     // Timber
     implementation(libs.timber)
 
@@ -50,7 +50,10 @@ dependencies {
 
     // Coroutines - 使用 version catalog bundle
     implementation(libs.kotlinx.coroutines.android)
-    
+
+    // Porcupine Wake Word Detection
+    implementation("ai.picovoice:porcupine-android:4.0.0")
+
     // Test dependencies
     testImplementation(libs.bundles.testing)
 }
