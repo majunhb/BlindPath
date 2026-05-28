@@ -119,6 +119,18 @@
             </intent-filter>
         </receiver>
 
+        <!-- 唤醒词检测接收器 -->
+        <receiver
+            android:name="com.blindpath.module_voice.receiver.WakeWordReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.blindpath.wakeword.DETECTED" />
+                <action android:name="com.blindpath.wakeword.START" />
+                <action android:name="com.blindpath.wakeword.STOP" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

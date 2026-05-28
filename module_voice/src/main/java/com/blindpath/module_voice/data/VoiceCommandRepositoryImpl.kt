@@ -305,4 +305,26 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         healthCheckJob = null
         Timber.i("VoiceCommand: Continuous listening stopped")
     }
+
+    /**
+     * 外部触发唤醒词检测
+     * 
+     * 由 WakeWordService 调用，当百度唤醒引擎检测到唤醒词时触发
+     * 会自动切换到指令识别模式
+     */
+    override fun triggerWakeWordDetected(wakeWord: String) {
+        Timber.i("VoiceCommand: Wake word triggered externally - $wakeWord")
+        
+        // 设置唤醒词检测状态
+        isWaitingForWakeWord = false
+        retryCount = 0
+        _interactionState.update { it.copy(isWakeWordDetected = true, wakeWord = wakeWord) }
+        
+        // 启动指令识别监听
+        scope.launch {
+            delay(500)  // 等待用户准备说指令
+            Timber.i("VoiceCommand: Starting command listening after external wake word trigger")
+            startListening()
+        }
+    }
 }

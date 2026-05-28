@@ -51,4 +51,12 @@ interface VoiceCommandRepository {
      * 启用/禁用唤醒词
      */
     fun setWakeWordEnabled(enabled: Boolean)
+
+    /**
+     * 外部触发唤醒词检测
+     * 
+     * 由 WakeWordService 调用，当百度唤醒引擎检测到唤醒词时触发
+     * 会自动切换到指令识别模式
+     */
+    fun triggerWakeWordDetected(wakeWord: String)
 }
