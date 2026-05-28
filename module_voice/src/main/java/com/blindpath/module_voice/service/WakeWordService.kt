@@ -26,7 +26,8 @@ import javax.inject.Inject
  *
  * 功能：
  * - 前台服务，保活唤醒词检测
- * - 使用 Porcupine 引擎进行唤醒词检测
+ * - 支持双引擎架构（Porcupine + 百度语音唤醒）
+ * - 自动降级策略（主引擎失败时切换到备选引擎）
  * - 16kHz采样率音频采集
  * - 低功耗运行（锁屏时降低采样频率）
  * - 支持蓝牙耳机/骨传导耳机
@@ -46,7 +47,7 @@ class WakeWordService : Service() {
     private var isRunning = false
     private var isWakeWordDetected = false
 
-    // 音频参数（Porcupine 要求 16kHz, 16-bit, 单声道）
+    // 音频参数（16kHz, 16-bit, 单声道）
     private val sampleRate = 16000
     private val channelConfig = AudioFormat.CHANNEL_IN_MONO
     private val audioFormat = AudioFormat.ENCODING_PCM_16BIT
@@ -54,10 +55,10 @@ class WakeWordService : Service() {
         AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
     }
 
-    // Porcupine 唤醒词检测器
-    private var porcupineDetector: PorcupineWakeWordDetector? = null
+    // 引擎管理器
+    private lateinit var engineManager: WakeWordEngineManager
 
-    // 音频缓冲区（用于累积 Porcupine 所需的帧）
+    // 音频缓冲区（用于累积引擎所需的帧）
     private val audioBuffer = ArrayList<Short>(512)
 
     companion object {
@@ -69,8 +70,11 @@ class WakeWordService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "wakeword_service_channel"
         private const val NOTIFICATION_ID = 1001
 
-        // TODO: 从配置文件或 BuildConfig 读取
+        // 引擎配置 - TODO: 从配置文件读取
         const val PORCUPINE_ACCESS_KEY = "YOUR_ACCESS_KEY_HERE"
+        const val BAIDU_APP_ID = "123301672"
+        const val BAIDU_API_KEY = "7bqc6ovRERcTumcd4h2dXhyj"
+        const val BAIDU_SECRET_KEY = "kuVbgAvSYkVPMcDWDjMkG5KlJZBLts3"
 
         @Volatile
         var isServiceRunning = false
@@ -82,7 +86,7 @@ class WakeWordService : Service() {
         Timber.i("WakeWordService: onCreate")
         createNotificationChannel()
         acquireWakeLock()
-        initializePorcupine()
+        initializeEngineManager()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -100,33 +104,37 @@ class WakeWordService : Service() {
         Timber.i("WakeWordService: onDestroy")
         stopWakeWordDetection()
         releaseWakeLock()
-        porcupineDetector?.release()
+        if (::engineManager.isInitialized) {
+            engineManager.release()
+        }
         serviceScope.cancel()
     }
 
-    private fun initializePorcupine() {
-        try {
-            // TODO: 替换为实际的 AccessKey
-            if (PORCUPINE_ACCESS_KEY == "YOUR_ACCESS_KEY_HERE") {
-                Timber.w("WakeWordService: Porcupine AccessKey not configured, using energy-based detection")
-                return
-            }
-
-            porcupineDetector = PorcupineWakeWordDetector(
-                context = this,
-                accessKey = PORCUPINE_ACCESS_KEY,
-                // TODO: 添加自定义中文唤醒词模型路径
-                // keywordPath = "小智小智.ppn",
-                // modelPath = "porcupine_params_zh.pv",
-                sensitivity = 0.7f,
-                onWakeWordDetected = { keyword ->
-                    onWakeWordDetected(keyword)
-                }
-            )
-            Timber.i("WakeWordService: Porcupine initialized")
-        } catch (e: Exception) {
-            Timber.e(e, "WakeWordService: Failed to initialize Porcupine, falling back to energy detection")
+    /**
+     * 初始化引擎管理器
+     */
+    private fun initializeEngineManager() {
+        engineManager = WakeWordEngineManager(this)
+        engineManager.onWakeWordDetected = { wakeWord ->
+            onWakeWordDetected(wakeWord)
         }
+        engineManager.onEngineSwitched = { engineType ->
+            Timber.i("WakeWordService: Engine switched to $engineType")
+        }
+
+        // 配置引擎
+        val config = WakeWordEngineManager.EngineConfig(
+            primaryEngine = WakeWordEngineManager.EngineType.PORCUPINE,
+            fallbackEnabled = true,
+            porcupineAccessKey = PORCUPINE_ACCESS_KEY,
+            baiduAppId = BAIDU_APP_ID,
+            baiduApiKey = BAIDU_API_KEY,
+            baiduSecretKey = BAIDU_SECRET_KEY,
+            wakeWord = "小智小智"
+        )
+
+        engineManager.initialize(config)
+        Timber.i("WakeWordService: Engine manager initialized with ${engineManager.getCurrentEngineType()}")
     }
 
     private fun startWakeWordDetection() {
@@ -211,7 +219,7 @@ class WakeWordService : Service() {
 
     private suspend fun startAudioProcessing() {
         audioRecord?.startRecording()
-        Timber.i("WakeWordService: Audio processing started")
+        Timber.i("WakeWordService: Audio processing started with engine: ${engineManager.getCurrentEngineType()}")
 
         val buffer = ShortArray(bufferSize)
 
@@ -234,23 +242,25 @@ class WakeWordService : Service() {
     }
 
     private fun processAudioBuffer(buffer: ShortArray, size: Int) {
-        if (porcupineDetector != null) {
-            // 使用 Porcupine 进行唤醒词检测
-            processWithPorcupine(buffer, size)
-        } else {
-            // 降级方案：使用能量检测
-            processWithEnergyDetection(buffer, size)
-        }
-    }
+        if (isWakeWordDetected) return
 
-    private fun processWithPorcupine(buffer: ShortArray, size: Int) {
+        val engine = engineManager.getCurrentEngine()
+        if (engine == null) {
+            Timber.w("WakeWordService: No engine available")
+            return
+        }
+
         // 将音频数据添加到缓冲区
         for (i in 0 until size) {
             audioBuffer.add(buffer[i])
         }
 
-        // Porcupine 需要固定长度的帧（通常是512 samples）
-        val frameLength = porcupineDetector?.getFrameLength() ?: 512
+        // 获取帧长度（不同引擎可能有不同要求）
+        val frameLength = when (engine) {
+            is PorcupineWakeWordDetector -> engine.getFrameLength()
+            is EnergyWakeWordDetector -> engine.getFrameLength()
+            else -> 512
+        }
 
         // 处理缓冲区中完整的帧
         while (audioBuffer.size >= frameLength && !isWakeWordDetected) {
@@ -259,9 +269,9 @@ class WakeWordService : Service() {
                 frame[i] = audioBuffer.removeAt(0)
             }
 
-            val detected = porcupineDetector?.process(frame) ?: false
+            val detected = engine.process(frame)
             if (detected) {
-                // 唤醒词检测成功，onWakeWordDetected 回调会被触发
+                // 唤醒词检测成功
                 break
             }
         }
@@ -271,24 +281,6 @@ class WakeWordService : Service() {
         while (audioBuffer.size > maxBufferSize) {
             audioBuffer.removeAt(0)
         }
-    }
-
-    private fun processWithEnergyDetection(buffer: ShortArray, size: Int) {
-        // 简单的能量检测（降级方案）
-        val energy = calculateEnergy(buffer, size)
-        val threshold = 1000
-
-        if (energy > threshold && !isWakeWordDetected) {
-            onWakeWordDetected("小布")
-        }
-    }
-
-    private fun calculateEnergy(buffer: ShortArray, size: Int): Double {
-        var sum = 0.0
-        for (i in 0 until size) {
-            sum += buffer[i] * buffer[i]
-        }
-        return kotlin.math.sqrt(sum / size)
     }
 
     private fun onWakeWordDetected(wakeWord: String) {
@@ -339,7 +331,7 @@ class WakeWordService : Service() {
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("助盲智行")
-            .setContentText("语音唤醒服务运行中")
+            .setContentText("语音唤醒服务运行中 [${engineManager.getCurrentEngineType()}]")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
