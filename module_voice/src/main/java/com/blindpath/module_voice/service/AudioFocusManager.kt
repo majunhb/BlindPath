@@ -2,7 +2,6 @@ package com.blindpath.module_voice.service
 
 import android.content.Context
 import android.media.AudioAttributes
-import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.os.Build
 import androidx.annotation.RequiresApi
@@ -32,7 +31,8 @@ class AudioFocusManager @Inject constructor(
     private val _audioFocusState = MutableStateFlow(AudioFocusState.LOSS)
     val audioFocusState: StateFlow<AudioFocusState> = _audioFocusState.asStateFlow()
     
-    private var currentFocusRequest: AudioFocusRequest? = null
+    // 使用 Any 类型存储 AudioFocusRequest (API 26+)，避免类加载问题
+    private var currentFocusRequest: Any? = null
     private var focusChangeListener: AudioManager.OnAudioFocusChangeListener? = null
     
     // 音频模块优先级（数值越大优先级越高）
@@ -113,7 +113,7 @@ class AudioFocusManager @Inject constructor(
         val listener = createFocusChangeListener(moduleId)
         focusChangeListener = listener
         
-        val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+        val focusRequest = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
@@ -142,7 +142,7 @@ class AudioFocusManager @Inject constructor(
     @RequiresApi(Build.VERSION_CODES.O)
     private fun abandonFocusApi26() {
         currentFocusRequest?.let {
-            audioManager.abandonAudioFocusRequest(it)
+            audioManager.abandonAudioFocusRequest(it as android.media.AudioFocusRequest)
         }
         currentFocusRequest = null
         focusChangeListener = null
