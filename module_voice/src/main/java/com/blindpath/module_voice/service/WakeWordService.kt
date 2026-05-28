@@ -178,7 +178,7 @@ class WakeWordService : Service() {
         
         val buffer = ShortArray(bufferSize)
         
-        while (isRunning && coroutineContext.isActive) {
+        while (isRunning && currentCoroutineContext().isActive) {
             try {
                 val readSize = audioRecord?.read(buffer, 0, bufferSize) ?: 0
                 
