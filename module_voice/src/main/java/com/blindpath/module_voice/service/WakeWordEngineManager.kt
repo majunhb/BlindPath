@@ -38,7 +38,7 @@ class WakeWordEngineManager(private val context: Context) {
         val baiduSecretKey: String = "",
         val baiduWakeWordAsset: String = "WakeUp_xiaozhi.bin",
         val porcupineAccessKey: String = "",
-        val wakeWord: String = "小智小智"
+        val wakeWord: String = "小智同学"
     )
 
     private var currentEngine: WakeWordDetector? = null
