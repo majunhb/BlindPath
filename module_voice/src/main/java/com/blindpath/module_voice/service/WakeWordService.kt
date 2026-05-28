@@ -129,9 +129,9 @@ class WakeWordService : Service() {
             baiduAppId = BAIDU_APP_ID,
             baiduApiKey = BAIDU_API_KEY,
             baiduSecretKey = BAIDU_SECRET_KEY,
-            baiduWakeWordAsset = "WakeUp.bin",
+            baiduWakeWordAsset = "WakeUp_xiaozhi.bin",
             porcupineAccessKey = PORCUPINE_ACCESS_KEY,
-            wakeWord = "小智小智"
+            wakeWord = "小智同学"
         )
 
         engineManager.initialize(config)

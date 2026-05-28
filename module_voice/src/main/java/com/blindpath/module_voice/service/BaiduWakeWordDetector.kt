@@ -81,14 +81,14 @@ class BaiduWakeWordDetector(
                     val errorCode = json.optInt("error", 0)
 
                     if (errorCode == 0) {
-                        val wakeWord = word.ifEmpty { "小智小智" }
+                        val wakeWord = word.ifEmpty { "小智同学" }
                         onWakeWordDetected.invoke(wakeWord)
                     } else {
                         Timber.w("$TAG: Wake up error, code: $errorCode")
                     }
                 } catch (e: Exception) {
                     Timber.e(e, "$TAG: Failed to parse wake up result")
-                    onWakeWordDetected.invoke("小智小智")
+                    onWakeWordDetected.invoke("小智同学")
                 }
             }
 

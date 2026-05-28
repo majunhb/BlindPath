@@ -85,6 +85,21 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * 启动唤醒词检测服务
+     */
+    private fun startWakeWordService() {
+        try {
+            val intent = Intent(this, com.blindpath.module_voice.service.WakeWordService::class.java).apply {
+                action = com.blindpath.module_voice.service.WakeWordService.ACTION_START
+            }
+            startForegroundService(intent)
+            Timber.i("WakeWordService started from MainActivity")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to start WakeWordService")
+        }
+    }
+
+    /**
      * 请求语音识别权限并初始化语音交互
      */
     private fun requestVoicePermissionsAndInitialize() {
@@ -133,6 +148,8 @@ class MainActivity : ComponentActivity() {
                 val result = voiceInteractionManager.initialize()
                 if (result.isSuccess) {
                     Timber.i("Voice interaction initialized successfully")
+                    // 启动唤醒词检测服务（百度唤醒引擎）
+                    startWakeWordService()
                     // 播报欢迎消息
                     voiceInteractionManager.speakWelcome()
                 } else {
