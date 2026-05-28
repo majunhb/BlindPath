@@ -16,7 +16,6 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
-import com.blindpath.app.MainActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import timber.log.Timber
@@ -179,7 +178,7 @@ class WakeWordService : Service() {
         
         val buffer = ShortArray(bufferSize)
         
-        while (isRunning && isActive) {
+        while (isRunning && coroutineContext.isActive) {
             try {
                 val readSize = audioRecord?.read(buffer, 0, bufferSize) ?: 0
                 
@@ -255,10 +254,13 @@ class WakeWordService : Service() {
     }
     
     private fun createNotification(): Notification {
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent().apply {
+            setClassName(packageName, "${packageName}.MainActivity")
+        }
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java),
+            launchIntent,
             PendingIntent.FLAG_IMMUTABLE
         )
         
