@@ -84,7 +84,7 @@ class VoiceRepositoryImpl @Inject constructor(
                         Timber.e("No TTS language available")
                         _state.update { it.copy(lastError = "不支持任何语音语言") }
                         isInitialized = false
-                        if (continuation.isActive) continuation.resume(Result.Success(false))
+                        if (continuation.isActive) continuation.resume(Result.Success(false), null)
                     } else {
                         isInitialized = true
                         tts?.setSpeechRate(AppConfig.Voice.SPEECH_RATE)
@@ -94,11 +94,11 @@ class VoiceRepositoryImpl @Inject constructor(
                         startQueueProcessor()
 
                         Timber.d("TTS initialized successfully with priority queue")
-                        if (continuation.isActive) continuation.resume(Result.Success(true))
+                        if (continuation.isActive) continuation.resume(Result.Success(true), null)
                     }
                 } else {
                     Timber.e("TTS initialization failed with status: $status")
-                    if (continuation.isActive) continuation.resume(Result.Success(false))
+                    if (continuation.isActive) continuation.resume(Result.Success(false), null)
                 }
             }
             

@@ -30,7 +30,7 @@ class BluetoothAudioReceiver : BroadcastReceiver() {
         when (intent.action) {
             BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED -> {
                 val state = intent.getIntExtra(BluetoothHeadset.EXTRA_STATE, BluetoothHeadset.STATE_DISCONNECTED)
-                val device = getParcelableExtraCompat(intent, BluetoothDevice.EXTRA_DEVICE)
+                val device = getParcelableExtraCompat<BluetoothDevice>(intent, BluetoothDevice.EXTRA_DEVICE)
 
                 when (state) {
                     BluetoothHeadset.STATE_CONNECTED -> {
@@ -64,12 +64,12 @@ class BluetoothAudioReceiver : BroadcastReceiver() {
             }
 
             BluetoothDevice.ACTION_ACL_CONNECTED -> {
-                val device = getParcelableExtraCompat(intent, BluetoothDevice.EXTRA_DEVICE)
+                val device = getParcelableExtraCompat<BluetoothDevice>(intent, BluetoothDevice.EXTRA_DEVICE)
                 Timber.d("BluetoothAudio: ACL connected - ${device?.name} [${device?.type}]")
             }
 
             BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
-                val device = getParcelableExtraCompat(intent, BluetoothDevice.EXTRA_DEVICE)
+                val device = getParcelableExtraCompat<BluetoothDevice>(intent, BluetoothDevice.EXTRA_DEVICE)
                 Timber.d("BluetoothAudio: ACL disconnected - ${device?.name}")
             }
         }
