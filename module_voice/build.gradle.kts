@@ -31,6 +31,11 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    packagingOptions {
+        doNotStrip("**/libvad.dnn.so")
+        doNotStrip("**/libbd_easr_s1_merge_normal_20151216.dat.so")
+    }
 }
 
 dependencies {
@@ -53,6 +58,9 @@ dependencies {
 
     // Porcupine Wake Word Detection
     implementation("ai.picovoice:porcupine-android:4.0.0")
+
+    // Baidu Speech Wake Word Detection (offline)
+    implementation(files("libs/bdasr_aipd_V3_20250717_1e379e2.aar"))
 
     // Test dependencies
     testImplementation(libs.bundles.testing)
