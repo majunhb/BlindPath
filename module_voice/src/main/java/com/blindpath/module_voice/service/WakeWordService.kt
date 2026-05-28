@@ -122,14 +122,15 @@ class WakeWordService : Service() {
             Timber.i("WakeWordService: Engine switched to $engineType")
         }
 
-        // 配置引擎
+        // 配置引擎 - 百度为主引擎
         val config = WakeWordEngineManager.EngineConfig(
-            primaryEngine = WakeWordEngineManager.EngineType.PORCUPINE,
+            primaryEngine = WakeWordEngineManager.EngineType.BAIDU,
             fallbackEnabled = true,
-            porcupineAccessKey = PORCUPINE_ACCESS_KEY,
             baiduAppId = BAIDU_APP_ID,
             baiduApiKey = BAIDU_API_KEY,
             baiduSecretKey = BAIDU_SECRET_KEY,
+            baiduWakeWordAsset = "WakeUp.bin",
+            porcupineAccessKey = PORCUPINE_ACCESS_KEY,
             wakeWord = "小智小智"
         )
 
@@ -161,8 +162,14 @@ class WakeWordService : Service() {
         // 初始化并启动唤醒词检测
         serviceScope.launch {
             try {
-                initAudioRecord()
-                startAudioProcessing()
+                if (engineManager.isCurrentEngineSelfManaged()) {
+                    // 百度引擎：SDK 自己管理音频采集，不需要手动启动 AudioRecord
+                    Timber.i("WakeWordService: Using self-managed audio engine (${engineManager.getCurrentEngineType()})")
+                } else {
+                    // Porcupine/能量检测：需要手动采集音频
+                    initAudioRecord()
+                    startAudioProcessing()
+                }
             } catch (e: Exception) {
                 Timber.e(e, "WakeWordService: Failed to start detection")
                 stopSelf()

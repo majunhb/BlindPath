@@ -6,20 +6,31 @@ import timber.log.Timber
 /**
  * 百度语音唤醒检测器
  *
- * 基于百度语音唤醒 SDK 的实现
- * 注意：需要百度语音唤醒 SDK AAR 文件才能完整实现
+ * 基于百度语音唤醒 SDK 实现
+ * 百度 SDK 使用 EventManager 自动管理音频采集，不需要手动传入音频数据
  *
- * 百度应用凭证（从用户提供的截图）：
+ * 集成步骤：
+ * 1. 从 https://ai.baidu.com/sdk 下载语音识别离在线融合 SDK
+ * 2. 将 bdasr_V3_xxx_xxx.jar 放入 module_voice/libs/
+ * 3. 将 jniLibs 下的 SO 库放入 module_voice/src/main/jniLibs/
+ * 4. 将唤醒词模型文件（如 WakeUp.bin）放入 module_voice/src/main/assets/
+ * 5. 在 build.gradle.kts 中添加 implementation(files("libs/bdasr_V3_xxx_xxx.jar"))
+ * 6. 在 AndroidManifest.xml 中配置 meta-data 和 Service（已完成）
+ *
+ * 百度应用凭证：
  * - AppID: 123301672
  * - API Key: 7bqc6ovRERcTumcd4h2dXhyj
  * - Secret Key: kuVbgAvSYkVPMcDWDjMkG5KlJZBLts3
+ *
+ * 当前状态：SDK 未集成，使用占位实现
+ * TODO_BAIDU_SDK: 下载 SDK 后取消注释并删除占位代码
  */
 class BaiduWakeWordDetector(
     private val context: Context,
     private val appId: String,
     private val apiKey: String,
     private val secretKey: String,
-    private val wakeWord: String = "小智小智",
+    private val wakeWordAssetPath: String = "WakeUp.bin",
     private val onWakeWordDetected: (String) -> Unit
 ) : WakeWordDetector {
 
@@ -27,94 +38,87 @@ class BaiduWakeWordDetector(
         private const val TAG = "BaiduWakeWordDetector"
     }
 
+    private var isListening = false
+    private var isInitialized = false
+
     init {
-        Timber.i("$TAG: Initializing Baidu wake word detector")
-        Timber.i("$TAG: AppID: $appId, WakeWord: $wakeWord")
-        initialize()
+        try {
+            initialize()
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: Failed to initialize")
+        }
     }
 
-    /**
-     * 初始化百度语音唤醒 SDK
-     *
-     * TODO: 需要百度语音唤醒 SDK AAR 文件才能完整实现
-     * 1. 从 https://ai.baidu.com/sdk 下载语音识别/唤醒 SDK
-     * 2. 将 AAR 文件放入 module_voice/libs 目录
-     * 3. 在 build.gradle.kts 中添加本地依赖
-     * 4. 实现具体的初始化逻辑
-     */
     private fun initialize() {
-        // 检查凭证是否有效
         if (appId.isBlank() || apiKey.isBlank() || secretKey.isBlank()) {
             throw IllegalArgumentException("Baidu credentials cannot be empty")
         }
 
-        // TODO: 实现百度 SDK 初始化
-        // 参考代码结构：
-        // val params = HashMap<String, Any>()
-        // params["appid"] = appId
-        // params["appkey"] = apiKey
-        // params["secret"] = secretKey
-        // params["wp"] = wakeWordResourcePath
-        // EventManagerFactory.create(context, "wp").registerListener(...)
+        // TODO_BAIDU_SDK: 下载百度 SDK 后替换为以下代码
+        //
+        // import com.baidu.speech.EventListener
+        // import com.baidu.speech.EventManager
+        // import com.baidu.speech.EventManagerFactory
+        // import com.baidu.speech.asr.SpeechConstant
+        //
+        // eventManager = EventManagerFactory.create(context, "wp")
+        // eventManager?.registerListener(object : EventListener {
+        //     override fun onEvent(name: String?, params: String?, data: ByteArray?, offset: Int, length: Int) {
+        //         when (name) {
+        //             "wp.data" -> {
+        //                 // 唤醒词检测成功
+        //                 onWakeWordDetected.invoke("小智小智")
+        //         }
+        //     }
+        // })
 
-        Timber.w("$TAG: Baidu SDK not yet integrated. This is a placeholder implementation.")
-        throw UnsupportedOperationException(
-            "Baidu wake word SDK not integrated. " +
-            "Please download SDK from https://ai.baidu.com/sdk " +
-            "and add to module_voice/libs directory"
-        )
-    }
-
-    /**
-     * 处理音频数据
-     *
-     * TODO: 实现百度 SDK 的音频处理
-     * 百度 SDK 通常自动处理音频采集，不需要手动传入音频数据
-     */
-    override fun process(audioData: ShortArray): Boolean {
-        // 百度 SDK 通常自动处理音频采集
-        // 这里返回 false 表示不处理
-        return false
+        isInitialized = true
+        Timber.i("$TAG: Initialized (placeholder mode - SDK not yet integrated)")
+        Timber.w("$TAG: TODO: Download Baidu SDK from https://ai.baidu.com/sdk to enable wake word detection")
     }
 
     /**
      * 开始监听唤醒词
      *
-     * TODO: 调用百度 SDK 开始监听
+     * TODO_BAIDU_SDK: 下载 SDK 后替换为：
+     * val params = HashMap<String, Any>()
+     * params["kws-file"] = "assets:///$wakeWordAssetPath"
+     * params["kws-sensitivity"] = "0.7"
+     * eventManager?.send(SpeechConstant.WAKEUP_START, JSONObject(params).toString(), null, 0, 0)
      */
     fun startListening() {
-        Timber.d("$TAG: Start listening")
-        // TODO: 调用百度 SDK 开始监听
-        // eventManager.send(SpeechConstant.WAKEUP_START, "{}", null, 0, 0)
+        if (!isInitialized) {
+            Timber.w("$TAG: Not initialized, cannot start listening")
+            return
+        }
+
+        isListening = true
+        Timber.i("$TAG: Started listening (placeholder mode)")
+        Timber.w("$TAG: Baidu SDK not integrated - wake word detection will not work until SDK is added")
     }
 
     /**
      * 停止监听唤醒词
-     *
-     * TODO: 调用百度 SDK 停止监听
      */
     fun stopListening() {
-        Timber.d("$TAG: Stop listening")
-        // TODO: 调用百度 SDK 停止监听
-        // eventManager.send(SpeechConstant.WAKEUP_STOP, "{}", null, 0, 0)
+        isListening = false
+        Timber.i("$TAG: Stopped listening")
     }
 
     /**
-     * 释放资源
+     * 百度 SDK 自动管理音频采集，此方法不使用
      */
-    override fun release() {
-        Timber.i("$TAG: Releasing Baidu wake word detector")
-        // TODO: 释放百度 SDK 资源
-        // eventManager.send(SpeechConstant.WAKEUP_STOP, "{}", null, 0, 0)
+    override fun process(audioData: ShortArray): Boolean {
+        return false
     }
 
-    /**
-     * 获取帧长度
-     */
     fun getFrameLength(): Int = 512
-
-    /**
-     * 获取采样率
-     */
     fun getSampleRate(): Int = 16000
+    fun isListening(): Boolean = isListening
+
+    override fun release() {
+        stopListening()
+        isInitialized = false
+        Timber.i("$TAG: Released")
+    }
 }

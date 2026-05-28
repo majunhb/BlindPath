@@ -6,26 +6,37 @@ import timber.log.Timber
 /**
  * 唤醒词引擎管理器
  *
- * 支持双引擎架构：
- * - 主引擎：Porcupine（默认）
- * - 备选引擎：百度语音唤醒
+ * 支持多引擎架构：
+ * - 主引擎：百度语音唤醒（自动管理音频采集）
+ * - 备选引擎：Porcupine（需要外部传入音频帧）
+ * - 降级方案：能量检测（需要外部传入音频帧）
  *
- * 支持动态切换和自动降级
+ * 引擎模式：
+ * - SELF_MANAGED：引擎自己管理音频采集（如百度 SDK）
+ * - EXTERNAL_AUDIO：需要外部传入音频数据（如 Porcupine、能量检测）
  */
 class WakeWordEngineManager(private val context: Context) {
 
     enum class EngineType {
-        PORCUPINE,      // Porcupine 引擎
-        BAIDU,          // 百度语音唤醒引擎
-        ENERGY          // 能量检测（降级方案）
+        BAIDU,          // 百度语音唤醒引擎（自管理音频）
+        PORCUPINE,      // Porcupine 引擎（需要外部音频）
+        ENERGY          // 能量检测（降级方案，需要外部音频）
+    }
+
+    /**
+     * 引擎是否自己管理音频采集
+     */
+    fun isSelfManagedAudio(engineType: EngineType): Boolean {
+        return engineType == EngineType.BAIDU
     }
 
     data class EngineConfig(
-        val primaryEngine: EngineType = EngineType.PORCUPINE,
+        val primaryEngine: EngineType = EngineType.BAIDU,
         val fallbackEnabled: Boolean = true,
         val baiduAppId: String = "",
         val baiduApiKey: String = "",
         val baiduSecretKey: String = "",
+        val baiduWakeWordAsset: String = "WakeUp.bin",
         val porcupineAccessKey: String = "",
         val wakeWord: String = "小智小智"
     )
@@ -51,8 +62,8 @@ class WakeWordEngineManager(private val context: Context) {
             // 主引擎失败，尝试备选引擎
             Timber.w("WakeWordEngineManager: Primary engine failed, trying fallback")
             when (config.primaryEngine) {
-                EngineType.PORCUPINE -> tryInitializeEngine(EngineType.BAIDU)
                 EngineType.BAIDU -> tryInitializeEngine(EngineType.PORCUPINE)
+                EngineType.PORCUPINE -> tryInitializeEngine(EngineType.BAIDU)
                 EngineType.ENERGY -> { /* 已经是最后的降级方案 */ }
             }
         }
@@ -70,8 +81,8 @@ class WakeWordEngineManager(private val context: Context) {
     private fun tryInitializeEngine(engineType: EngineType): Boolean {
         return try {
             currentEngine = when (engineType) {
-                EngineType.PORCUPINE -> createPorcupineEngine()
                 EngineType.BAIDU -> createBaiduEngine()
+                EngineType.PORCUPINE -> createPorcupineEngine()
                 EngineType.ENERGY -> createEnergyEngine()
             }
 
@@ -90,9 +101,34 @@ class WakeWordEngineManager(private val context: Context) {
     }
 
     /**
+     * 创建百度语音唤醒引擎
+     */
+    private fun createBaiduEngine(): BaiduWakeWordDetector? {
+        if (config.baiduAppId.isBlank() || config.baiduApiKey.isBlank()) {
+            Timber.w("WakeWordEngineManager: Baidu credentials not configured")
+            return null
+        }
+
+        val detector = BaiduWakeWordDetector(
+            context = context,
+            appId = config.baiduAppId,
+            apiKey = config.baiduApiKey,
+            secretKey = config.baiduSecretKey,
+            wakeWordAssetPath = config.baiduWakeWordAsset,
+            onWakeWordDetected = { keyword ->
+                onWakeWordDetected?.invoke(keyword)
+            }
+        )
+
+        // 百度引擎需要手动启动监听
+        detector.startListening()
+        return detector
+    }
+
+    /**
      * 创建 Porcupine 引擎
      */
-    private fun createPorcupineEngine(): WakeWordDetector? {
+    private fun createPorcupineEngine(): PorcupineWakeWordDetector? {
         if (config.porcupineAccessKey.isBlank() ||
             config.porcupineAccessKey == "YOUR_ACCESS_KEY_HERE") {
             Timber.w("WakeWordEngineManager: Porcupine AccessKey not configured")
@@ -110,24 +146,9 @@ class WakeWordEngineManager(private val context: Context) {
     }
 
     /**
-     * 创建百度语音唤醒引擎
-     */
-    private fun createBaiduEngine(): WakeWordDetector? {
-        if (config.baiduAppId.isBlank() || config.baiduApiKey.isBlank()) {
-            Timber.w("WakeWordEngineManager: Baidu credentials not configured")
-            return null
-        }
-
-        // TODO: 实现百度语音唤醒引擎
-        // 需要百度 SDK AAR 文件
-        Timber.w("WakeWordEngineManager: Baidu engine not yet implemented")
-        return null
-    }
-
-    /**
      * 创建能量检测引擎（降级方案）
      */
-    private fun createEnergyEngine(): WakeWordDetector {
+    private fun createEnergyEngine(): EnergyWakeWordDetector {
         return EnergyWakeWordDetector(
             threshold = 1000,
             onWakeWordDetected = { keyword ->
@@ -168,6 +189,11 @@ class WakeWordEngineManager(private val context: Context) {
      * 获取当前引擎类型
      */
     fun getCurrentEngineType(): EngineType = currentEngineType
+
+    /**
+     * 当前引擎是否自己管理音频
+     */
+    fun isCurrentEngineSelfManaged(): Boolean = isSelfManagedAudio(currentEngineType)
 
     /**
      * 释放所有资源
