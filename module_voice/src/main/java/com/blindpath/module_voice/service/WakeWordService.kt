@@ -123,15 +123,17 @@ class WakeWordService : Service() {
         }
 
         // 配置引擎 - 百度为主引擎
+        // 使用 SDK 自带的默认 WakeUp.bin（包含预定义唤醒词"小度你好"）
+        // 如果默认模型能正常工作，说明 WakeUp_xiaozhi.bin 文件有问题
         val config = WakeWordEngineManager.EngineConfig(
             primaryEngine = WakeWordEngineManager.EngineType.BAIDU,
             fallbackEnabled = true,
             baiduAppId = BAIDU_APP_ID,
             baiduApiKey = BAIDU_API_KEY,
             baiduSecretKey = BAIDU_SECRET_KEY,
-            baiduWakeWordAsset = "WakeUp_xiaozhi.bin",
+            baiduWakeWordAsset = "WakeUp.bin",
             porcupineAccessKey = PORCUPINE_ACCESS_KEY,
-            wakeWord = "小智同学"
+            wakeWord = "小度你好"
         )
 
         engineManager.initialize(config)
