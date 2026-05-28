@@ -59,8 +59,8 @@ dependencies {
     // Porcupine Wake Word Detection
     implementation("ai.picovoice:porcupine-android:4.0.0")
 
-    // Baidu Speech Wake Word Detection (offline)
-    implementation(files("libs/bdasr_aipd_V3_20250717_1e379e2.aar"))
+    // Baidu Speech Wake Word SDK (extracted from AAR - JARs + SO libs)
+    implementation(files("libs/classes.jar", "libs/bdasr_V3_20250717_1e379e2.jar", "libs/auth_base_20260129.jar"))
 
     // Test dependencies
     testImplementation(libs.bundles.testing)
