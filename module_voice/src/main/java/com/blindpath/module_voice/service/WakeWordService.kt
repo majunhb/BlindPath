@@ -148,7 +148,12 @@ class WakeWordService : Service() {
         // 释放音频焦点
         audioFocusManager.abandonFocus("wakeword")
         
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
         stopSelf()
     }
     
