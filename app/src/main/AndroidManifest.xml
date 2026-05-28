@@ -20,8 +20,17 @@
     <uses-permission android:name="android.permission.CALL_PHONE" />
     
     <!-- 语音识别权限 -->
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+        <uses-permission android:name="android.permission.RECORD_AUDIO" />
+        <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+        
+        <!-- 语音唤醒服务权限 -->
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+        <uses-permission android:name="android.permission.WAKE_LOCK" />
+        <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+        
+        <!-- 蓝牙权限 -->
+        <uses-permission android:name="android.permission.BLUETOOTH" />
+        <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
@@ -63,6 +72,36 @@
             android:name="com.blindpath.module_navigation.service.NavigationService"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <!-- 语音唤醒服务 -->
+        <service
+            android:name="com.blindpath.module_voice.service.WakeWordService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- 蓝牙音频接收器 -->
+        <receiver
+            android:name="com.blindpath.module_voice.receiver.BluetoothAudioReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED" />
+                <action android:name="android.media.ACTION_SCO_AUDIO_STATE_UPDATED" />
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 开机启动接收器 -->
+        <receiver
+            android:name="com.blindpath.module_voice.receiver.BootCompletedReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 
