@@ -7,30 +7,31 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
+import android.os.Build
 import timber.log.Timber
 
 /**
  * 蓝牙耳机/骨传导耳机状态监听接收器
- * 
+ *
  * 功能：
  * - 监听蓝牙耳机连接/断开
  * - 自动切换音频路由到蓝牙耳机
  * - 支持骨传导耳机
  */
 class BluetoothAudioReceiver : BroadcastReceiver() {
-    
+
     companion object {
         private var isBluetoothHeadsetConnected = false
-        
+
         fun isHeadsetConnected(): Boolean = isBluetoothHeadsetConnected
     }
-    
+
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED -> {
                 val state = intent.getIntExtra(BluetoothHeadset.EXTRA_STATE, BluetoothHeadset.STATE_DISCONNECTED)
-                val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
-                
+                val device = getParcelableExtraCompat(intent, BluetoothDevice.EXTRA_DEVICE)
+
                 when (state) {
                     BluetoothHeadset.STATE_CONNECTED -> {
                         Timber.i("BluetoothAudio: Headset connected - ${device?.name}")
@@ -46,7 +47,7 @@ class BluetoothAudioReceiver : BroadcastReceiver() {
                     }
                 }
             }
-            
+
             AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED -> {
                 val state = intent.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, AudioManager.SCO_AUDIO_STATE_DISCONNECTED)
                 when (state) {
@@ -61,22 +62,34 @@ class BluetoothAudioReceiver : BroadcastReceiver() {
                     }
                 }
             }
-            
+
             BluetoothDevice.ACTION_ACL_CONNECTED -> {
-                val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                val device = getParcelableExtraCompat(intent, BluetoothDevice.EXTRA_DEVICE)
                 Timber.d("BluetoothAudio: ACL connected - ${device?.name} [${device?.type}]")
             }
-            
+
             BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
-                val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                val device = getParcelableExtraCompat(intent, BluetoothDevice.EXTRA_DEVICE)
                 Timber.d("BluetoothAudio: ACL disconnected - ${device?.name}")
             }
         }
     }
-    
+
+    /**
+     * 兼容API 33+的getParcelableExtra方法
+     */
+    private inline fun <reified T : android.os.Parcelable> getParcelableExtraCompat(intent: Intent, name: String): T? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra(name, T::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent.getParcelableExtra(name)
+        }
+    }
+
     private fun switchToBluetoothAudio(context: Context, useBluetooth: Boolean) {
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        
+
         try {
             if (useBluetooth) {
                 // 切换到蓝牙耳机

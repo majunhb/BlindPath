@@ -43,7 +43,7 @@ class VoiceRepositoryImpl @Inject constructor(
     // 优先级队列（按优先级排序）
     private val announcementQueue = PriorityBlockingQueue<VoiceRequest>(
         11,
-        compareBy { it.priority.level }
+        compareBy<VoiceRequest> { it.priority.level }
     )
 
     // 去重缓存：记录最近播报的内容
@@ -84,21 +84,21 @@ class VoiceRepositoryImpl @Inject constructor(
                         Timber.e("No TTS language available")
                         _state.update { it.copy(lastError = "不支持任何语音语言") }
                         isInitialized = false
-                        if (continuation.isActive) continuation.resume(Result.Success(false)) {}
+                        if (continuation.isActive) continuation.resume(Result.Success(false))
                     } else {
                         isInitialized = true
                         tts?.setSpeechRate(AppConfig.Voice.SPEECH_RATE)
                         _state.update { it.copy(isAvailable = true) }
-                        
+
                         // 启动队列处理器
                         startQueueProcessor()
-                        
+
                         Timber.d("TTS initialized successfully with priority queue")
-                        if (continuation.isActive) continuation.resume(Result.Success(true)) {}
+                        if (continuation.isActive) continuation.resume(Result.Success(true))
                     }
                 } else {
                     Timber.e("TTS initialization failed with status: $status")
-                    if (continuation.isActive) continuation.resume(Result.Success(false)) {}
+                    if (continuation.isActive) continuation.resume(Result.Success(false))
                 }
             }
             
