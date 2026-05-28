@@ -1,9 +1,9 @@
 package com.blindpath.module_voice.service
 
 import android.content.Context
-import com.baidu.aipe.asr.AipeEventManagerFactory
 import com.baidu.speech.EventListener
 import com.baidu.speech.EventManager
+import com.baidu.speech.EventManagerFactory
 import com.baidu.speech.asr.SpeechConstant
 import org.json.JSONObject
 import timber.log.Timber
@@ -14,17 +14,20 @@ import timber.log.Timber
  * 基于百度语音唤醒 SDK（ASR V3 3.5.1）实现
  *
  * SDK 调用链（反编译验证）：
- *   AipeEventManagerFactory.create(context, "wp")
- *     -> EventManagerFactory.create(context, "wp")  // 返回 EventManagerWp
- *     -> 包装为 AipeEventManager（注入 AK/SK 认证）
- *   -> aipeEventManager.send("wp.start", jsonParams, null, 0, 0)
- *     -> AipeEventManager 注入认证参数（appid, ak, sk）
- *     -> EventManagerWp.send("wp.start", params)
- *       -> WakeUpControl.postEvent("wp.start", params)
- *         -> initWp() 从 params 提取 appid, words, wp.kws-file 等
- *         -> WAK_CMD_LOAD_ENGINE 加载唤醒引擎
- *         -> 开始音频采集和唤醒检测
+ *   EventManagerFactory.create(context, "wp")
+ *     -> 直接 new EventManagerWp(context)  // 本地模式，不走 AIDL
+ *   -> eventManagerWp.send("wp.start", jsonParams, null, 0, 0)
+ *     -> WakeUpControl.postEvent("wp.start", params)
+ *       -> initWp() 从 params 提取 appid, words, kws-file 等
+ *       -> WAK_CMD_LOAD_ENGINE 加载唤醒引擎
+ *       -> 开始音频采集和唤醒检测
  *   -> native 回调 -> WakeUpControl -> EventListener.onEvent()
+ *
+ * 重要：绕过 AipeEventManagerFactory（AIPE 认证包装层）
+ * 原因：AipeEventManager.send() 会先做 token 认证，
+ *       如果认证失败或超时，命令不会传递到 EventManagerWp，
+ *       导致唤醒引擎完全无回调（wp.ready 都收不到）。
+ *       唤醒功能是纯本地运行，不需要在线认证。
  *
  * 回调事件名（SpeechConstant 定义）：
  *   "wp.data"  - 唤醒成功
@@ -65,37 +68,33 @@ class BaiduWakeWordDetector(
     }
 
     private fun initialize() {
-        if (appId.isBlank() || apiKey.isBlank() || secretKey.isBlank()) {
-            throw IllegalArgumentException("Baidu credentials cannot be empty")
+        if (appId.isBlank()) {
+            throw IllegalArgumentException("Baidu AppID cannot be empty")
         }
 
-        // 使用 AipeEventManagerFactory 创建唤醒事件管理器
-        // create(context, "wp") 内部调用 EventManagerFactory.create(context, "wp")
-        // 返回 EventManagerWp 实例，包装为 AipeEventManager（自动注入 AK/SK 认证）
-        val factory = AipeEventManagerFactory()
-        factory.setAkSk(appId, apiKey, secretKey)
-        wp = factory.create(context, "wp")
+        // 直接使用 EventManagerFactory 创建本地 EventManagerWp
+        // 不使用 AipeEventManagerFactory（其认证层会阻塞命令传递）
+        //
+        // 反编译验证：
+        // EventManagerFactory.create(context, "wp")
+        //   -> useRemote=false (默认)
+        //   -> 直接 new EventManagerWp(context)
+        //   -> 不涉及 AIDL/远程服务
+        wp = EventManagerFactory.create(context, "wp")
 
         if (wp == null) {
-            throw IllegalStateException("Failed to create EventManager for wake-up")
+            throw IllegalStateException("Failed to create EventManagerWp")
         }
 
         // 注册事件监听器
         wp?.registerListener(eventListener)
 
         isInitialized = true
-        Timber.i("$TAG: Initialized successfully (AppID: $appId)")
+        Timber.i("$TAG: Initialized successfully with direct EventManagerFactory (AppID: $appId)")
     }
 
     /**
      * 事件监听器 - 处理百度 SDK 回调
-     *
-     * 事件名来自 SpeechConstant 常量定义：
-     * - CALLBACK_EVENT_WAKEUP_SUCCESS = "wp.data"
-     * - CALLBACK_EVENT_WAKEUP_ERROR = "wp.error"
-     * - CALLBACK_EVENT_WAKEUP_READY = "wp.ready"
-     * - CALLBACK_EVENT_WAKEUP_STOPED = "wp.stoped"
-     * - CALLBACK_EVENT_WAKEUP_EXIT = "wp.exit"
      */
     private val eventListener = EventListener { name, params, data, offset, length ->
         Timber.d("$TAG: onEvent name=$name, params=$params, dataLen=$length")
@@ -160,12 +159,10 @@ class BaiduWakeWordDetector(
      * 开始监听唤醒词
      *
      * 根据反编译 WakeUpControl.initWp()，需要传入以下参数：
-     * - "appid": 应用 ID（AipeEventManager 也会注入，但 native 层也需要）
-     * - "wp.kws-file": 唤醒词模型文件路径（对应 SpeechConstant.WP_WORDS_FILE = "kws-file"）
+     * - "appid": 应用 ID
+     * - "kws-file": 唤醒词模型文件路径
      * - "words": 唤醒词文本列表（JSONArray 格式）
      * - "accept-audio-volume": 是否接受音频音量回调
-     *
-     * 注意：AipeEventManager.send() 会自动注入认证参数到 JSON 中
      */
     fun startListening() {
         if (!isInitialized || wp == null) {
@@ -182,8 +179,6 @@ class BaiduWakeWordDetector(
             val params = JSONObject()
 
             // 唤醒词模型文件路径（assets 目录）
-            // SpeechConstant.WP_WORDS_FILE = "kws-file"
-            // WakeUpControl.initWp() 读取 "wp.kws-file" 参数
             params.put("kws-file", "assets:///$wakeWordAssetPath")
 
             // appid - WakeUpControl.initWp() 需要从 params 中提取
@@ -217,7 +212,6 @@ class BaiduWakeWordDetector(
         if (wp == null || !isListening) return
 
         try {
-            // SpeechConstant.WAKEUP_STOP = "wp.stop"
             wp?.send(SpeechConstant.WAKEUP_STOP, null, null, 0, 0)
             isListening = false
             Timber.i("$TAG: Stopped listening")
