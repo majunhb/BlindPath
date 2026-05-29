@@ -1,4 +1,4 @@
-package com.blindpath.module_voice.service
+﻿package com.blindpath.module_voice.service
 
 import android.Manifest
 import android.app.Notification
@@ -18,6 +18,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import dagger.hilt.android.AndroidEntryPoint
 import com.blindpath.module_voice.BuildConfig
+import com.blindpath.module_voice.domain.model.WakeWordConfig
 import kotlinx.coroutines.*
 import timber.log.Timber
 import javax.inject.Inject
