@@ -44,6 +44,16 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Create local.properties from secrets
+        run: |
+          echo "BAIDU_APP_ID=${{ secrets.BAIDU_APP_ID }}" > local.properties
+          echo "BAIDU_API_KEY=${{ secrets.BAIDU_API_KEY }}" >> local.properties
+          echo "BAIDU_SECRET_KEY=${{ secrets.BAIDU_SECRET_KEY }}" >> local.properties
+          echo "IFLYTEK_APP_ID=${{ secrets.IFLYTEK_APP_ID }}" >> local.properties
+          echo "IFLYTEK_API_KEY=${{ secrets.IFLYTEK_API_KEY }}" >> local.properties
+          echo "IFLYTEK_API_SECRET=${{ secrets.IFLYTEK_API_SECRET }}" >> local.properties
+          echo "✅ local.properties created with API credentials"
+
       - name: Clean KSP generated outputs
         run: ./gradlew clean --no-daemon
 
