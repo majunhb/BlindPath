@@ -14,20 +14,12 @@ import timber.log.Timber
  * 基于百度语音唤醒 SDK（ASR V3 3.5.1）实现
  *
  * SDK 调用链（反编译验证）：
- *   EventManagerFactory.create(context, "wp")
- *     -> 直接 new EventManagerWp(context)  // 本地模式，不走 AIDL
- *   -> eventManagerWp.send("wp.start", jsonParams, null, 0, 0)
- *     -> WakeUpControl.postEvent("wp.start", params)
- *       -> initWp() 从 params 提取 appid, words, kws-file 等
- *       -> WAK_CMD_LOAD_ENGINE 加载唤醒引擎
- *       -> 开始音频采集和唤醒检测
- *   -> native 回调 -> WakeUpControl -> EventListener.onEvent()
- *
- * 重要：绕过 AipeEventManagerFactory（AIPE 认证包装层）
- * 原因：AipeEventManager.send() 会先做 token 认证，
- *       如果认证失败或超时，命令不会传递到 EventManagerWp，
- *       导致唤醒引擎完全无回调（wp.ready 都收不到）。
- *       唤醒功能是纯本地运行，不需要在线认证。
+ *   EventManagerFactory.create(context, "wp", true)
+ *     -> new EventManagerRemote2Local(context, "wp")  // 远程 AIDL 模式
+ *   -> eventManagerRemote2Local.send("wp.start", jsonParams, ...)
+ *     -> bindService(EventRecognitionService) 绑定远程服务
+ *     -> Handler.postDelayed() 在主线程通过 AIDL remoteEM 转发到远程服务
+ *   -> 远程服务处理 -> native 唤醒引擎 -> AIDL 回调到 EventListener
  *
  * 回调事件名（SpeechConstant 定义）：
  *   "wp.data"  - 唤醒成功
@@ -72,26 +64,14 @@ class BaiduWakeWordDetector(
             throw IllegalArgumentException("Baidu AppID cannot be empty")
         }
 
-        // 直接使用 EventManagerFactory 创建本地 EventManagerWp
-        // 不使用 AipeEventManagerFactory（其认证层会阻塞命令传递）
-        //
-        // 反编译验证：
-        // EventManagerFactory.create(context, "wp")
-        //   -> useRemote=false (默认)
-        //   -> 直接 new EventManagerWp(context)
-        //   -> 不涉及 AIDL/远程服务
-        wp = EventManagerFactory.create(context, "wp")
+        // 使用远程 AIDL 模式 (useRemote=true)
+        // EventManagerRemote2Local 通过 bindService 绑定 EventRecognitionService，
+        // 通过 AIDL 接口与远程服务通信
+        // 服务端负责初始化 native 唤醒引擎，可能会获得更完整的错误信息
+        wp = EventManagerFactory.create(context, "wp", true)  // useRemote=true
 
         if (wp == null) {
-            throw IllegalStateException("Failed to create EventManagerWp")
-        }
-
-        // 关键：EventManagerWp 构造函数会捕获 WakeUpControl 的异常并静默处理
-        // 需要通过反射检查内部 mException 字段，确认 native 库加载是否成功
-        val initException = checkEventManagerWpException()
-        if (initException != null) {
-            Timber.e(initException, "$TAG: EventManagerWp initialization failed (native lib load error)")
-            throw IllegalStateException("WakeUpControl initialization failed: ${initException.message}", initException)
+            throw IllegalStateException("Failed to create EventManager (AIDL mode)")
         }
 
         // 注册事件监听器
@@ -99,26 +79,6 @@ class BaiduWakeWordDetector(
 
         isInitialized = true
         Timber.i("$TAG: Initialized successfully with direct EventManagerFactory (AppID: $appId)")
-    }
-
-    /**
-     * 通过反射检查 EventManagerWp 内部的 mException 字段
-     * 反编译发现：EventManagerWp 构造函数捕获所有 Exception 并存储到 mException 字段
-     * 如果 mException 不为 null，说明 WakeUpControl/native 库初始化失败
-     */
-    private fun checkEventManagerWpException(): Exception? {
-        return try {
-            val wpClass = wp?.javaClass
-            // mException 是 EventManagerWp 的私有字段
-            val mExceptionField = wpClass?.getDeclaredField("mException")
-            mExceptionField?.isAccessible = true
-            val exception = mExceptionField?.get(wp) as? Exception
-            mExceptionField?.isAccessible = false
-            exception
-        } catch (e: Exception) {
-            Timber.w(e, "$TAG: Failed to check EventManagerWp exception via reflection")
-            null
-        }
     }
 
     /**
