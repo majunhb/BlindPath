@@ -15,6 +15,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -198,6 +199,8 @@ fun MainScreen(
                 onNavigationClick = { showNavigation = true },
                 onSosClick = onSosClick,
                 onSettingsClick = { showSettings = true },
+                onObstacleClick = { showObstacleDetection = true },
+                onLocationClick = { showLocation = true },
                 isListening = uiState.isListening,
                 onStartListening = { viewModel.startListening() },
                 onStopListening = { viewModel.stopListening() }
@@ -231,6 +234,8 @@ private fun MainContentV5(
     onNavigationClick: () -> Unit,
     onSosClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onObstacleClick: () -> Unit,
+    onLocationClick: () -> Unit,
     isListening: Boolean = false,
     onStartListening: () -> Unit = {},
     onStopListening: () -> Unit = {}
@@ -284,10 +289,11 @@ private fun MainContentV5(
                     .weight(1f)
                     .padding(horizontal = 12.dp)
             ) {
-                // 上半：摄像头预览
+                // 上半：摄像头预览（点击进入障碍物检测）
                 CameraPreviewCard(
                     hasPermission = hasCameraPermission,
                     onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
+                    onClick = onObstacleClick,
                     lifecycleOwner = lifecycleOwner,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -297,8 +303,9 @@ private fun MainContentV5(
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                // 下半：地图预览（简化版）
+                // 下半：地图预览（点击进入定位界面）
                 MapPreviewCard(
+                    onClick = onLocationClick,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -327,22 +334,26 @@ private fun MainContentV5(
 
 /**
  * 摄像头预览卡片 - 首页上半部分
+ * 点击跳转到完整的障碍物检测界面
  */
 @Composable
 private fun CameraPreviewCard(
     hasPermission: Boolean,
     onRequestPermission: () -> Unit,
+    onClick: () -> Unit,
     lifecycleOwner: androidx.lifecycle.LifecycleOwner,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
             .background(Color(0xFF1A1A2E))
+            .clickable(onClick = onClick)
             .semantics {
-                contentDescription = "摄像头实时预览，显示前方环境画面"
+                contentDescription = "环境感知，点击开启障碍物检测"
             }
     ) {
         if (hasPermission) {
+            // 显示预览画面缩略图
             AndroidView(
                 factory = { ctx ->
                     PreviewView(ctx).apply {
@@ -369,21 +380,32 @@ private fun CameraPreviewCard(
                 }
             )
             
-            // 安全状态叠加层
+            // 点击提示叠加层
             Surface(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
+                    .align(Alignment.Center)
                     .padding(12.dp),
                 shape = RoundedCornerShape(8.dp),
-                color = Color(0xCC4CAF50) // 绿色安全
+                color = Color(0xCC1E90FF)
             ) {
-                Text(
-                    text = "环境安全",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Videocam,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "点击开启环境感知",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
             }
         } else {
             // 未授权时显示授权提示
@@ -418,17 +440,20 @@ private fun CameraPreviewCard(
 }
 
 /**
- * 地图预览卡片 - 首页下半部分（简化版）
+ * 地图预览卡片 - 首页下半部分
+ * 点击跳转到定位界面查看完整地图
  */
 @Composable
 private fun MapPreviewCard(
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
             .background(Color(0xFFF5F5F5))
+            .clickable(onClick = onClick)
             .semantics {
-                contentDescription = "地图预览，显示当前位置和周边信息"
+                contentDescription = "位置感知，点击查看详细位置信息"
             }
     ) {
         Column(
@@ -437,42 +462,43 @@ private fun MapPreviewCard(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Icon(
-                imageVector = Icons.Default.LocationOn,
+                imageVector = Icons.Default.Map,
                 contentDescription = null,
                 tint = Color(0xFF1E90FF),
                 modifier = Modifier.size(48.dp)
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "地图加载中...",
+                text = "位置感知",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF666666)
             )
         }
         
-        // 位置信息叠加层
+        // 点击提示叠加层
         Surface(
             modifier = Modifier
-                .align(Alignment.BottomStart)
+                .align(Alignment.BottomCenter)
                 .padding(12.dp),
             shape = RoundedCornerShape(8.dp),
-            color = Color.White.copy(alpha = 0.9f)
+            color = Color(0xCC1E90FF)
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.MyLocation,
                     contentDescription = null,
-                    tint = Color(0xFF1E90FF),
-                    modifier = Modifier.size(16.dp)
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "正在获取位置...",
+                    text = "点击查看位置",
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color(0xFF333333)
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
                 )
             }
         }
