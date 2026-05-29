@@ -106,6 +106,10 @@ dependencies {
     implementation(project(":module_community"))
     implementation(project(":module_trip_assist"))
 
+    // 科大讯飞 AIKit SDK（本地AAR依赖）
+    implementation(files("libs/AIKit.aar"))
+    implementation(files("libs/SparkChain.aar"))
+
     // ============ 高德地图 SDK ============
     // 方案一：仅定位 + 搜索（减少约 20MB）
     // 如果不需要地图显示，使用此方案

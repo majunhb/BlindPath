@@ -74,9 +74,9 @@ dependencies {
     // Coroutines - 使用 version catalog bundle
     implementation(libs.kotlinx.coroutines.android)
 
-    // iFlytek AIKit SDK (用户上传的 AAR 文件)
+    // iFlytek AIKit SDK - 由app模块提供，此处使用compileOnly避免重复依赖
     // AIKit 是新版讯飞 SDK，支持唤醒+识别一体化
-    implementation(files("libs/AIKit.aar", "libs/SparkChain.aar"))
+    compileOnly(files("libs/AIKit.aar", "libs/SparkChain.aar"))
 
     // Baidu Speech Wake Word SDK (extracted from AAR - JARs + SO libs)
     implementation(files("libs/classes.jar", "libs/bdasr_V3_20250717_1e379e2.jar", "libs/auth_base_20260129.jar"))
