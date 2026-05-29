@@ -1,4 +1,4 @@
-package com.blindpath.module_voice.service
+﻿package com.blindpath.module_voice.service
 
 import android.content.Context
 import com.blindpath.module_voice.domain.model.WakeWordConfig
@@ -39,6 +39,8 @@ class WakeWordEngineManager(private val context: Context) {
         val baiduSecretKey: String = "",
         val baiduWakeWordAsset: String = WakeWordConfig.BAIDU_WAKE_WORD_ASSET,
         val xfAppId: String = "",
+        val xfApiKey: String = "",
+        val xfApiSecret: String = "",
         val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD
     )
 
@@ -140,6 +142,8 @@ class WakeWordEngineManager(private val context: Context) {
             val detector = XfWakeWordDetector(
                 context = context,
                 appId = config.xfAppId,
+                apiKey = config.xfApiKey,
+                apiSecret = config.xfApiSecret,
                 wakeWord = config.wakeWord,
                 onWakeWordDetected = { keyword ->
                     onWakeWordDetected?.invoke(keyword)
