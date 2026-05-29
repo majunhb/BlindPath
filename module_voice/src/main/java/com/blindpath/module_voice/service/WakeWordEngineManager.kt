@@ -133,8 +133,8 @@ class WakeWordEngineManager(private val context: Context) {
      * 创建科大讯飞 MSC 唤醒引擎
      */
     private fun createXfEngine(): XfWakeWordDetector? {
-        if (config.xfAppId.isBlank()) {
-            Timber.w("WakeWordEngineManager: iFlytek AppID not configured")
+        if (config.xfAppId.isBlank() || config.xfApiKey.isBlank() || config.xfApiSecret.isBlank()) {
+            Timber.w("WakeWordEngineManager: iFlytek credentials not fully configured")
             return null
         }
 

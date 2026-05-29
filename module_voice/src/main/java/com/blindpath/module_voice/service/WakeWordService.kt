@@ -124,9 +124,12 @@ class WakeWordService : Service() {
             Timber.i("WakeWordService: Engine switched to $engineType")
         }
 
-        // 配置引擎 - 百度为主引擎
-        // 使用 SDK 自带的默认 WakeUp.bin（包含预定义唤醒词"小度你好"）
-        // 如果默认模型能正常工作，说明 WakeUp_xiaozhi.bin 文件有问题
+        // 配置引擎 - 百度为主引擎，讯飞为备用引擎
+        // 调试：打印BuildConfig值（正式发布前移除）
+        Timber.d("WakeWordService: BuildConfig.BAIDU_APP_ID=${BuildConfig.BAIDU_APP_ID}")
+        Timber.d("WakeWordService: BuildConfig.BAIDU_API_KEY=${BuildConfig.BAIDU_API_KEY}")
+        Timber.d("WakeWordService: BuildConfig.IFLYTEK_APP_ID=${BuildConfig.IFLYTEK_APP_ID}")
+        
         val config = WakeWordEngineManager.EngineConfig(
             primaryEngine = WakeWordEngineManager.EngineType.BAIDU,
             fallbackEnabled = true,
@@ -135,6 +138,8 @@ class WakeWordService : Service() {
             baiduSecretKey = BuildConfig.BAIDU_SECRET_KEY,
             baiduWakeWordAsset = WakeWordConfig.BAIDU_WAKE_WORD_ASSET,
             xfAppId = BuildConfig.IFLYTEK_APP_ID,
+            xfApiKey = BuildConfig.IFLYTEK_API_KEY,
+            xfApiSecret = BuildConfig.IFLYTEK_API_SECRET,
             wakeWord = WakeWordConfig.DEFAULT_WAKE_WORD
         )
 
