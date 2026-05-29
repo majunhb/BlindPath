@@ -1,4 +1,4 @@
-package com.blindpath.module_voice.service
+﻿package com.blindpath.module_voice.service
 
 import android.content.Context
 import android.os.Bundle
@@ -92,7 +92,7 @@ class XfWakeWordDetector(
     /**
      * 通过反射调用 VoiceWakeuper.setParameter()
      */
-    private fun setParameter(key: String, value: String) {
+    private fun setParameter(key: String, value: String?) {
         try {
             wakeuper?.javaClass?.getMethod("setParameter", String::class.java, Any::class.java)
                 ?.invoke(wakeuper, key, value)
