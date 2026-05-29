@@ -1,4 +1,4 @@
-﻿package com.blindpath.module_voice.service
+package com.blindpath.module_voice.service
 
 import android.Manifest
 import android.app.Notification
@@ -21,6 +21,8 @@ import com.blindpath.module_voice.BuildConfig
 import com.blindpath.module_voice.domain.model.WakeWordConfig
 import kotlinx.coroutines.*
 import timber.log.Timber
+import java.io.File
+import java.util.Properties
 import javax.inject.Inject
 
 /**
@@ -113,6 +115,50 @@ class WakeWordService : Service() {
     }
 
     /**
+     * 从 local.properties 文件直接读取凭证（不依赖 BuildConfig）
+     * BuildConfig 在某些构建环境下可能为空，此方法作为备用方案
+     */
+    private fun readCredentialsFromLocalProperties(): Map<String, String> {
+        val creds = mutableMapOf<String, String>()
+        try {
+            // 尝试多个可能的路径
+            val paths = listOf(
+                "/data/local/tmp/com.blindpath.app/local.properties",
+                filesDir.absolutePath + "/../local.properties",
+                "/sdcard/BlindPath/local.properties"
+            )
+            
+            for (path in paths) {
+                val file = File(path)
+                if (file.exists()) {
+                    val props = Properties()
+                    file.inputStream().use { props.load(it) }
+                    props.forEach { key, value ->
+                        creds[key.toString()] = value.toString()
+                    }
+                    Timber.i("WakeWordService: Loaded credentials from $path (${creds.size} values)")
+                    break
+                }
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "WakeWordService: Failed to read local.properties")
+        }
+        return creds
+    }
+
+    /**
+     * 获取凭证值：优先 BuildConfig，其次 local.properties 文件
+     */
+    private fun getCredential(buildConfigValue: String, propertyName: String, localProps: Map<String, String>): String {
+        if (buildConfigValue.isNotBlank()) return buildConfigValue
+        val fileValue = localProps[propertyName] ?: ""
+        if (fileValue.isNotBlank()) {
+            Timber.i("WakeWordService: Using $propertyName from local.properties (BuildConfig was empty)")
+        }
+        return fileValue
+    }
+
+    /**
      * 初始化引擎管理器
      */
     private fun initializeEngineManager() {
@@ -124,22 +170,29 @@ class WakeWordService : Service() {
             Timber.i("WakeWordService: Engine switched to $engineType")
         }
 
-        // 配置引擎 - 百度为主引擎，讯飞为备用引擎
-        // 调试：打印BuildConfig值（正式发布前移除）
-        Timber.d("WakeWordService: BuildConfig.BAIDU_APP_ID=${BuildConfig.BAIDU_APP_ID}")
-        Timber.d("WakeWordService: BuildConfig.BAIDU_API_KEY=${BuildConfig.BAIDU_API_KEY}")
-        Timber.d("WakeWordService: BuildConfig.IFLYTEK_APP_ID=${BuildConfig.IFLYTEK_APP_ID}")
+        // 读取凭证：优先 BuildConfig，其次 local.properties 文件
+        val localProps = readCredentialsFromLocalProperties()
+        
+        val baiduAppId = getCredential(BuildConfig.BAIDU_APP_ID, "BAIDU_APP_ID", localProps)
+        val baiduApiKey = getCredential(BuildConfig.BAIDU_API_KEY, "BAIDU_API_KEY", localProps)
+        val baiduSecretKey = getCredential(BuildConfig.BAIDU_SECRET_KEY, "BAIDU_SECRET_KEY", localProps)
+        val xfAppId = getCredential(BuildConfig.IFLYTEK_APP_ID, "IFLYTEK_APP_ID", localProps)
+        val xfApiKey = getCredential(BuildConfig.IFLYTEK_API_KEY, "IFLYTEK_API_KEY", localProps)
+        val xfApiSecret = getCredential(BuildConfig.IFLYTEK_API_SECRET, "IFLYTEK_API_SECRET", localProps)
+        
+        Timber.d("WakeWordService: BAIDU_APP_ID=$baiduAppId")
+        Timber.d("WakeWordService: IFLYTEK_APP_ID=$xfAppId")
         
         val config = WakeWordEngineManager.EngineConfig(
             primaryEngine = WakeWordEngineManager.EngineType.BAIDU,
             fallbackEnabled = true,
-            baiduAppId = BuildConfig.BAIDU_APP_ID,
-            baiduApiKey = BuildConfig.BAIDU_API_KEY,
-            baiduSecretKey = BuildConfig.BAIDU_SECRET_KEY,
+            baiduAppId = baiduAppId,
+            baiduApiKey = baiduApiKey,
+            baiduSecretKey = baiduSecretKey,
             baiduWakeWordAsset = WakeWordConfig.BAIDU_WAKE_WORD_ASSET,
-            xfAppId = BuildConfig.IFLYTEK_APP_ID,
-            xfApiKey = BuildConfig.IFLYTEK_API_KEY,
-            xfApiSecret = BuildConfig.IFLYTEK_API_SECRET,
+            xfAppId = xfAppId,
+            xfApiKey = xfApiKey,
+            xfApiSecret = xfApiSecret,
             wakeWord = WakeWordConfig.DEFAULT_WAKE_WORD
         )
 
