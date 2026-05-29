@@ -120,6 +120,9 @@ dependencies {
     // 当前使用此方案，如需优化体积可切换到方案一
     implementation(libs.amap.sdk)
 
+    // CameraX - 首页摄像头预览
+    implementation(libs.bundles.camerax)
+
     // Hilt - 使用 version catalog
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
