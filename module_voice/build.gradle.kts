@@ -70,9 +70,10 @@ dependencies {
     // Coroutines - 使用 version catalog bundle
     implementation(libs.kotlinx.coroutines.android)
 
-    // iFlytek MSC Wake Word SDK (put msc.jar in libs/)
+    // iFlytek MSC Wake Word SDK (optional - put msc.jar in libs/ to enable)
     // 下载地址: https://www.xfyun.cn/services/awaken
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("msc.jar"))))
+    // 使用反射调用，无 msc.jar 也能编译通过
+    compileOnly(fileTree(mapOf("dir" to "libs", "include" to listOf("msc.jar"))))
 
     // Baidu Speech Wake Word SDK (extracted from AAR - JARs + SO libs)
     implementation(files("libs/classes.jar", "libs/bdasr_V3_20250717_1e379e2.jar", "libs/auth_base_20260129.jar"))

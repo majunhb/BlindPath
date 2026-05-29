@@ -1,45 +1,50 @@
 package com.blindpath.module_voice.service
 
 import android.content.Context
+import android.os.Bundle
 import com.blindpath.module_voice.domain.model.WakeWordConfig
-import com.iflytek.cloud.SpeechConstant
-import com.iflytek.cloud.SpeechError
-import com.iflytek.cloud.VoiceWakeuper
-import com.iflytek.cloud.WakeuperListener
-import com.iflytek.cloud.WakeuperResult
-import com.iflytek.cloud.util.ResourceUtil
-import org.json.JSONObject
 import timber.log.Timber
+import org.json.JSONObject
 
 /**
- * 科大讯飞 MSC 语音唤醒检测器
+ * 科大讯飞 MSC 语音唤醒检测器（反射调用）
  *
- * 基于讯飞 MSC SDK 的 VoiceWakeuper 实现。
- * SDK 自动管理音频采集（自管理模式）。
+ * 通过反射调用讯飞 MSC SDK 的 VoiceWakeuper API，
+ * 这样在没有 msc.jar 的环境下也能编译通过。
+ * 运行时如果 msc.jar 不存在，初始化会优雅失败并返回 null。
  *
  * 集成要求：
- * 1. 从讯飞开放平台下载 MSC SDK（包含 msc.jar + libmsc.so）
+ * 1. 从讯飞开放平台下载 MSC SDK
  * 2. 将 msc.jar 放入 module_voice/libs/
  * 3. 将 libmsc.so 放入 module_voice/src/main/jniLibs/{abi}/
- * 4. 在讯飞控制台制作唤醒词资源，得到 {appid}.jet 文件
- * 5. 将 .jet 文件放入 module_voice/src/main/assets/ivw/
- * 6. 在 local.properties 中配置 IFLYTEK_APP_ID
+ * 4. 唤醒词资源 {appid}.jet 放入 module_voice/src/main/assets/ivw/
+ * 5. 在 local.properties 配置 IFLYTEK_APP_ID
  *
  * 文档：https://www.xfyun.cn/doc/mscapi/Android/androidwakeuper.html
  */
 class XfWakeWordDetector(
     private val context: Context,
     private val appId: String,
-    private val threshold: Int = 1450,
+    private val threshold: Int = WakeWordConfig.XF_WAKE_THRESHOLD,
     private val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD,
     private val onWakeWordDetected: (String) -> Unit
 ) : WakeWordDetector {
 
     companion object {
         private const val TAG = "XfWakeWordDetector"
+
+        // 讯飾 SDK 类名
+        private const val CLS_WAKEUPER = "com.iflytek.cloud.VoiceWakeuper"
+        private const val CLS_WAKEUPER_RESULT = "com.iflytek.cloud.WakeuperResult"
+        private const val CLS_SPEECH_ERROR = "com.iflytek.cloud.SpeechError"
+        private const val CLS_SPEECH_CONSTANT = "com.iflytek.cloud.SpeechConstant"
+        private const val CLS_RESOURCE_UTIL = "com.iflytek.cloud.util.ResourceUtil"
+
+        // 反射缓存
+        private var sdkAvailable: Boolean? = null
     }
 
-    private var wakeuper: VoiceWakeuper? = null
+    private var wakeuper: Any? = null  // VoiceWakeuper instance
     private var isListening = false
     private var isInitialized = false
 
@@ -56,11 +61,28 @@ class XfWakeWordDetector(
             throw IllegalArgumentException("iFlytek AppID cannot be empty")
         }
 
-        // 创建唤醒对象
-        wakeuper = VoiceWakeuper.createWakeuper(context, null)
+        // Check if SDK is available (cache the result)
+        if (sdkAvailable == null) {
+            sdkAvailable = try {
+                Class.forName(CLS_WAKEUPER)
+                true
+            } catch (e: ClassNotFoundException) {
+                Timber.w("$TAG: MSC SDK not found (msc.jar not in libs/)")
+                false
+            }
+        }
+
+        if (sdkAvailable != true) {
+            throw IllegalStateException("iFlytek MSC SDK not available")
+        }
+
+        // VoiceWakeuper.createWakeuper(context, null)
+        val createMethod = Class.forName(CLS_WAKEUPER)
+            .getMethod("createWakeuper", Context::class.java, Any::class.java)
+        wakeuper = createMethod.invoke(null, context, null)
 
         if (wakeuper == null) {
-            throw IllegalStateException("Failed to create VoiceWakeuper (is MSC SDK in libs/?)")
+            throw IllegalStateException("Failed to create VoiceWakeuper")
         }
 
         isInitialized = true
@@ -68,42 +90,66 @@ class XfWakeWordDetector(
     }
 
     /**
-     * 唤醒事件监听器
+     * 通过反射调用 VoiceWakeuper.setParameter()
      */
-    private val wakeuperListener = object : WakeuperListener {
-        override fun onResult(result: WakeuperResult?) {
-            try {
-                val text = result?.resultString ?: return
-                Timber.i("$TAG: onResult: $text")
+    private fun setParameter(key: String, value: String) {
+        try {
+            wakeuper?.javaClass?.getMethod("setParameter", String::class.java, Any::class.java)
+                ?.invoke(wakeuper, key, value)
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: setParameter failed: $key=$value")
+        }
+    }
 
-                val json = JSONObject(text)
-                val keyword = json.optString("keyword", "")
-                val score = json.optInt("score", 0)
-                Timber.i("$TAG: Wake word detected! keyword=$keyword, score=$score")
+    /**
+     * 创建动态代理的 WakeuperListener
+     */
+    private fun createWakeuperListener(): Any {
+        val listenerClass = Class.forName("com.iflytek.cloud.WakeuperListener")
 
-                onWakeWordDetected.invoke(wakeWord)
-            } catch (e: Exception) {
-                Timber.e(e, "$TAG: Failed to parse wake result, triggering callback anyway")
-                onWakeWordDetected.invoke(wakeWord)
+        return java.lang.reflect.Proxy.newProxyInstance(
+            listenerClass.classLoader,
+            arrayOf(listenerClass)
+        ) { _, method, args ->
+            when (method.name) {
+                "onResult" -> {
+                    try {
+                        val result = args?.get(0) ?: return@newProxyInstance null
+                        val resultStr = result.javaClass.getMethod("getResultString").invoke(result) as? String
+                        Timber.i("$TAG: onResult: $resultStr")
+                        if (resultStr != null) {
+                            val json = JSONObject(resultStr)
+                            val keyword = json.optString("keyword", "")
+                            val score = json.optInt("score", 0)
+                            Timber.i("$TAG: Wake word detected! keyword=$keyword, score=$score")
+                        }
+                        onWakeWordDetected.invoke(wakeWord)
+                    } catch (e: Exception) {
+                        Timber.e(e, "$TAG: Failed to parse wake result, triggering callback anyway")
+                        onWakeWordDetected.invoke(wakeWord)
+                    }
+                    null
+                }
+                "onError" -> {
+                    val error = args?.get(0)
+                    val errorCode = error?.javaClass?.getMethod("getErrorCode")?.invoke(error) as? Int ?: -1
+                    val errorDesc = error?.javaClass?.getMethod("getErrorDescription")?.invoke(error) as? String ?: "unknown"
+                    Timber.e("$TAG: Wake error: code=$errorCode, desc=$errorDesc")
+                    null
+                }
+                "onBeginOfSpeech" -> {
+                    Timber.d("$TAG: onBeginOfSpeech")
+                    null
+                }
+                "onEvent" -> {
+                    Timber.d("$TAG: onEvent")
+                    null
+                }
+                "onVolumeChanged" -> {
+                    null
+                }
+                else -> null
             }
-        }
-
-        override fun onError(error: SpeechError?) {
-            val errorCode = error?.errorCode ?: -1
-            val errorDesc = error?.errorDescription ?: "unknown"
-            Timber.e("$TAG: Wake error: code=$errorCode, desc=$errorDesc")
-        }
-
-        override fun onBeginOfSpeech() {
-            Timber.d("$TAG: onBeginOfSpeech")
-        }
-
-        override fun onEvent(eventType: Int, isLast: Int, arg2: Int, obj: Bundle?) {
-            Timber.d("$TAG: onEvent: type=$eventType, isLast=$isLast")
-        }
-
-        override fun onVolumeChanged(volume: Int) {
-            // 音量变化，可用于调试
         }
     }
 
@@ -123,36 +169,54 @@ class XfWakeWordDetector(
 
         try {
             // 清空参数
-            wakeuper?.setParameter(SpeechConstant.PARAMS, null)
+            setParameter("params", null)
 
-            // 唤醒门限值（范围 [0, 3000]，默认 1450）
-            wakeuper?.setParameter(SpeechConstant.IVW_THRESHOLD, "0:$threshold")
+            // 唤醒门限值
+            setParameter("ivw_threshold", "0:$threshold")
 
             // 唤醒模式：wakeup = 纯唤醒
-            wakeuper?.setParameter(SpeechConstant.IVW_SST, "wakeup")
+            setParameter("ivw_sst", "wakeup")
 
             // 持续唤醒：1 = 循环监听
-            wakeuper?.setParameter(SpeechConstant.KEEP_ALIVE, "1")
+            setParameter("keep_alive", "1")
 
             // 闭环优化网络模式：0 = 关闭
-            wakeuper?.setParameter(SpeechConstant.IVW_NET_MODE, "0")
+            setParameter("ivw_net_mode", "0")
 
-            // 设置唤醒资源路径（assets/ivw/{appid}.jet）
-            val resPath = ResourceUtil.generateResourcePath(
-                context,
-                ResourceUtil.RESOURCE_TYPE.assets,
-                "ivw/$appId.jet"
-            )
-            wakeuper?.setParameter(SpeechConstant.IVW_RES_PATH, resPath)
+            // 设置唤醒资源路径
+            val resPath = generateResourcePath()
+            setParameter("ivw_res_path", resPath)
             Timber.i("$TAG: Resource path: $resPath")
 
             // 启动唤醒
-            wakeuper?.startListening(wakeuperListener)
+            val listener = createWakeuperListener()
+            wakeuper?.javaClass?.getMethod("startListening", Class.forName("com.iflytek.cloud.WakeuperListener"))
+                ?.invoke(wakeuper, listener)
             isListening = true
             Timber.i("$TAG: Wake-up started, listening for '$wakeWord'")
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Failed to start listening")
             isListening = false
+        }
+    }
+
+    /**
+     * 生成唤醒资源路式
+     */
+    private fun generateResourcePath(): String {
+        return try {
+            val resourceUtilClass = Class.forName(CLS_RESOURCE_UTIL)
+            val generateMethod = resourceUtilClass.getMethod(
+                "generateResourcePath",
+                Context::class.java,
+                Int::class.javaPrimitiveType,
+                String::class.java
+            )
+            // RESOURCE_TYPE.assets = 1
+            generateMethod.invoke(null, context, 1, "ivw/$appId.jet") as String
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: Failed to generate resource path")
+            "assets:///ivw/$appId.jet"
         }
     }
 
@@ -163,7 +227,7 @@ class XfWakeWordDetector(
         if (wakeuper == null || !isListening) return
 
         try {
-            wakeuper?.stopListening()
+            wakeuper?.javaClass?.getMethod("stopListening")?.invoke(wakeuper)
             isListening = false
             Timber.i("$TAG: Stopped listening")
         } catch (e: Exception) {
@@ -185,7 +249,7 @@ class XfWakeWordDetector(
     override fun release() {
         stopListening()
         try {
-            wakeuper?.destroy()
+            wakeuper?.javaClass?.getMethod("destroy")?.invoke(wakeuper)
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Error during release")
         }
