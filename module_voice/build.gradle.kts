@@ -18,7 +18,7 @@ android {
         val baiduAppId = project.findProperty("BAIDU_APP_ID") as String? ?: ""
         val baiduApiKey = project.findProperty("BAIDU_API_KEY") as String? ?: ""
         val baiduSecretKey = project.findProperty("BAIDU_SECRET_KEY") as String? ?: ""
-        val porcupineAccessKey = project.findProperty("PORCUPINE_ACCESS_KEY") as String? ?: ""
+        val xfAppId = project.findProperty("IFLYTEK_APP_ID") as String? ?: ""
 
         buildConfigField("String", "BAIDU_APP_ID", "\"`${baiduAppId}\"")
         buildConfigField("String", "BAIDU_API_KEY", "\"`${baiduApiKey}\"")
@@ -70,8 +70,9 @@ dependencies {
     // Coroutines - 使用 version catalog bundle
     implementation(libs.kotlinx.coroutines.android)
 
-    // Porcupine Wake Word Detection
-    implementation("ai.picovoice:porcupine-android:4.0.0")
+    // iFlytek MSC Wake Word SDK (put msc.jar in libs/)
+    // 下载地址: https://www.xfyun.cn/services/awaken
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("msc.jar"))))
 
     // Baidu Speech Wake Word SDK (extracted from AAR - JARs + SO libs)
     implementation(files("libs/classes.jar", "libs/bdasr_V3_20250717_1e379e2.jar", "libs/auth_base_20260129.jar"))

@@ -28,7 +28,7 @@ import javax.inject.Inject
  *
  * 功能：
  * - 前台服务，保活唤醒词检测
- * - 支持双引擎架构（Porcupine + 百度语音唤醒）
+ * - 支持双引擎架构（百度 + 科大讯飞语音唤醒）
  * - 自动降级策略（主引擎失败时切换到备选引擎）
  * - 16kHz采样率音频采集
  * - 低功耗运行（锁屏时降低采样频率）
@@ -134,7 +134,7 @@ class WakeWordService : Service() {
             baiduApiKey = BuildConfig.BAIDU_API_KEY,
             baiduSecretKey = BuildConfig.BAIDU_SECRET_KEY,
             baiduWakeWordAsset = WakeWordConfig.BAIDU_WAKE_WORD_ASSET,
-            porcupineAccessKey = BuildConfig.PORCUPINE_ACCESS_KEY,
+            xfAppId = BuildConfig.IFLYTEK_APP_ID,
             wakeWord = WakeWordConfig.DEFAULT_WAKE_WORD
         )
 
@@ -170,7 +170,7 @@ class WakeWordService : Service() {
                     // 百度引擎：SDK 自己管理音频采集，不需要手动启动 AudioRecord
                     Timber.i("WakeWordService: Using self-managed audio engine (${engineManager.getCurrentEngineType()})")
                 } else {
-                    // Porcupine/能量检测：需要手动采集音频
+                    // 能量检测：需要手动采集音频
                     initAudioRecord()
                     startAudioProcessing()
                 }
@@ -268,7 +268,6 @@ class WakeWordService : Service() {
 
         // 获取帧长度（不同引擎可能有不同要求）
         val frameLength = when (engine) {
-            is PorcupineWakeWordDetector -> engine.getFrameLength()
             is EnergyWakeWordDetector -> engine.getFrameLength()
             else -> 512
         }

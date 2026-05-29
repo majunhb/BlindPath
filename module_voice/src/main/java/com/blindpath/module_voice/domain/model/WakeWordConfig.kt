@@ -13,6 +13,11 @@ object WakeWordConfig {
     /** 百度唤醒词模型文件（assets 目录） */
     const val BAIDU_WAKE_WORD_ASSET = "WakeUp.bin"
 
+    /** 科大讯飞唤醒词资源文件（assets/ivw/ 目录，格式: {appid}.jet） */
+    const val XF_WAKE_WORD_RES_DIR = "ivw"
+    /** 讯飞唤醒门限值（范围 [0, 3000]，默认 1450，越高越严格） */
+    const val XF_WAKE_THRESHOLD = 1450
+
     /**
      * 唤醒词别名集合 —— SpeechRecognizer 可能将同一句话识别为不同文本，
      * 把所有合理变体都纳入匹配范围，降低漏触发率。
