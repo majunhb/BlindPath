@@ -23,7 +23,7 @@ android {
         buildConfigField("String", "BAIDU_APP_ID", "\"`${baiduAppId}\"")
         buildConfigField("String", "BAIDU_API_KEY", "\"`${baiduApiKey}\"")
         buildConfigField("String", "BAIDU_SECRET_KEY", "\"`${baiduSecretKey}\"")
-        buildConfigField("String", "PORCUPINE_ACCESS_KEY", "\"`${porcupineAccessKey}\"")
+        buildConfigField("String", "IFLYTEK_APP_ID", "\"`${xfAppId}\"")
     }
 
     buildTypes {
