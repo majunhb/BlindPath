@@ -267,7 +267,7 @@ class XfWakeWordDetector(
     override fun release() {
         stopListening()
         try {
-            AiHelper.getInst().destroy()
+            AiHelper.getInst().unInit()
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Error during release")
         }
