@@ -1,13 +1,19 @@
 package com.blindpath.app.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
@@ -26,15 +32,14 @@ import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
 import timber.log.Timber
 
 /**
- * 主界面 - 视障友好极简设计 v3.0
+ * 主界面 - 视障友好极简设计 v4.0
  * 
- * 设计原则：
- * 1. 极简导航：核心功能一屏展示，减少层级跳转
- * 2. 大按钮设计：最小触摸区域 80dp，符合 WCAG 2.1 标准
- * 3. 高对比度：使用 Material 3 高对比度配色
- * 4. 语音反馈：所有按钮添加详细语义描述
- * 5. 一键操作：减少复杂交互，支持长按、双击等辅助手势
- * 6. 语音交互：支持语音指令控制所有功能
+ * 设计原则（基于用户设计稿）：
+ * 1. 垂直信息流：状态 → 反馈 → 核心操作
+ * 2. 大按钮设计：唤醒按钮占据近1/4屏幕，便于盲操作
+ * 3. 高对比度：蓝白主调，红色警示
+ * 4. 底部双入口：切换导航 + 紧急求助
+ * 5. AI人格化："小智"作为具象化助手
  */
 @Composable
 fun MainScreen(
@@ -70,12 +75,10 @@ fun MainScreen(
                     true
                 }
                 VoiceCommand.START_SONAR_DETECTION -> {
-                    // TODO: 实现声呐检测
                     viewModel.speak("声呐检测功能即将上线")
                     true
                 }
                 VoiceCommand.STOP_SONAR_DETECTION -> {
-                    // TODO: 实现声呐检测
                     viewModel.speak("声呐检测已关闭")
                     true
                 }
@@ -123,7 +126,6 @@ fun MainScreen(
                     true
                 }
                 VoiceCommand.REPEAT -> {
-                    // TODO: 实现重复上一条播报
                     viewModel.speak("暂无上一条播报")
                     true
                 }
@@ -132,7 +134,6 @@ fun MainScreen(
                     true
                 }
                 VoiceCommand.BACK -> {
-                    // 关闭所有子界面
                     showSettings = false
                     showCommunity = false
                     showTripAssist = false
@@ -146,7 +147,6 @@ fun MainScreen(
             }
         }
         
-        // 初始化语音交互
         viewModel.initialize()
     }
     
@@ -182,15 +182,10 @@ fun MainScreen(
             IndoorScreen(onBackClick = { showIndoorScreen = false })
         }
         else -> {
-            MainContent(
-                onObstacleDetectionClick = { showObstacleDetection = true },
-                onLocationClick = { showLocation = true },
+            MainContentV4(
                 onNavigationClick = { showNavigation = true },
                 onSosClick = onSosClick,
                 onSettingsClick = { showSettings = true },
-                onCommunityClick = { showCommunity = true },
-                onTripAssistClick = { showTripAssist = true },
-                onIndoorClick = { showIndoorScreen = true },
                 isListening = uiState.isListening,
                 onStartListening = { viewModel.startListening() },
                 onStopListening = { viewModel.stopListening() }
@@ -199,22 +194,55 @@ fun MainScreen(
     }
 }
 
+/**
+ * 主界面内容 - v4.0 设计
+ * 
+ * 布局结构：
+ * ┌─────────────────────────┐
+ * │  顶部导航栏              │
+ * │  [消息] 智行助盲         │
+ * ├─────────────────────────┤
+ * │  语音状态标签            │
+ * │  [小智] 我在外出...      │
+ * ├─────────────────────────┤
+ * │  AI状态反馈              │
+ * │  系统提示信息            │
+ * ├─────────────────────────┤
+ * │  核心操作按钮            │
+ * │  [唤醒小智] (大按钮)     │
+ * ├─────────────────────────┤
+ * │  底部快捷入口            │
+ * │  [切换导航] [紧急求助]   │
+ * └─────────────────────────┘
+ */
 @Composable
-private fun MainContent(
-    onObstacleDetectionClick: () -> Unit,
-    onLocationClick: () -> Unit,
+private fun MainContentV4(
     onNavigationClick: () -> Unit,
     onSosClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onCommunityClick: () -> Unit,
-    onTripAssistClick: () -> Unit,
-    onIndoorClick: () -> Unit,
     isListening: Boolean = false,
     onStartListening: () -> Unit = {},
     onStopListening: () -> Unit = {}
 ) {
+    // 渐变蓝色定义
+    val gradientBlue = Brush.horizontalGradient(
+        colors = listOf(
+            Color(0xFF4FACFE),  // 浅蓝
+            Color(0xFF00F2FE)   // 青蓝
+        )
+    )
+    
+    // 主品牌色
+    val primaryBlue = Color(0xFF1E90FF)
+    val alertRed = Color(0xFFFF6B6B)
+    
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = Color.White,
+        topBar = {
+            MainTopBar(
+                onSettingsClick = onSettingsClick
+            )
+        }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -223,104 +251,227 @@ private fun MainContent(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 应用标题区域
-            AppHeader()
-
+            // 语音状态标签区域
+            VoiceStatusTag(
+                isListening = isListening,
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+            
+            // AI状态反馈文字
+            AiStatusFeedback(
+                isListening = isListening,
+                modifier = Modifier.padding(vertical = 12.dp)
+            )
+            
+            Spacer(modifier = Modifier.weight(1f))
+            
+            // 核心操作按钮 - 唤醒小智（大面积渐变按钮）
+            WakeUpButton(
+                isListening = isListening,
+                onClick = {
+                    if (isListening) {
+                        onStopListening()
+                    } else {
+                        onStartListening()
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .height(120.dp)
+            )
+            
             Spacer(modifier = Modifier.height(24.dp))
+            
+            // 底部快捷入口 - 双按钮布局
+            BottomQuickActions(
+                onNavigationClick = onNavigationClick,
+                onSosClick = onSosClick,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
 
-            // 核心功能按钮区域（大按钮，一屏展示）
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+/**
+ * 顶部导航栏
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MainTopBar(
+    onSettingsClick: () -> Unit
+) {
+    TopAppBar(
+        title = {
+            Text(
+                text = "智行助盲",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E90FF),
+                modifier = Modifier.semantics {
+                    contentDescription = "智行助盲，视障人士出行辅助应用"
+                }
+            )
+        },
+        navigationIcon = {
+            IconButton(
+                onClick = onSettingsClick,
+                modifier = Modifier.semantics {
+                    contentDescription = "消息和设置入口"
+                }
             ) {
-                // 第一行：障碍物检测 + 实时定位
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    LargeFeatureButton(
-                        label = "障碍物检测",
-                        description = "开启摄像头，实时检测前方障碍物，语音播报预警信息。语音指令：开启障碍物检测",
-                        icon = Icons.Default.Warning,
-                        onClick = onObstacleDetectionClick,
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    LargeFeatureButton(
-                        label = "实时定位",
-                        description = "获取当前位置，播报道路名称和方位信息。语音指令：我在哪里",
-                        icon = Icons.Default.LocationOn,
-                        onClick = onLocationClick,
-                        containerColor = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                // 第二行：智能导航 + 紧急求助
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    LargeFeatureButton(
-                        label = "智能导航",
-                        description = "输入目的地，规划路线，语音引导前行。语音指令：开启导航",
-                        icon = Icons.Default.Navigation,
-                        onClick = onNavigationClick,
-                        containerColor = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    LargeFeatureButton(
-                        label = "紧急求助",
-                        description = "一键联系紧急联系人，发送位置信息，拨打急救电话。语音指令：紧急救援",
-                        icon = Icons.Default.Emergency,
-                        onClick = onSosClick,
-                        containerColor = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                // 第三行：室内模式
-                LargeFeatureButton(
-                    label = "室内模式",
-                    description = "识别室内房间类型和家具障碍物，适合家庭环境使用。语音指令：开启室内模式",
-                    icon = Icons.Default.Home,
-                    onClick = onIndoorClick,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.fillMaxWidth()
+                Icon(
+                    imageVector = Icons.Outlined.ChatBubbleOutline,
+                    contentDescription = null,
+                    tint = Color(0xFF1E90FF),
+                    modifier = Modifier.size(28.dp)
                 )
             }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = Color.White,
+            titleContentColor = Color(0xFF1E90FF)
+        )
+    )
+}
 
-            Spacer(modifier = Modifier.height(16.dp))
+/**
+ * 语音状态标签 - 蓝色胶囊标签
+ */
+@Composable
+private fun VoiceStatusTag(
+    isListening: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val statusText = if (isListening) "正在聆听..." else "小智"
+    
+    Surface(
+        modifier = modifier
+            .semantics {
+                contentDescription = if (isListening) "语音助手正在聆听您的指令" else "语音助手小智待命"
+            },
+        shape = RoundedCornerShape(50),
+        color = Color(0xFF1E90FF)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // 机器人图标（简化）
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(CircleShape)
+                    .background(Color.White),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SmartToy,
+                    contentDescription = null,
+                    tint = Color(0xFF1E90FF),
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+            
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+    }
+}
 
-            // 辅助功能按钮行（底部）
+/**
+ * AI状态反馈文字
+ */
+@Composable
+private fun AiStatusFeedback(
+    isListening: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val feedbackText = if (isListening) {
+        "请说出您的指令，例如：开启导航、我在哪里、紧急求助"
+    } else {
+        "点击下方按钮唤醒小智，或说\"小智小智\""
+    }
+    
+    Text(
+        text = feedbackText,
+        style = MaterialTheme.typography.bodyLarge,
+        fontWeight = FontWeight.Normal,
+        color = Color(0xFF666666),
+        textAlign = TextAlign.Center,
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics {
+                contentDescription = feedbackText
+            }
+    )
+}
+
+/**
+ * 唤醒小智按钮 - 大面积渐变蓝色按钮
+ */
+@Composable
+private fun WakeUpButton(
+    isListening: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val gradientBlue = Brush.horizontalGradient(
+        colors = listOf(
+            Color(0xFF4FACFE),
+            Color(0xFF00F2FE)
+        )
+    )
+    
+    val buttonText = if (isListening) "停止聆听" else "唤醒小智"
+    val buttonDesc = if (isListening) {
+        "点击停止语音聆听"
+    } else {
+        "点击唤醒语音助手小智，开始语音交互"
+    }
+    
+    Button(
+        onClick = onClick,
+        modifier = modifier
+            .semantics {
+                contentDescription = buttonDesc
+                stateDescription = if (isListening) "正在聆听" else "待命状态"
+            },
+        shape = RoundedCornerShape(24.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.Transparent
+        ),
+        contentPadding = PaddingValues(0.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(gradientBlue, RoundedCornerShape(24.dp)),
+            contentAlignment = Alignment.Center
+        ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                AccessibleTextButton(
-                    label = "设置",
-                    description = "应用设置，调整语音、导航、安全等选项。语音指令：设置",
-                    icon = Icons.Default.Settings,
-                    onClick = onSettingsClick,
-                    modifier = Modifier.weight(1f)
+                // 文字
+                Text(
+                    text = buttonText,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    color = Color.White
                 )
-
-                AccessibleTextButton(
-                    label = "社区",
-                    description = "社区互助，获取志愿者帮助和分享出行经验",
-                    icon = Icons.Default.People,
-                    onClick = onCommunityClick,
-                    modifier = Modifier.weight(1f)
-                )
-
-                AccessibleTextButton(
-                    label = "出行",
-                    description = "出行辅助，查看行程记录和常用地点",
-                    icon = Icons.Default.DirectionsWalk,
-                    onClick = onTripAssistClick,
-                    modifier = Modifier.weight(1f)
+                
+                // 机器人图标
+                Icon(
+                    imageVector = Icons.Default.SmartToy,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
                 )
             }
         }
@@ -328,55 +479,88 @@ private fun MainContent(
 }
 
 /**
- * 应用标题区域
+ * 底部快捷入口 - 双按钮布局
  */
 @Composable
-private fun AppHeader() {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+private fun BottomQuickActions(
+    onNavigationClick: () -> Unit,
+    onSosClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "智行助盲",
-            style = MaterialTheme.typography.displayMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.semantics {
-                contentDescription = "智行助盲，视障人士出行辅助应用"
-            }
+        // 切换导航按钮
+        QuickActionButton(
+            label = "切换导航",
+            description = "切换导航模式，规划出行路线",
+            icon = Icons.Default.Map,
+            onClick = onNavigationClick,
+            color = Color(0xFF1E90FF),
+            modifier = Modifier.weight(1f)
         )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "BlindPath v3.5",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.semantics {
-                contentDescription = "BlindPath 版本 3.5"
-            }
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "点击按钮开始使用",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.semantics {
-                contentDescription = "提示：点击下方按钮开始使用各项功能"
-            }
+        
+        // 紧急求助按钮（红色强调）
+        QuickActionButton(
+            label = "紧急求助",
+            description = "紧急求助，一键联系紧急联系人",
+            icon = Icons.Default.Emergency,
+            onClick = onSosClick,
+            color = Color(0xFFFF6B6B),
+            modifier = Modifier.weight(1f)
         )
     }
 }
 
 /**
- * 大功能按钮组件 - 视障友好设计
- * 
- * 特性：
- * - 最小高度 100dp，符合 WCAG 2.1 触摸目标标准
- * - 高对比度配色
- * - 详细语义描述
- * - 图标 + 文字双重提示
+ * 快捷操作按钮
+ */
+@Composable
+private fun QuickActionButton(
+    label: String,
+    description: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier
+            .height(64.dp)
+            .semantics {
+                contentDescription = "$label，$description"
+            },
+        shape = RoundedCornerShape(16.dp),
+        border = androidx.compose.foundation.BorderStroke(2.dp, color)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(24.dp)
+            )
+            
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = color,
+                fontSize = 16.sp
+            )
+        }
+    }
+}
+
+// ============ 兼容旧版本的组件 ============
+
+/**
+ * 大功能按钮组件 - 视障友好设计（兼容旧版本）
  */
 @Composable
 fun LargeFeatureButton(
@@ -384,7 +568,7 @@ fun LargeFeatureButton(
     description: String,
     icon: ImageVector,
     onClick: () -> Unit,
-    containerColor: androidx.compose.ui.graphics.Color,
+    containerColor: Color,
     modifier: Modifier = Modifier
 ) {
     val combinedDescription = "$label，$description"
@@ -395,7 +579,6 @@ fun LargeFeatureButton(
             .height(100.dp)
             .semantics {
                 contentDescription = combinedDescription
-                // 添加状态描述，方便屏幕阅读器播报
                 stateDescription = "可点击按钮"
             },
         shape = RoundedCornerShape(16.dp),
@@ -435,12 +618,7 @@ fun LargeFeatureButton(
 }
 
 /**
- * 可访问性文本按钮 - 辅助功能
- * 
- * 特性：
- * - 高度 64dp
- * - 图标 + 文字标签
- * - 详细语义描述
+ * 可访问性文本按钮 - 辅助功能（兼容旧版本）
  */
 @Composable
 fun AccessibleTextButton(
@@ -495,7 +673,7 @@ fun FeatureButton(
     label: String,
     description: String,
     onClick: () -> Unit,
-    containerColor: androidx.compose.ui.graphics.Color
+    containerColor: Color
 ) {
     LargeFeatureButton(
         label = label,
