@@ -86,11 +86,39 @@ class BaiduWakeWordDetector(
             throw IllegalStateException("Failed to create EventManagerWp")
         }
 
+        // 关键：EventManagerWp 构造函数会捕获 WakeUpControl 的异常并静默处理
+        // 需要通过反射检查内部 mException 字段，确认 native 库加载是否成功
+        val initException = checkEventManagerWpException()
+        if (initException != null) {
+            Timber.e(initException, "$TAG: EventManagerWp initialization failed (native lib load error)")
+            throw IllegalStateException("WakeUpControl initialization failed: ${initException.message}", initException)
+        }
+
         // 注册事件监听器
         wp?.registerListener(eventListener)
 
         isInitialized = true
         Timber.i("$TAG: Initialized successfully with direct EventManagerFactory (AppID: $appId)")
+    }
+
+    /**
+     * 通过反射检查 EventManagerWp 内部的 mException 字段
+     * 反编译发现：EventManagerWp 构造函数捕获所有 Exception 并存储到 mException 字段
+     * 如果 mException 不为 null，说明 WakeUpControl/native 库初始化失败
+     */
+    private fun checkEventManagerWpException(): Exception? {
+        return try {
+            val wpClass = wp?.javaClass
+            // mException 是 EventManagerWp 的私有字段
+            val mExceptionField = wpClass?.getDeclaredField("mException")
+            mExceptionField?.isAccessible = true
+            val exception = mExceptionField?.get(wp) as? Exception
+            mExceptionField?.isAccessible = false
+            exception
+        } catch (e: Exception) {
+            Timber.w(e, "$TAG: Failed to check EventManagerWp exception via reflection")
+            null
+        }
     }
 
     /**
