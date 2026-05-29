@@ -20,6 +20,13 @@ android {
             useSupportLibrary = true
         }
 
+        // 凭证配置：从 local.properties 读取，通过 manifestPlaceholders 注入到 AndroidManifest.xml
+        manifestPlaceholders += mapOf(
+            "BAIDU_APP_ID" to (project.findProperty("BAIDU_APP_ID") as String? ?: ""),
+            "BAIDU_API_KEY" to (project.findProperty("BAIDU_API_KEY") as String? ?: ""),
+            "BAIDU_SECRET_KEY" to (project.findProperty("BAIDU_SECRET_KEY") as String? ?: "")
+        )
+
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }

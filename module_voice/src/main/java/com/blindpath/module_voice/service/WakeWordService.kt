@@ -17,6 +17,7 @@ import android.os.PowerManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import dagger.hilt.android.AndroidEntryPoint
+import com.blindpath.module_voice.BuildConfig
 import kotlinx.coroutines.*
 import timber.log.Timber
 import javax.inject.Inject
@@ -71,10 +72,10 @@ class WakeWordService : Service() {
         private const val NOTIFICATION_ID = 1001
 
         // 引擎配置 - TODO: 从配置文件读取
-        const val PORCUPINE_ACCESS_KEY = "YOUR_ACCESS_KEY_HERE"
-        const val BAIDU_APP_ID = "123301672"
-        const val BAIDU_API_KEY = "7bqc6ovRERcTumcd4h2dXhyj"
-        const val BAIDU_SECRET_KEY = "kuVbgAvSYkVPMcDWDjMkG5KlJZBLts3"
+        // 凭证已迁移到 BuildConfig，见 local.properties
+        // 凭证已迁移到 BuildConfig，见 local.properties
+        // 凭证已迁移到 BuildConfig，见 local.properties
+        // 凭证已迁移到 BuildConfig，见 local.properties
 
         @Volatile
         var isServiceRunning = false
@@ -128,12 +129,12 @@ class WakeWordService : Service() {
         val config = WakeWordEngineManager.EngineConfig(
             primaryEngine = WakeWordEngineManager.EngineType.BAIDU,
             fallbackEnabled = true,
-            baiduAppId = BAIDU_APP_ID,
-            baiduApiKey = BAIDU_API_KEY,
-            baiduSecretKey = BAIDU_SECRET_KEY,
-            baiduWakeWordAsset = "WakeUp.bin",
-            porcupineAccessKey = PORCUPINE_ACCESS_KEY,
-            wakeWord = "小度你好"
+            baiduAppId = BuildConfig.BAIDU_APP_ID,
+            baiduApiKey = BuildConfig.BAIDU_API_KEY,
+            baiduSecretKey = BuildConfig.BAIDU_SECRET_KEY,
+            baiduWakeWordAsset = WakeWordConfig.BAIDU_WAKE_WORD_ASSET,
+            porcupineAccessKey = BuildConfig.PORCUPINE_ACCESS_KEY,
+            wakeWord = WakeWordConfig.DEFAULT_WAKE_WORD
         )
 
         engineManager.initialize(config)

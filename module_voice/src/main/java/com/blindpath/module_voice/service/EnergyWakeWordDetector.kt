@@ -1,5 +1,6 @@
 package com.blindpath.module_voice.service
 
+import com.blindpath.module_voice.domain.model.WakeWordConfig
 import timber.log.Timber
 import kotlin.math.sqrt
 
@@ -41,7 +42,7 @@ class EnergyWakeWordDetector(
         if (energy > threshold && (currentTime - lastDetectionTime) > detectionCooldown) {
             lastDetectionTime = currentTime
             Timber.i("$TAG: Sound detected (energy: ${energy.toInt()}), triggering wake word")
-            onWakeWordDetected("小布")
+            onWakeWordDetected(WakeWordConfig.DEFAULT_WAKE_WORD)
             return true
         }
 

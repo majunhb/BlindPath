@@ -54,13 +54,13 @@
         <!-- 百度语音 SDK 配置 -->
         <meta-data
             android:name="com.baidu.speech.APP_ID"
-            android:value="123301672" />
+            android:value="${BAIDU_APP_ID}" />
         <meta-data
             android:name="com.baidu.speech.API_KEY"
-            android:value="7bqc6ovRERcTumcd4h2dXhyj" />
+            android:value="${BAIDU_API_KEY}" />
         <meta-data
             android:name="com.baidu.speech.SECRET_KEY"
-            android:value="kuVbgAvSYkVPMcDWDjMkG5KlJZBLts3" />
+            android:value="${BAIDU_SECRET_KEY}" />
 
         <!-- 百度语音识别服务（SDK 内部使用） -->
         <service

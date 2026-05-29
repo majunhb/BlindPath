@@ -13,6 +13,17 @@ android {
         minSdk = 26
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
+
+        // 凭证配置：从 local.properties 读取，不硬编码到代码中
+        val baiduAppId = project.findProperty("BAIDU_APP_ID") as String? ?: ""
+        val baiduApiKey = project.findProperty("BAIDU_API_KEY") as String? ?: ""
+        val baiduSecretKey = project.findProperty("BAIDU_SECRET_KEY") as String? ?: ""
+        val porcupineAccessKey = project.findProperty("PORCUPINE_ACCESS_KEY") as String? ?: ""
+
+        buildConfigField("String", "BAIDU_APP_ID", ""${baiduAppId}"")
+        buildConfigField("String", "BAIDU_API_KEY", ""${baiduApiKey}"")
+        buildConfigField("String", "BAIDU_SECRET_KEY", ""${baiduSecretKey}"")
+        buildConfigField("String", "PORCUPINE_ACCESS_KEY", ""${porcupineAccessKey}"")
     }
 
     buildTypes {
@@ -30,6 +41,9 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+    }
+    buildFeatures {
+        buildConfig = true
     }
 
     packagingOptions {

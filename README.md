@@ -139,7 +139,7 @@ cd BlindPath
 | CAMERA | 障碍物检测 | 是 |
 | ACCESS_FINE_LOCATION | 导航定位 | 是 |
 | ACCESS_COARSE_LOCATION | 粗略定位 | 是 |
-| RECORD_AUDIO | 语音交互 | 否 |
+| RECORD_AUDIO | 语音唤醒与交互 | **是** |
 | SEND_SMS | 紧急求助 | 否 |
 | CALL_PHONE | 紧急拨号 | 否 |
 | VIBRATE | 震动反馈 | 否 |

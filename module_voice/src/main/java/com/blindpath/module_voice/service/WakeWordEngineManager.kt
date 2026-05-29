@@ -1,6 +1,7 @@
 package com.blindpath.module_voice.service
 
 import android.content.Context
+import com.blindpath.module_voice.domain.model.WakeWordConfig
 import timber.log.Timber
 
 /**
@@ -36,9 +37,9 @@ class WakeWordEngineManager(private val context: Context) {
         val baiduAppId: String = "",
         val baiduApiKey: String = "",
         val baiduSecretKey: String = "",
-        val baiduWakeWordAsset: String = "WakeUp_xiaozhi.bin",
+        val baiduWakeWordAsset: String = WakeWordConfig.BAIDU_WAKE_WORD_ASSET,
         val porcupineAccessKey: String = "",
-        val wakeWord: String = "小智同学"
+        val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD
     )
 
     private var currentEngine: WakeWordDetector? = null

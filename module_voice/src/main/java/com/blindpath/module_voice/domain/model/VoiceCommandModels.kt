@@ -87,7 +87,7 @@ data class VoiceInteractionState(
     val isListening: Boolean = false,
     val isWakeWordEnabled: Boolean = true,
     val isWakeWordDetected: Boolean = false,  // 唤醒词是否被检测到
-    val wakeWord: String = "小智小智",  // 唤醒词
+    val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD,  // 唤醒词（统一配置）
     val lastCommand: VoiceCommandResult? = null,
     val lastError: String? = null
 )
@@ -97,7 +97,7 @@ data class VoiceInteractionState(
  */
 object VoiceGuidance {
     const val WELCOME_MESSAGE = "欢迎使用智行视障导航系统，全程支持语音指令操作，无需触屏点击"
-    const val WAKE_WORD_PROMPT = "请说\"小智小智\"唤醒语音助手，或者说\"帮助\"查看可用指令"
+    const val WAKE_WORD_PROMPT = "请说${WakeWordConfig.DEFAULT_WAKE_WORD}唤醒语音助手，或者说帮助查看可用指令"
     
     val HELP_MESSAGE = """
         可用语音指令：

@@ -5,6 +5,7 @@ import com.baidu.speech.EventListener
 import com.baidu.speech.EventManager
 import com.baidu.speech.EventManagerFactory
 import com.baidu.speech.asr.SpeechConstant
+import com.blindpath.module_voice.domain.model.WakeWordConfig
 import org.json.JSONObject
 import timber.log.Timber
 
@@ -28,10 +29,7 @@ import timber.log.Timber
  *   "wp.exit"  - 引擎退出
  *   "wp.stoped" - 唤醒停止
  *
- * 百度应用凭证：
- * - AppID: 123301672
- * - API Key: 7bqc6ovRERcTumcd4h2dXhyj
- * - Secret Key: kuVbgAvSYkVPMcDWDjMkG5KlJZBLts3
+ * 百度应用凭证：通过 BuildConfig 传入，见 local.properties
  */
 class BaiduWakeWordDetector(
     private val context: Context,
@@ -39,7 +37,7 @@ class BaiduWakeWordDetector(
     private val apiKey: String,
     private val secretKey: String,
     private val wakeWordAssetPath: String = "WakeUp.bin",
-    private val wakeWord: String = "小智同学",
+    private val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD,
     private val onWakeWordDetected: (String) -> Unit
 ) : WakeWordDetector {
 

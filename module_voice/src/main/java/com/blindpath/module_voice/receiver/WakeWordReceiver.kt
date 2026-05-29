@@ -3,6 +3,7 @@ package com.blindpath.module_voice.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.blindpath.module_voice.domain.model.WakeWordConfig
 import com.blindpath.module_voice.service.WakeWordService
 import dagger.hilt.android.AndroidEntryPoint
 import timber.log.Timber
@@ -27,7 +28,7 @@ class WakeWordReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             WakeWordService.ACTION_WAKE_WORD_DETECTED -> {
-                val wakeWord = intent.getStringExtra(WakeWordService.EXTRA_WAKE_WORD) ?: "小智同学"
+                val wakeWord = intent.getStringExtra(WakeWordService.EXTRA_WAKE_WORD) ?: WakeWordConfig.DEFAULT_WAKE_WORD
                 Timber.i("$TAG: Wake word detected - $wakeWord")
 
                 // 触发语音指令识别
