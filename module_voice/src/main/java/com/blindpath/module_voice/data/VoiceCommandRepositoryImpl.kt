@@ -256,7 +256,9 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         Timber.d("VoiceCommand: TTS stopped, will resume recognition")
         ttsResumeJob = scope.launch {
             delay(600)
-            if (isContinuousListeningEnabled && !isTtsSpeaking) {
+            // 只在持续监听模式且未检测到唤醒词时恢复识别
+            // 避免与 recognizeOnce() 中的 startListening() 冲突
+            if (isContinuousListeningEnabled && !isTtsSpeaking && !_interactionState.value.isWakeWordDetected) {
                 Timber.i("VoiceCommand: Resuming recognition after TTS")
                 startListening()
             }
