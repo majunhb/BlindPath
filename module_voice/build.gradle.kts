@@ -22,12 +22,12 @@ android {
         val xfApiKey = project.findProperty("IFLYTEK_API_KEY") as String? ?: ""
         val xfApiSecret = project.findProperty("IFLYTEK_API_SECRET") as String? ?: ""
 
-        buildConfigField("String", "BAIDU_APP_ID", "\"`${baiduAppId}\"")
-        buildConfigField("String", "BAIDU_API_KEY", "\"`${baiduApiKey}\"")
-        buildConfigField("String", "BAIDU_SECRET_KEY", "\"`${baiduSecretKey}\"")
-        buildConfigField("String", "IFLYTEK_APP_ID", "\"`${xfAppId}\"")
-        buildConfigField("String", "IFLYTEK_API_KEY", "\"`${xfApiKey}\"")
-        buildConfigField("String", "IFLYTEK_API_SECRET", "\"`${xfApiSecret}\"")
+        buildConfigField("String", "BAIDU_APP_ID", "\"${baiduAppId}\"")
+        buildConfigField("String", "BAIDU_API_KEY", "\"${baiduApiKey}\"")
+        buildConfigField("String", "BAIDU_SECRET_KEY", "\"${baiduSecretKey}\"")
+        buildConfigField("String", "IFLYTEK_APP_ID", "\"${xfAppId}\"")
+        buildConfigField("String", "IFLYTEK_API_KEY", "\"${xfApiKey}\"")
+        buildConfigField("String", "IFLYTEK_API_SECRET", "\"${xfApiSecret}\"")
     }
 
     buildTypes {
