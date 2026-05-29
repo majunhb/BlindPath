@@ -167,7 +167,8 @@ class BaiduWakeWordDetector(
             val params = JSONObject()
 
             // 唤醒词模型文件路径（assets 目录）
-            params.put("kws-file", "assets:///$wakeWordAssetPath")
+            // 注意：正确格式是 assets://WakeUp.bin，不是 assets:///WakeUp.bin
+            params.put("kws-file", "assets://$wakeWordAssetPath")
 
             // appid - WakeUpControl.initWp() 需要从 params 中提取
             params.put("appid", appId)
