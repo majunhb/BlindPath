@@ -67,6 +67,11 @@
             android:name="com.baidu.speech.VoiceRecognitionService"
             android:exported="false" />
 
+        <!-- 百度语音唤醒 AIDL 服务（EventManagerFactory 使用） -->
+        <service
+            android:name="com.baidu.speech.aidl.EventRecognitionService"
+            android:exported="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
