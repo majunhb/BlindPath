@@ -167,28 +167,18 @@ class SmartPowerManager @Inject constructor(
     private fun applyPowerSavingMode(mode: PowerSavingMode) {
         // 调整帧率
         frameRateController?.setPerformanceMode(mode.performanceMode)
+        Timber.d("Frame rate adjusted to ${mode.performanceMode}")
         
         // 调整传感器采样率
         sensorController?.setGlobalSamplingRate(mode.sensorSamplingRate)
+        Timber.d("Sensor sampling rate adjusted to ${mode.sensorSamplingRate}")
         
-        // 其他优化措施
+        // 根据模式记录状态
         when (mode) {
-            PowerSavingMode.NORMAL -> {
-                // 正常模式：全功能运行
-                enableAllFeatures()
-            }
-            PowerSavingMode.MODERATE -> {
-                // 中度省电：降低检测频率
-                reduceDetectionFrequency()
-            }
-            PowerSavingMode.AGGRESSIVE -> {
-                // 激进省电：关闭非核心功能
-                disableNonEssentialFeatures()
-            }
-            PowerSavingMode.ULTRA -> {
-                // 超级省电：仅保留核心安全功能
-                enableOnlySafetyFeatures()
-            }
+            PowerSavingMode.NORMAL -> Timber.i("All features enabled - full performance mode")
+            PowerSavingMode.MODERATE -> Timber.i("Detection frequency reduced - moderate power saving")
+            PowerSavingMode.AGGRESSIVE -> Timber.i("Non-essential features disabled - aggressive power saving")
+            PowerSavingMode.ULTRA -> Timber.i("Only safety features enabled - ultra power saving")
         }
     }
     
@@ -199,34 +189,6 @@ class SmartPowerManager @Inject constructor(
         val batteryStatus = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val temperature = batteryStatus?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
         return temperature / 10f
-    }
-    
-    /**
-     * 启用所有功能
-     */
-    private fun enableAllFeatures() {
-        Timber.d("All features enabled")
-    }
-    
-    /**
-     * 降低检测频率
-     */
-    private fun reduceDetectionFrequency() {
-        Timber.d("Detection frequency reduced")
-    }
-    
-    /**
-     * 禁用非核心功能
-     */
-    private fun disableNonEssentialFeatures() {
-        Timber.d("Non-essential features disabled")
-    }
-    
-    /**
-     * 仅启用安全功能
-     */
-    private fun enableOnlySafetyFeatures() {
-        Timber.d("Only safety features enabled")
     }
     
     /**

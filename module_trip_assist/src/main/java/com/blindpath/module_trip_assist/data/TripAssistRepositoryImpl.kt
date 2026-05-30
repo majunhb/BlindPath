@@ -482,14 +482,14 @@ class TripAssistRepositoryImpl @Inject constructor(
 
         /**
          * 和风天气 API Key
-         * 
-         * 获取方式：
-         * 1. 访问 https://dev.qweather.com/ 注册账号
-         * 2. 创建应用获取 API Key
-         * 3. 将下方 YOUR_QWEATHER_API_KEY 替换为您的 Key
+         * 从 BuildConfig 读取，配置方式：
+         * 1. 在项目根目录的 local.properties 中添加：
+         *    WEATHER_API_KEY=your_api_key_here
+         * 2. 获取 API Key：https://dev.qweather.com/
          * 
          * 免费版限制：1000次/天，足够个人使用
          */
-        private const val WEATHER_API_KEY = "YOUR_QWEATHER_API_KEY"
+        private val WEATHER_API_KEY: String
+            get() = com.blindpath.module_trip_assist.BuildConfig.WEATHER_API_KEY
     }
 }

@@ -17,6 +17,7 @@ import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.common.ObstacleAlert
 import com.blindpath.base.common.Result
 import com.blindpath.base.config.AppConfig
+import com.blindpath.base.error.DegradationManager
 import com.blindpath.module_obstacle.data.detection.AIDetector
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
@@ -107,6 +108,12 @@ class ObstacleRepositoryImpl @Inject constructor(
         return withContext(Dispatchers.IO) {
             try {
                 Timber.d("Starting obstacle detection")
+
+                // 检查 AI 检测功能是否被降级
+                val isAIDegraded = DegradationManager.isFeatureDegraded(DegradationManager.Feature.AI_DETECTION)
+                if (isAIDegraded) {
+                    Timber.w("AI detection is degraded, using reduced functionality mode")
+                }
 
                 // 确保已初始化
                 if (!isInitialized) {
@@ -480,12 +487,21 @@ class ObstacleRepositoryImpl @Inject constructor(
                 }
                 
                 if (bitmap != null) {
-                    // AI目标检测（安全调用）
-                    val obstacles = try {
-                        aiDetector.detect(bitmap)
-                    } catch (e: Exception) {
-                        Timber.e(e, "AI detection failed")
+                    // 检查 AI 检测是否被禁用
+                    val isAIDisabled = DegradationManager.getDegradationLevel(DegradationManager.Feature.AI_DETECTION) ==
+                            DegradationManager.DegradationLevel.DISABLED
+                    
+                    // AI目标检测（安全调用，降级模式下跳过）
+                    val obstacles = if (isAIDisabled) {
+                        Timber.d("AI detection disabled, skipping detection")
                         emptyList()
+                    } else {
+                        try {
+                            aiDetector.detect(bitmap)
+                        } catch (e: Exception) {
+                            Timber.e(e, "AI detection failed")
+                            emptyList()
+                        }
                     }
                     latestObstacles = obstacles
 

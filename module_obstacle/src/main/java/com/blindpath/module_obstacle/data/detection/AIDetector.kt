@@ -360,27 +360,26 @@ class AIDetector @Inject constructor(
 
                 // 保存到内部存储
                 outputFile = File(context.filesDir, modelPath)
-                val inputStream = response.body?.byteStream()
-                val outputStream = FileOutputStream(outputFile)
+                
+                response.body?.byteStream()?.use { inputStream ->
+                    FileOutputStream(outputFile).use { outputStream ->
+                        val buffer = ByteArray(4096)
+                        var bytesRead: Int
+                        var totalBytes: Long = 0
+                        val fileSize = response.body?.contentLength() ?: -1
 
-                val buffer = ByteArray(4096)
-                var bytesRead: Int
-                var totalBytes: Long = 0
-                val fileSize = response.body?.contentLength() ?: -1
-
-                while (true) {
-                    bytesRead = inputStream?.read(buffer) ?: -1
-                    if (bytesRead == -1) break
-                    outputStream.write(buffer, 0, bytesRead)
-                    totalBytes += bytesRead
-                    if (fileSize > 0) {
-                        val progress = (totalBytes * 100 / fileSize).toInt()
-                        Timber.d("Download progress: $progress%")
+                        while (true) {
+                            bytesRead = inputStream.read(buffer)
+                            if (bytesRead == -1) break
+                            outputStream.write(buffer, 0, bytesRead)
+                            totalBytes += bytesRead
+                            if (fileSize > 0) {
+                                val progress = (totalBytes * 100 / fileSize).toInt()
+                                Timber.d("Download progress: $progress%")
+                            }
+                        }
                     }
                 }
-
-                outputStream.close()
-                inputStream?.close()
 
                 Timber.d("Model downloaded successfully: ${outputFile.absolutePath} (${outputFile.length()} bytes)")
                 return@withContext outputFile
