@@ -13,6 +13,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import timber.log.Timber
+import java.text.Normalizer
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,6 +21,23 @@ import javax.inject.Singleton
 class VoiceCommandRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context
 ) : VoiceCommandRepository {
+    
+    companion object {
+        /**
+         * Unicode NFC 规范化文本
+         * 
+         * 解决不同设备 SpeechRecognizer 返回不同 Unicode 形式的问题。
+         * 例如：组合字符可能有 NFC（预组合）和 NFD（分解）两种形式，
+         * 使用 NFC 规范化确保一致性匹配。
+         */
+        private fun normalizeText(text: String): String {
+            return Normalizer.normalize(text.trim(), Normalizer.Form.NFC)
+                .replace(" ", "")           // 移除半角空格
+                .replace("\u3000", "")      // 移除全角空格
+                .replace("\u200B", "")      // 移除零宽空格
+                .replace("\uFEFF", "")      // 移除 BOM
+        }
+    }
     
     private val _interactionState = MutableStateFlow(VoiceInteractionState())
     override val interactionState: StateFlow<VoiceInteractionState> = _interactionState.asStateFlow()
@@ -105,8 +123,9 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                     val confidence = confidences?.getOrNull(0) ?: 0.5f
                     Timber.d("VoiceCommand: Recognized text: $rawText, confidence: $confidence")
                     val wakeWord = _interactionState.value.wakeWord
-                    val normalizedText = rawText.trim().replace(" ", "")
-                    val normalizedWakeWord = wakeWord.trim().replace(" ", "")
+                    // Unicode NFC 规范化匹配，解决不同设备编码差异
+                    val normalizedText = normalizeText(rawText)
+                    val normalizedWakeWord = normalizeText(wakeWord)
                     if (isWaitingForWakeWord && normalizedText.contains(normalizedWakeWord, ignoreCase = true)) {
                         Timber.i("VoiceCommand: Wake word detected - $rawText")
                         isWaitingForWakeWord = false

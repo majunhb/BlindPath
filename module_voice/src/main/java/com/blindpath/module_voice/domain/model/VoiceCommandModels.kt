@@ -1,5 +1,7 @@
 package com.blindpath.module_voice.domain.model
 
+import java.text.Normalizer
+
 /**
  * 语音指令类型
  * 
@@ -43,12 +45,27 @@ enum class VoiceCommand(val spokenText: String, val description: String) {
     
     companion object {
         /**
+         * Unicode NFC 规范化文本
+         * 
+         * 解决不同设备 SpeechRecognizer 返回不同 Unicode 形式的问题。
+         */
+        private fun normalizeText(text: String): String {
+            return Normalizer.normalize(text.trim(), Normalizer.Form.NFC)
+                .replace(" ", "")           // 移除半角空格
+                .replace("\u3000", "")      // 移除全角空格
+                .replace("\u200B", "")      // 移除零宽空格
+                .replace("\uFEFF", "")      // 移除 BOM
+        }
+        
+        /**
          * 从语音文本解析指令
+         * 
+         * 使用 Unicode NFC 规范化确保不同设备的识别结果一致性匹配
          */
         fun fromSpokenText(text: String): VoiceCommand? {
-            val normalizedText = text.trim().replace(" ", "")
+            val normalizedText = normalizeText(text)
             return values().find { command ->
-                normalizedText.contains(command.spokenText.replace(" ", ""))
+                normalizedText.contains(normalizeText(command.spokenText))
             }
         }
         
