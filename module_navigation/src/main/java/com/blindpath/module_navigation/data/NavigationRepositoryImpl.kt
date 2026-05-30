@@ -330,4 +330,3 @@ class NavigationRepositoryImpl @Inject constructor(
         }
     }
 }
-}
