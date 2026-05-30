@@ -146,11 +146,7 @@ class PorcupineWakeWordEngine(
      * 获取版本信息
      */
     fun getVersion(): String {
-        return try {
-            Porcupine.VERSION
-        } catch (e: Exception) {
-            "unknown"
-        }
+        return "3.0.1" // Porcupine SDK 版本
     }
 }
 
