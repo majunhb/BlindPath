@@ -14,6 +14,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import com.blindpath.app.ui.screens.MainScreen
 import com.blindpath.app.ui.theme.BlindPathTheme
 import com.blindpath.base.sos.SosHelper
@@ -23,7 +24,6 @@ import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.domain.VoiceInteractionManager
 import com.blindpath.module_voice.domain.model.VoiceCommand
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
             pendingAction?.let { performAction(it) }
         } else {
             Toast.makeText(this, "需要权限才能使用此功能", Toast.LENGTH_LONG).show()
-            CoroutineScope(Dispatchers.Main).launch {
+            lifecycleScope.launch {
                 voiceRepository.speak("需要相关权限才能使用此功能，请在设置中授权", queueMode = false)
             }
         }
@@ -135,7 +135,7 @@ class MainActivity : ComponentActivity() {
      * 初始化语音交互系统
      */
     private fun initializeVoiceInteraction() {
-        CoroutineScope(Dispatchers.Main).launch {
+        lifecycleScope.launch {
             try {
                 // 设置指令执行器（必须在初始化前设置）
                 voiceInteractionManager.setCommandExecutor(object : com.blindpath.module_voice.domain.VoiceCommandExecutor {
@@ -212,7 +212,7 @@ class MainActivity : ComponentActivity() {
         }
         startService(intent)
         Toast.makeText(this, "障碍物检测已关闭", Toast.LENGTH_SHORT).show()
-        CoroutineScope(Dispatchers.Main).launch {
+        lifecycleScope.launch {
             voiceRepository.speak("障碍物检测已关闭", queueMode = false)
         }
     }
@@ -223,13 +223,13 @@ class MainActivity : ComponentActivity() {
         }
         startService(intent)
         Toast.makeText(this, "导航服务已关闭", Toast.LENGTH_SHORT).show()
-        CoroutineScope(Dispatchers.Main).launch {
+        lifecycleScope.launch {
             voiceRepository.speak("导航服务已关闭", queueMode = false)
         }
     }
 
     private fun announceCurrentLocation() {
-        CoroutineScope(Dispatchers.Main).launch {
+        lifecycleScope.launch {
             try {
                 val location = navigationRepository.getCurrentLocation()
                 if (location != null) {
@@ -300,41 +300,41 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun performSos() {
-        CoroutineScope(Dispatchers.Main).launch {
+        lifecycleScope.launch {
             voiceRepository.speak("正在发起紧急求助", queueMode = false)
-        }
 
-        // 获取 GPS 位置
-        val location = if (SosHelper.hasLocationPermission(this)) {
-            navigationRepository.getCurrentLocation()
-        } else {
-            null
-        }
-
-        // 发送 SOS 短信
-        SosHelper.sendSos(
-            context = this,
-            location = location,
-            onSent = {
-                runOnUiThread {
-                    Toast.makeText(this, "求助短信已发送", Toast.LENGTH_SHORT).show()
-                    // 打开拨号界面
-                    val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-                        data = Uri.parse("tel:110")
-                    }
-                    startActivity(dialIntent)
-                }
-            },
-            onError = { error ->
-                runOnUiThread {
-                    Toast.makeText(this, error, Toast.LENGTH_LONG).show()
-                    // 短信失败也打开拨号
-                    val dialIntent = Intent(Intent.ACTION_DIAL).apply {
-                        data = Uri.parse("tel:110")
-                    }
-                    startActivity(dialIntent)
-                }
+            // 获取 GPS 位置
+            val location = if (SosHelper.hasLocationPermission(this@MainActivity)) {
+                navigationRepository.getCurrentLocation()
+            } else {
+                null
             }
-        )
+
+            // 发送 SOS 短信
+            SosHelper.sendSos(
+                context = this@MainActivity,
+                location = location,
+                onSent = {
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "求助短信已发送", Toast.LENGTH_SHORT).show()
+                        // 打开拨号界面
+                        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                            data = Uri.parse("tel:110")
+                        }
+                        startActivity(dialIntent)
+                    }
+                },
+                onError = { error ->
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
+                        // 短信失败也打开拨号
+                        val dialIntent = Intent(Intent.ACTION_DIAL).apply {
+                            data = Uri.parse("tel:110")
+                        }
+                        startActivity(dialIntent)
+                    }
+                }
+            )
+        }
     }
 }

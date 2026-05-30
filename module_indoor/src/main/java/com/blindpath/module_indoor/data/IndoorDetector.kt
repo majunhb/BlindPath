@@ -103,27 +103,19 @@ class IndoorDetector @Inject constructor(
     )
 
     // COCO 类别到室内障碍物类型的映射
+    // 只映射真正与室内障碍物相关的类别，排除小型物品（鼠标、遥控器、手机等）
     private val cocoToIndoorObstacle = mapOf(
         // 家具类
         56 to IndoorObstacleType.CHAIR,        // chair
         57 to IndoorObstacleType.SOFA,         // sofa/couch
-        58 to IndoorObstacleType.TABLE,        // potted plant -> table (fallback)
         59 to IndoorObstacleType.BED,          // bed
         60 to IndoorObstacleType.TABLE,        // dining table
 
-        // 其他室内物品
+        // 电器类
         62 to IndoorObstacleType.TV,           // tv
-        63 to IndoorObstacleType.REFRIGERATOR, // laptop -> refrigerator (fallback)
-        64 to IndoorObstacleType.WASHING_MACHINE, // mouse -> washing machine (fallback)
-        65 to IndoorObstacleType.CABINET,      // remote -> cabinet (fallback)
-        66 to IndoorObstacleType.TABLE,        // keyboard -> table (fallback)
-        67 to IndoorObstacleType.TV,           // cell phone -> tv (fallback)
-        68 to IndoorObstacleType.REFRIGERATOR, // microwave -> refrigerator (fallback)
-        69 to IndoorObstacleType.REFRIGERATOR, // oven -> refrigerator (fallback)
-        70 to IndoorObstacleType.WASHING_MACHINE, // toaster -> washing machine (fallback)
-        71 to IndoorObstacleType.CABINET,      // sink -> cabinet (fallback)
-        72 to IndoorObstacleType.REFRIGERATOR, // refrigerator
-        73 to IndoorObstacleType.CABINET       // book -> cabinet (fallback)
+        68 to IndoorObstacleType.REFRIGERATOR, // microwave
+        69 to IndoorObstacleType.REFRIGERATOR, // oven
+        72 to IndoorObstacleType.REFRIGERATOR  // refrigerator
     )
 
     // ML Kit 标签到室内障碍物类型的映射

@@ -57,6 +57,7 @@ class ObstacleService : Service() {
     // 新增：电量监控
     private var batteryLevel = 100
     private var isLowPowerMode = false
+    private var batteryReceiver: android.content.BroadcastReceiver? = null
 
     // 新增：帧率控制器
     private lateinit var frameRateController: FrameRateController
@@ -275,7 +276,7 @@ class ObstacleService : Service() {
      */
     private fun registerBatteryReceiver() {
         val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
-        val receiver = object : android.content.BroadcastReceiver() {
+        batteryReceiver = object : android.content.BroadcastReceiver() {
             override fun onReceive(context: android.content.Context?, intent: Intent?) {
                 val level = intent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
                 val scale = intent?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
@@ -291,7 +292,7 @@ class ObstacleService : Service() {
                 }
             }
         }
-        registerReceiver(receiver, filter)
+        registerReceiver(batteryReceiver, filter)
     }
 
     /**
@@ -395,6 +396,7 @@ class ObstacleService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        batteryReceiver?.let { unregisterReceiver(it) }
         smartPowerManager.stopMonitoring()
         serviceScope.cancel()
         VibrationHelper.cancel(this)

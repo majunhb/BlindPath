@@ -67,6 +67,7 @@ class ObstacleRepositoryImpl @Inject constructor(
     private var isCameraStarting = false
     private var isCameraStarted = false
     private var isInitialized = false
+    private var lastFrameTimestamp = 0L  // 用于计算FPS
 
     override suspend fun initialize(): Result<Boolean> {
         return withContext(Dispatchers.IO) {
@@ -217,8 +218,8 @@ class ObstacleRepositoryImpl @Inject constructor(
 
     override fun getAlertLevel(distance: Float): AlertLevel {
         return when {
-            distance < 0.5f -> AlertLevel.DANGER
-            distance < 1.5f -> AlertLevel.WARNING
+            distance < AppConfig.ObstacleAlert.DANGER_DISTANCE -> AlertLevel.DANGER
+            distance < AppConfig.ObstacleAlert.WARNING_DISTANCE -> AlertLevel.WARNING
             else -> AlertLevel.SAFE
         }
     }
@@ -498,15 +499,21 @@ class ObstacleRepositoryImpl @Inject constructor(
 
                     // 更新状态（安全调用）
                     try {
+                        // 计算FPS
+                        val currentTimestamp = imageProxy.imageInfo.timestamp
+                        val fpsValue = if (lastFrameTimestamp > 0) {
+                            val frameIntervalMs = (currentTimestamp - lastFrameTimestamp) / 1_000_000
+                            if (frameIntervalMs > 0) (1000f / frameIntervalMs).toInt().coerceIn(0, 60) else 0
+                        } else {
+                            0
+                        }
+                        lastFrameTimestamp = currentTimestamp
+                        
                         _state.update {
                             it.copy(
                                 detectedObstacles = obstacles,
                                 sceneRecognition = sceneResult,
-                                fps = try {
-                                    (1000 / (imageProxy.imageInfo.timestamp / 1_000_000)).toInt().coerceIn(0, 60)
-                                } catch (e: Exception) {
-                                    30
-                                }
+                                fps = fpsValue
                             )
                         }
                     } catch (e: Exception) {
