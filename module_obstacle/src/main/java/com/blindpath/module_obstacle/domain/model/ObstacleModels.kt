@@ -50,7 +50,7 @@ enum class ObstacleType(
     SOFA("沙发", 1, 7),
     TABLE("桌子", 2, 6),
     BED("床", 1, 7),
-    POTTTED_PLANT("盆栽", 1, 7),
+    POTTED_PLANT("盆栽", 1, 7),
 
     // ============ 个人物品 ============
     BACKPACK("背包", 1, 8),
@@ -124,16 +124,7 @@ enum class ObstacleType(
             }
             ANIMAL -> "前方${distanceInt}米有动物，请注意"
 
-            // 街道设施
-            PILLAR -> "$directionPrefix${distanceInt}米有石墩，请绕行"
-            ELECTRIC_POLE -> "$directionPrefix${distanceInt}米有电线杆"
-            TRAFFIC_LIGHT -> when {
-                distance < 3f -> "红绿灯，前方${distanceInt}米"
-                else -> "注意，前方有红绿灯"
-            }
-            TRAFFIC_SIGN -> "注意，前方${distanceInt}米有交通标志"
-            BENCH -> "$directionPrefix${distanceInt}米有长椅"
-            HANDRAIL -> "$directionPrefix${distanceInt}米有扶手"
+            // 停车桩
             PARKING_METER -> "$directionPrefix${distanceInt}米有停车桩，注意脚下"
 
             // 路面障碍
@@ -148,7 +139,7 @@ enum class ObstacleType(
             SOFA -> "$directionPrefix${distanceInt}米有沙发"
             TABLE -> "$directionPrefix${distanceInt}米有桌子"
             BED -> "$directionPrefix${distanceInt}米有床"
-            POTTTED_PLANT -> "$directionPrefix${distanceInt}米有盆栽"
+            POTTED_PLANT -> "$directionPrefix${distanceInt}米有盆栽"
 
             // 个人物品
             BACKPACK -> "注意，前方${distanceInt}米有背包"

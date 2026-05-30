@@ -321,7 +321,7 @@ def generate_class_mapping_kotlin(output_path: str):
         "cat": "ObstacleType.PET",
         "tree": "ObstacleType.ROAD_HAZARD",
         "bush": "ObstacleType.ROAD_HAZARD",
-        "potted_plant": "ObstacleType.POTTTED_PLANT",
+        "potted_plant": "ObstacleType.POTTED_PLANT",
         "skateboard": "ObstacleType.ROAD_HAZARD",
         "umbrella": "ObstacleType.UMBRELLA",
         "suitcase": "ObstacleType.SUITCASE",
