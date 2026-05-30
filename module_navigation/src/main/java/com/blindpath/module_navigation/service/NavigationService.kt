@@ -6,6 +6,7 @@ import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.blindpath.base.config.AppConfig
 import com.blindpath.module_navigation.data.GpsQuality
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_voice.domain.VoiceRepository
@@ -45,9 +46,9 @@ class NavigationService : Service() {
     private var lastGpsQualityAnnouncement: GpsQuality? = null
     private var lastLocationUpdate = 0L
 
-    // GPS 精度播报节流（避免频繁播报）
+    // GPS 精度播报节流（引用 AppConfig 集中管理）
     private var lastAccuracyAnnounceTime = 0L
-    private val ACCURACY_ANNOUNCE_INTERVAL_MS = 8000L // 8秒内不重复报精度
+    private val ACCURACY_ANNOUNCE_INTERVAL_MS = AppConfig.Navigation.ACCURACY_ANNOUNCE_INTERVAL_MS
 
     companion object {
         const val ACTION_START = "com.blindpath.action.START_NAVIGATION"

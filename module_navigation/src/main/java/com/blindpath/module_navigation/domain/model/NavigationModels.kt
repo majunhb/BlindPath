@@ -77,3 +77,8 @@ enum class OfflineMapDownloadStatus {
     FAILED,         // 失败
     UPDATING        // 更新中
 }
+
+/**
+ * 经纬度坐标点
+ */
+data class LatLonPoint(val latitude: Double, val longitude: Double)

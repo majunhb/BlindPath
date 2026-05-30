@@ -3,8 +3,9 @@ package com.blindpath.base.offline
 import android.content.Context
 import android.content.SharedPreferences
 import com.blindpath.base.config.AppConfig
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import java.io.File
@@ -269,18 +270,18 @@ class ModelPreloader private constructor(
             onComplete(Result.success(getModelFile()))
             return
         }
-        
-        // 先尝试从assets复制，然后尝试下载
-        Thread {
+
+        // 使用协程替代 Thread + runBlocking 反模式
+        CoroutineScope(Dispatchers.IO).launch {
             val result = runCatching {
-                // 使用 runBlocking 调用挂起函数
-                runBlocking { copyModelFromAssets().getOrThrow() }
+                copyModelFromAssets().getOrThrow()
             }.recoverCatching {
-                // 如果assets没有，尝试下载
-                runBlocking { downloadModel().getOrThrow() }
+                downloadModel().getOrThrow()
             }
-            
-            onComplete(result)
-        }.start()
+
+            withContext(Dispatchers.Main) {
+                onComplete(result)
+            }
+        }
     }
 }

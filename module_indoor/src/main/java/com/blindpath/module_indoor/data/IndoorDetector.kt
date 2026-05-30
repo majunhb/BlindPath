@@ -345,13 +345,14 @@ class IndoorDetector @Inject constructor(
             labels?.forEach { label ->
                 val obstacleType = mlKitLabelToIndoorObstacle[label.text]
                 if (obstacleType != null && label.confidence > 0.3f) {
-                    // ML Kit 只提供标签，不提供位置信息
-                    // 这里使用中心位置作为默认值
+                    // ML Kit Image Labeling 只返回标签和置信度，不提供位置信息。
+                    // 以下位置数据为估算默认值，不应用于精确距离判断。
+                    // 实际障碍物定位应依赖 AIDetector 的目标检测结果。
                     results.add(
                         DetectedIndoorObstacle(
                             type = obstacleType,
                             confidence = label.confidence,
-                            distance = 2.0f, // 默认距离
+                            distance = 2.0f, // 估算默认距离，非精确值
                             direction = Direction.CENTER,
                             boundingBox = BoundingBox(
                                 left = 0.3f,

@@ -9,6 +9,7 @@ import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.domain.model.*
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.suspendCancellableCoroutine
 import timber.log.Timber
@@ -61,6 +62,9 @@ class VoiceRepositoryImpl @Inject constructor(
 
     // 队列处理协程
     private var queueProcessorJob: Job? = null
+
+    // 队列通知信号（替代 poll+delay 轮询）
+    private val queueSignal = Channel<Unit>(Channel.CONFLATED)
 
     override suspend fun initialize(): Result<Boolean> = suspendCancellableCoroutine { continuation ->
         continuation.invokeOnCancellation {
@@ -157,21 +161,23 @@ class VoiceRepositoryImpl @Inject constructor(
         queueProcessorJob = playbackScope.launch {
             while (isActive) {
                 try {
-                    // 从队列中取出最高优先级的请求
-                    val request = announcementQueue.poll()
-                    
+                    // 等待新元素信号或直接尝试消费队列
+                    // 先尝试立即消费队列中已有的元素
+                    var request = announcementQueue.poll()
+                    if (request == null) {
+                        // 队列为空，使用 Channel.receiveCatching() 挂起等待，避免 CPU 轮询
+                        queueSignal.receiveCatching()
+                        request = announcementQueue.poll()
+                    }
+
                     if (request != null) {
                         processAnnouncement(request)
-                    } else {
-                        // 队列为空，等待
-                        delay(100)
                     }
-                    
+
                     // 更新队列大小
                     _state.update { it.copy(queueSize = announcementQueue.size) }
                 } catch (e: Exception) {
                     Timber.e(e, "Error processing announcement queue")
-                    delay(100)
                 }
             }
         }
@@ -318,8 +324,9 @@ class VoiceRepositoryImpl @Inject constructor(
                 return Result.Error(message = "TTS 未初始化")
             }
 
-            // 加入优先级队列
+            // 加入优先级队列并通知消费者
             announcementQueue.offer(request)
+            queueSignal.trySend(Unit)  // 通知队列处理器有新元素
             
             // 更新队列大小
             _state.update { it.copy(queueSize = announcementQueue.size) }

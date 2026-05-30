@@ -127,7 +127,6 @@ class SceneClassifier @Inject constructor(
                     val g = Color.green(pixel)
                     val b = Color.blue(pixel)
 
-                    // 判断是否为白色或浅色
                     val isWhite = r > 200 && g > 200 && b > 200 && abs(r - g) < 30 && abs(r - b) < 30
 
                     if (isWhite) {
@@ -140,10 +139,16 @@ class SceneClassifier @Inject constructor(
                         blackPixels++
                         if (inWhiteStripe && blackPixels > stripeWidth) {
                             inWhiteStripe = false
+                            // 重置计数器，避免跨行累加
                             whitePixels = 0
                             blackPixels = 0
                         }
                     }
+                }
+                // 每行扫描结束后重置计数器，避免跨行累加
+                if (!inWhiteStripe) {
+                    whitePixels = 0
+                    blackPixels = 0
                 }
             }
 

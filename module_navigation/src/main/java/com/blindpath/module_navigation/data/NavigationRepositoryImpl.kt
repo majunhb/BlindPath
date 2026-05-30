@@ -13,6 +13,7 @@ import com.blindpath.base.common.NavigationInfo
 import com.blindpath.base.common.Result
 import com.blindpath.base.config.AppConfig
 import com.blindpath.module_navigation.domain.NavigationRepository
+import com.blindpath.module_navigation.domain.model.LatLonPoint
 import com.blindpath.module_navigation.domain.model.NavigationState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -329,8 +330,4 @@ class NavigationRepositoryImpl @Inject constructor(
         }
     }
 }
-
-/**
- * 坐标点
- */
-class LatLonPoint(val latitude: Double, val longitude: Double)
+}
