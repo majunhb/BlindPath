@@ -115,34 +115,52 @@ class WakeWordService : Service() {
     }
 
     /**
-     * 从 local.properties 文件直接读取凭证（不依赖 BuildConfig）
+     * 从多个来源读取凭证（优先级：BuildConfig > assets > 外部文件）
      * BuildConfig 在某些构建环境下可能为空，此方法作为备用方案
      */
-    private fun readCredentialsFromLocalProperties(): Map<String, String> {
+    private fun readCredentialsFromAllSources(): Map<String, String> {
         val creds = mutableMapOf<String, String>()
+        
+        // 1. 尝试从assets读取（最可靠，随APK打包）
         try {
-            // 尝试多个可能的路径
-            val paths = listOf(
-                "/data/local/tmp/com.blindpath.app/local.properties",
-                filesDir.absolutePath + "/../local.properties",
-                "/sdcard/BlindPath/local.properties"
-            )
-            
-            for (path in paths) {
-                val file = File(path)
-                if (file.exists()) {
-                    val props = Properties()
-                    file.inputStream().use { props.load(it) }
-                    props.forEach { key, value ->
-                        creds[key.toString()] = value.toString()
-                    }
-                    Timber.i("WakeWordService: Loaded credentials from $path (${creds.size} values)")
-                    break
+            assets.open("credentials.properties").use { stream ->
+                val props = Properties()
+                props.load(stream)
+                props.forEach { key, value ->
+                    creds[key.toString()] = value.toString()
                 }
+                Timber.i("WakeWordService: Loaded credentials from assets (${creds.size} values)")
             }
         } catch (e: Exception) {
-            Timber.w(e, "WakeWordService: Failed to read local.properties")
+            Timber.d("WakeWordService: No credentials in assets")
         }
+        
+        // 2. 尝试从外部文件读取（用于动态更新）
+        if (creds.isEmpty()) {
+            try {
+                val paths = listOf(
+                    "/data/local/tmp/com.blindpath.app/local.properties",
+                    filesDir.absolutePath + "/../local.properties",
+                    "/sdcard/BlindPath/local.properties"
+                )
+                
+                for (path in paths) {
+                    val file = File(path)
+                    if (file.exists()) {
+                        val props = Properties()
+                        file.inputStream().use { props.load(it) }
+                        props.forEach { key, value ->
+                            creds[key.toString()] = value.toString()
+                        }
+                        Timber.i("WakeWordService: Loaded credentials from $path (${creds.size} values)")
+                        break
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "WakeWordService: Failed to read external credentials")
+            }
+        }
+        
         return creds
     }
 
@@ -170,8 +188,8 @@ class WakeWordService : Service() {
             Timber.i("WakeWordService: Engine switched to $engineType")
         }
 
-        // 读取凭证：优先 BuildConfig，其次 local.properties 文件
-        val localProps = readCredentialsFromLocalProperties()
+        // 读取凭证：优先 BuildConfig，其次 assets/外部文件
+        val localProps = readCredentialsFromAllSources()
         
         val baiduAppId = getCredential(BuildConfig.BAIDU_APP_ID, "BAIDU_APP_ID", localProps)
         val baiduApiKey = getCredential(BuildConfig.BAIDU_API_KEY, "BAIDU_API_KEY", localProps)
