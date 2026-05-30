@@ -62,11 +62,12 @@ class BaiduWakeWordDetector(
             throw IllegalArgumentException("Baidu AppID cannot be empty")
         }
 
-        // 使用远程 AIDL 模式 (useRemote=true)
-        // EventManagerRemote2Local 通过 bindService 绑定 EventRecognitionService，
-        // 通过 AIDL 接口与远程服务通信
-        // 服务端负责初始化 native 唤醒引擎，可能会获得更完整的错误信息
-        wp = EventManagerFactory.create(context, "wp", true)  // useRemote=true
+        // 使用进程内模式 (useRemote=false)
+        // AIDL 远程模式 (useRemote=true) 存在竞态条件：
+        // bindService() 是异步的，但 SDK 内部事件回调 Runnable 在 Handler 上 post 时
+        // 引用的 EventListener 可能为 null，导致 NullPointerException 崩溃
+        // 进程内模式直接在当前进程创建事件管理器，不存在异步绑定问题
+        wp = EventManagerFactory.create(context, "wp", false)  // useRemote=false，进程内模式
 
         if (wp == null) {
             throw IllegalStateException("Failed to create EventManager (AIDL mode)")
@@ -83,6 +84,14 @@ class BaiduWakeWordDetector(
      * 事件监听器 - 处理百度 SDK 回调
      */
     private val eventListener = EventListener { name, params, data, offset, length ->
+        try {
+            handleEvent(name, params, data, offset, length)
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: Error in event callback")
+        }
+    }
+
+    private fun handleEvent(name: String, params: String?, data: ByteArray?, offset: Int, length: Int) {
         Timber.d("$TAG: onEvent name=$name, params=$params, dataLen=$length")
 
         when (name) {
