@@ -58,6 +58,7 @@ android {
 
 dependencies {
     implementation(project(":base"))
+    implementation(project(":porcupine-wakeup"))
 
     // Hilt - 使用 version catalog
     implementation(libs.hilt.android)
