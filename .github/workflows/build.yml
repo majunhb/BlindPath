@@ -29,10 +29,10 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
+        uses: android-actions/setup-android@v3
 
       - name: Cache Gradle packages
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
@@ -53,9 +53,6 @@ jobs:
           echo "IFLYTEK_API_KEY=${{ secrets.IFLYTEK_API_KEY }}" >> local.properties
           echo "IFLYTEK_API_SECRET=${{ secrets.IFLYTEK_API_SECRET }}" >> local.properties
           echo "✅ local.properties created with API credentials"
-
-      - name: Clean KSP generated outputs
-        run: ./gradlew clean --no-daemon
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
