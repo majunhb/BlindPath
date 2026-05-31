@@ -165,11 +165,12 @@ class BaiduWakeWordDetector(
      * - "accept-audio-volume": 是否接受音频音量回调
      */
     fun startListening() {
+        // 检查是否已初始化
         if (!isInitialized || wp == null) {
-            Timber.w("$TAG: Not initialized, cannot start listening")
-            // 尝试重新初始化（修复 init{} 异常后的半初始化状态）
-            initializationError?.let { err ->
-                Timber.i("$TAG: Attempting re-initialization after previous error: ${err.message}")
+            Timber.w("$TAG: Not initialized, attempting re-initialization")
+            val err = initializationError
+            if (err != null) {
+                Timber.i("$TAG: Previous error: ${err.message}")
                 try {
                     initialize()
                     if (isInitialized) {
@@ -183,7 +184,11 @@ class BaiduWakeWordDetector(
                     Timber.e(e, "$TAG: Re-initialization also failed, giving up")
                     return
                 }
-            } ?: return
+            } else {
+                Timber.w("$TAG: Not initialized but no previous error recorded, cannot re-initialize")
+                return
+            }
+        }
 
         if (isListening) {
             Timber.d("$TAG: Already listening")
