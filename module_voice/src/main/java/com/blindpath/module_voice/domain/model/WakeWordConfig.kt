@@ -7,22 +7,21 @@ package com.blindpath.module_voice.domain.model
  * 修改唤醒词只需改此处。
  */
 object WakeWordConfig {
-    /** 默认唤醒词 - 修改为"小智小智"（用户实际使用的唤醒词）*/
-    const val DEFAULT_WAKE_WORD = "小智小智"
+    /** 默认唤醒词 - 与百度唤醒模型文件 WakeUp_xiaozhi.bin 内嵌词一致 */
+    const val DEFAULT_WAKE_WORD = "小智同学"
     
     /** 百度唤醒词模型文件（assets 目录） */
     const val BAIDU_WAKE_WORD_ASSET = "WakeUp_xiaozhi.bin"
     
     /** 科大讯飞唤醒词资源文件（assets/ivw/ 目录，格式: {appid}.jet） */
     const val XF_WAKE_THRESHOLD = 1450
-
+    
     /**
-     * 唤醒词别名集合 —— SpeechRecognizer 可能将同一句话识别为不同文本，
-     * 把所有合理变体都纳入匹配范围，降低漏触发率。
+     * 唤醒词别名集合 —— 用户也可能说这些变体，全部纳入匹配
      */
     val WAKE_WORD_ALIASES: Set<String> = setOf(
-        DEFAULT_WAKE_WORD,      // "小智小智"
-        "小智同学",               // 原默认词，保持兼容
+        DEFAULT_WAKE_WORD,      // "小智同学"
+        "小智小智",               // 用户实际习惯说的变体
         "小智",                   // 简称
         "晓得同学",               // 近音
         "小智同窗"                // 近音
