@@ -433,7 +433,9 @@ class WakeWordService : Service() {
         ).apply {
             setReferenceCounted(false)
         }
-        wakeLock?.acquire(10 * 60 * 1000L) // 10分钟
+        // 使用无超时的 acquire， WakeLock 在 releaseWakeLock() 时手动释放
+        // 之前 10 分钟超时会导致长时间使用后唤醒服务被系统回收
+        wakeLock?.acquire()
     }
 
     private fun releaseWakeLock() {

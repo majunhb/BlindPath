@@ -59,4 +59,21 @@ interface VoiceCommandRepository {
      * 会自动切换到指令识别模式
      */
     fun triggerWakeWordDetected(wakeWord: String)
+
+    /**
+     * 原子消费并清除 lastCommand，防止指令重复处理
+     * 
+     * 返回当前 lastCommand 并将其从 state 中清除，确保每条指令只被处理一次
+     */
+    fun consumeLastCommand(): VoiceCommandResult?
+
+    /**
+     * TTS 开始播报时调用，暂停语音识别避免 TTS 被误识别
+     */
+    fun notifyTtsStart()
+
+    /**
+     * TTS 停止播报时调用，恢复语音识别
+     */
+    fun notifyTtsStop()
 }

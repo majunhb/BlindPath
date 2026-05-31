@@ -53,9 +53,14 @@ class BaiduWakeWordDetector(
         try {
             initialize()
         } catch (e: Exception) {
-            Timber.e(e, "$TAG: Failed to initialize")
+            Timber.e(e, "$TAG: Failed to initialize in init block, will retry in startListening")
+            isInitialized = false
+            initializationError = e
         }
     }
+
+    /** 记录初始化异常，用于 startListening 时重试 */
+    private var initializationError: Exception? = null
 
     private fun initialize() {
         if (appId.isBlank()) {
@@ -162,8 +167,23 @@ class BaiduWakeWordDetector(
     fun startListening() {
         if (!isInitialized || wp == null) {
             Timber.w("$TAG: Not initialized, cannot start listening")
-            return
-        }
+            // 尝试重新初始化（修复 init{} 异常后的半初始化状态）
+            initializationError?.let { err ->
+                Timber.i("$TAG: Attempting re-initialization after previous error: ${err.message}")
+                try {
+                    initialize()
+                    if (isInitialized) {
+                        Timber.i("$TAG: Re-initialization succeeded")
+                        initializationError = null
+                    } else {
+                        Timber.e("$TAG: Re-initialization still failed")
+                        return
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "$TAG: Re-initialization also failed, giving up")
+                    return
+                }
+            } ?: return
 
         if (isListening) {
             Timber.d("$TAG: Already listening")

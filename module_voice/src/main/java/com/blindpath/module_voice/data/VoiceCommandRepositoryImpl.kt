@@ -126,23 +126,46 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                     // Unicode NFC 规范化匹配，解决不同设备编码差异
                     val normalizedText = normalizeText(rawText)
                     val normalizedWakeWord = normalizeText(wakeWord)
-                    if (isWaitingForWakeWord && normalizedText.contains(normalizedWakeWord, ignoreCase = true)) {
-                        Timber.i("VoiceCommand: Wake word detected - $rawText")
+
+                    // 关键修复：只在等待唤醒词 且 未被外部引擎触发时 才做内部唤醒词检测
+                    // 避免与百度唤醒引擎双引擎冲突导致指令误解析
+                    if (isWaitingForWakeWord && !_interactionState.value.isWakeWordDetected
+                        && normalizedText.contains(normalizedWakeWord, ignoreCase = true)
+                    ) {
+                        Timber.i("VoiceCommand: Wake word detected internally - $rawText")
                         isWaitingForWakeWord = false
                         retryCount = 0
                         _interactionState.update { it.copy(isWakeWordDetected = true, isListening = false) }
                         scope.launch {
                             delay(800)
-                            Timber.i("VoiceCommand: Starting command listening after wake word")
+                            Timber.i("VoiceCommand: Starting command listening after internal wake word")
                             startListening()
                         }
                     } else if (!isWaitingForWakeWord) {
-                        val command = VoiceCommand.fromSpokenText(rawText)
-                        val result = VoiceCommandResult(command = command, confidence = confidence, rawText = rawText)
-                        _interactionState.update { it.copy(lastCommand = result, isListening = false, isWakeWordDetected = false) }
+                        // 已唤醒状态：解析指令（忽略唤醒词文本本身，避免被误解析为指令）
+                        val commandText = normalizedText.replace(normalizedWakeWord, "").trim()
+                        val command = if (commandText.isNotEmpty()) {
+                            VoiceCommand.fromSpokenText(commandText)
+                        } else {
+                            // 如果用户只说了唤醒词没有跟指令，提示用户说指令
+                            Timber.d("VoiceCommand: Only wake word spoken, waiting for command")
+                            null
+                        }
+                        val result = VoiceCommandResult(
+                            command = command,
+                            confidence = confidence,
+                            rawText = rawText
+                        )
+                        if (command != null) {
+                            _interactionState.update {
+                                it.copy(lastCommand = result, isListening = false, isWakeWordDetected = false)
+                            }
+                        }
                         isWaitingForWakeWord = true
-                        if (result.isSuccess) {
-                            Timber.i("VoiceCommand: Command recognized - ${command?.name}")
+                        if (command != null && result.isSuccess) {
+                            Timber.i("VoiceCommand: Command recognized - ${command.name}")
+                        } else if (command == null) {
+                            Timber.d("VoiceCommand: No command extracted, continuing to listen")
                         } else {
                             Timber.w("VoiceCommand: Command not recognized - ${result.failureReason}")
                         }
@@ -260,7 +283,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     }
     
     /** TTS 开始播报时调用 */
-    fun notifyTtsStart() {
+    override fun notifyTtsStart() {
         isTtsSpeaking = true
         ttsResumeJob?.cancel()
         Timber.d("VoiceCommand: TTS started, pausing recognition")
@@ -270,7 +293,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     }
     
     /** TTS 停止播报时调用 */
-    fun notifyTtsStop() {
+    override fun notifyTtsStop() {
         isTtsSpeaking = false
         Timber.d("VoiceCommand: TTS stopped, will resume recognition")
         ttsResumeJob = scope.launch {
@@ -347,5 +370,21 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             Timber.i("VoiceCommand: Starting command listening after external wake word trigger")
             startListening()
         }
+    }
+
+    /**
+     * 原子消费并清除 lastCommand
+     * 
+     * 读取当前 lastCommand 并立即从 _interactionState 中清除，
+     * 确保 VoiceInteractionManagerImpl 每条指令只处理一次，
+     * 避免因两个不同 StateFlow 实例导致的重复处理 bug
+     */
+    override fun consumeLastCommand(): VoiceCommandResult? {
+        val current = _interactionState.value.lastCommand
+        if (current != null) {
+            Timber.d("VoiceCommand: Consuming lastCommand - ${current.command?.name ?: current.failureReason}")
+            _interactionState.update { it.copy(lastCommand = null) }
+        }
+        return current
     }
 }
