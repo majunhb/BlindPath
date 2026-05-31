@@ -36,7 +36,7 @@ class BaiduWakeWordDetector(
     private val appId: String,
     private val apiKey: String,
     private val secretKey: String,
-    private val wakeWordAssetPath: String = "WakeUp.bin",
+    private val wakeWordAssetPath: String = WakeWordConfig.BAIDU_WAKE_WORD_ASSET,
     private val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD,
     private val onWakeWordDetected: (String) -> Unit
 ) : WakeWordDetector {

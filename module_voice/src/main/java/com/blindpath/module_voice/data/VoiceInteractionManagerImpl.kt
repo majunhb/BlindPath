@@ -1,8 +1,13 @@
 package com.blindpath.module_voice.data
 
+import android.content.Context
+import android.content.Intent
+import android.os.Build
 import com.blindpath.base.common.Result
 import com.blindpath.module_voice.domain.*
 import com.blindpath.module_voice.domain.model.*
+import com.blindpath.module_voice.service.WakeWordService
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import timber.log.Timber
@@ -31,7 +36,8 @@ import javax.inject.Singleton
 @Singleton
 class VoiceInteractionManagerImpl @Inject constructor(
     private val voiceRepository: VoiceRepository,
-    private val commandRepository: VoiceCommandRepository
+    private val commandRepository: VoiceCommandRepository,
+    @ApplicationContext private val context: Context
 ) : VoiceInteractionManager {
     
     private val _interactionState = MutableStateFlow(VoiceInteractionState())
@@ -78,7 +84,12 @@ class VoiceInteractionManagerImpl @Inject constructor(
             
             // 监听语音识别结果
             startCommandProcessing()
-            
+
+            // ★★★ 关键修复：启动 WakeWordService（百度/讯飞低功耗唤醒引擎）
+            // 根因：WakeWordService 从未被任何代码启动，导致外部唤醒引擎完全不工作
+            // 用户只能依赖不可靠的 SpeechRecognizer 内置唤醒词检测
+            startWakeWordService()
+
             // 注意：不再在此处启动监听，改到 speakWelcome() 中 TTS 播报完成后启动
             Timber.i("VoiceInteraction: Initialized successfully, listening will start after welcome")
             
@@ -106,19 +117,19 @@ class VoiceInteractionManagerImpl @Inject constructor(
         
         // 通知识别器 TTS 停止播报
         commandRepository.notifyTtsStop()
-        
-        // 额外等待确保音频焦点释放
-        delay(800)
+
+        // ★ 修复：从 800ms 减少到 300ms，确保音频焦点快速释放
+        delay(300)
         
         // 现在启动持续监听（TTS 播报完成后）
         // 修复：无论唤醒引擎是否可用，都启动 ASR 持续监听
         // 内置唤醒词检测在 VoiceCommandRepositoryImpl.onResults() 中实现
         Timber.i("VoiceInteraction: Starting continuous listening after welcome message")
         commandRepository.setWakeWordEnabled(true)
-        
-        // 等待监听启动
-        delay(500)
-        
+
+        // ★ 修复：从 500ms 减少到 200ms，让监听更快就绪
+        delay(200)
+
         // 播报唤醒词提示（此时监听已启动）
         commandRepository.notifyTtsStart()
         val promptText = VoiceGuidance.WAKE_WORD_PROMPT
@@ -219,6 +230,30 @@ class VoiceInteractionManagerImpl @Inject constructor(
         Timber.d("VoiceInteraction: Command executor set")
     }
     
+    /**
+     * 启动 WakeWordService（低功耗唤醒引擎服务）
+     *
+     * ★★★ 关键修复：此方法为新增，原代码中完全缺失 WakeWordService 的启动调用。
+     * WakeWordService 包含百度/讯飞唤醒引擎，是低功耗、高可靠性的唤醒词检测方案。
+     * 不启动此服务 = 唤醒词功能缺失 50%+ 的检测能力。
+     */
+    private fun startWakeWordService() {
+        try {
+            val intent = Intent(context, WakeWordService::class.java).apply {
+                action = WakeWordService.ACTION_START
+                setPackage(context.packageName)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(intent)
+            } else {
+                context.startService(intent)
+            }
+            Timber.i("VoiceInteraction: ★★★ WakeWordService started - external wake word engine now active")
+        } catch (e: Exception) {
+            Timber.e(e, "VoiceInteraction: Failed to start WakeWordService, built-in SpeechRecognizer will handle wake word detection")
+        }
+    }
+
     override fun release() {
         commandProcessingJob?.cancel()
         voiceRepository.release()

@@ -167,13 +167,17 @@ fun MainScreen(
     }
     
     // 播报欢迎消息（首次进入）
-    var hasAnnouncedWelcome by remember { mutableStateOf(false) }
-    LaunchedEffect(uiState.isInitialized) {
-        if (uiState.isInitialized && !hasAnnouncedWelcome) {
-            hasAnnouncedWelcome = true
-            viewModel.speak("已进入主界面，请说\"小智小智\"唤醒语音助手，或者说\"帮助\"查看可用指令")
-        }
-    }
+    // 修复：移除直接调用 viewModel.speak() 的重复欢迎词
+    // 原问题：此处的 speak() 与 VoiceInteractionViewModel.initialize() 内部的 speakWelcome() 并发执行
+    // 导致：1) TTS 队列冲突  2) speakWelcome() 的 setWakeWordEnabled(true) 被干扰
+    // 现在：统一由 ViewModel.initialize() → speakWelcome() 管理完整流程
+    // var hasAnnouncedWelcome by remember { mutableStateOf(false) }
+    // LaunchedEffect(uiState.isInitialized) {
+    //     if (uiState.isInitialized && !hasAnnouncedWelcome) {
+    //         hasAnnouncedWelcome = true
+    //         viewModel.speak("已进入主界面，请说\"小智小智\"唤醒语音助手，或者说\"帮助\"查看可用指令")
+    //     }
+    // }
 
     when {
         showSettings -> {
