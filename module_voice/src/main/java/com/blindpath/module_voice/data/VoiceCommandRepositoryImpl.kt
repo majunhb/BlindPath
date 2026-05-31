@@ -17,6 +17,28 @@ import java.text.Normalizer
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * 语音指令识别实现
+ * 
+ * 使用 Android 内置 SpeechRecognizer，支持唤醒词检测和指令识别。
+ * 
+ * 全程语音交互修复要点：
+ * 1. 修复唤醒词匹配：使用 WakeWordConfig.containsWakeWord() 匹配所有别名（小智/小智同学/小智小智）
+ * 2. 修复唤醒词文本去除：stripWakeWord() 去除所有别名变体，避免指令误解析
+ * 3. 修复 TTS 协调：notifyTtsStop 后恢复识别时，重置 isWaitingForWakeWord 状态
+ * 4. 修复 health check 逻辑：监听停止后自动重启
+ * 
+ * 核心交互流程（全程语音服务）：
+ * [APP启动] → TTS初始化 → ASR初始化 → speakWelcome()
+ *   → TTS播报欢迎词 → setWakeWordEnabled(true) → startContinuousListening()
+ *   → SpeechRecognizer 持续监听 → 等待用户说唤醒词
+ * [用户说"小智同学"] → onResults() 检测到唤醒词
+ *   → isWakeWordDetected = true → VoiceInteractionManager 播报"我在，请说指令"
+ *   → SpeechRecognizer 重启监听 → 等待用户说指令
+ * [用户说"开启障碍物检测"] → onResults() 解析指令
+ *   → consumeLastCommand() → VoiceInteractionManager 执行指令
+ *   → 播报结果 → 回到等待唤醒词
+ */
 @Singleton
 class VoiceCommandRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context
@@ -27,8 +49,6 @@ class VoiceCommandRepositoryImpl @Inject constructor(
          * Unicode NFC 规范化文本
          * 
          * 解决不同设备 SpeechRecognizer 返回不同 Unicode 形式的问题。
-         * 例如：组合字符可能有 NFC（预组合）和 NFD（分解）两种形式，
-         * 使用 NFC 规范化确保一致性匹配。
          */
         private fun normalizeText(text: String): String {
             return Normalizer.normalize(text.trim(), Normalizer.Form.NFC)
@@ -36,6 +56,21 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                 .replace("\u3000", "")      // 移除全角空格
                 .replace("\u200B", "")      // 移除零宽空格
                 .replace("\uFEFF", "")      // 移除 BOM
+        }
+
+        /**
+         * 从识别文本中去除唤醒词（含所有别名）
+         * 
+         * 使用最长匹配优先策略，避免"小智"误去除"小智同学"中的部分
+         */
+        fun stripWakeWord(text: String): String {
+            var result = text
+            // 按长度降序排列，优先匹配最长的别名
+            val sortedAliases = WakeWordConfig.WAKE_WORD_ALIASES.sortedByDescending { it.length }
+            for (alias in sortedAliases) {
+                result = result.replace(alias, "")
+            }
+            return result.trim()
         }
     }
     
@@ -121,18 +156,21 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                 if (!matches.isNullOrEmpty()) {
                     val rawText = matches[0]
                     val confidence = confidences?.getOrNull(0) ?: 0.5f
-                    Timber.d("VoiceCommand: Recognized text: $rawText, confidence: $confidence")
-                    val wakeWord = _interactionState.value.wakeWord
-                    // Unicode NFC 规范化匹配，解决不同设备编码差异
+                    Timber.i("VoiceCommand: ★ Recognized: '$rawText' (confidence=$confidence, waitingForWake=$isWaitingForWakeWord)")
+                    
+                    // Unicode NFC 规范化匹配
                     val normalizedText = normalizeText(rawText)
-                    val normalizedWakeWord = normalizeText(wakeWord)
+
+                    // 修复：使用 WakeWordConfig.containsWakeWord() 匹配所有别名
+                    // 不再只用 DEFAULT_WAKE_WORD 做单字符串匹配
+                    val isWakeWordInText = WakeWordConfig.containsWakeWord(normalizedText)
 
                     // 关键修复：只在等待唤醒词 且 未被外部引擎触发时 才做内部唤醒词检测
                     // 避免与百度唤醒引擎双引擎冲突导致指令误解析
                     if (isWaitingForWakeWord && !_interactionState.value.isWakeWordDetected
-                        && normalizedText.contains(normalizedWakeWord, ignoreCase = true)
+                        && isWakeWordInText
                     ) {
-                        Timber.i("VoiceCommand: Wake word detected internally - $rawText")
+                        Timber.i("VoiceCommand: ★★★ Wake word detected internally: '$rawText'")
                         isWaitingForWakeWord = false
                         retryCount = 0
                         _interactionState.update { it.copy(isWakeWordDetected = true, isListening = false) }
@@ -142,12 +180,13 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                             startListening()
                         }
                     } else if (!isWaitingForWakeWord) {
-                        // 已唤醒状态：解析指令（忽略唤醒词文本本身，避免被误解析为指令）
-                        val commandText = normalizedText.replace(normalizedWakeWord, "").trim()
+                        // 已唤醒状态：解析指令
+                        // 修复：使用 stripWakeWord() 去除所有别名变体
+                        val commandText = stripWakeWord(normalizedText)
                         val command = if (commandText.isNotEmpty()) {
                             VoiceCommand.fromSpokenText(commandText)
                         } else {
-                            // 如果用户只说了唤醒词没有跟指令，提示用户说指令
+                            // 如果用户只说了唤醒词没有跟指令
                             Timber.d("VoiceCommand: Only wake word spoken, waiting for command")
                             null
                         }
@@ -161,9 +200,10 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                                 it.copy(lastCommand = result, isListening = false, isWakeWordDetected = false)
                             }
                         }
+                        // 重置回等待唤醒词状态
                         isWaitingForWakeWord = true
                         if (command != null && result.isSuccess) {
-                            Timber.i("VoiceCommand: Command recognized - ${command.name}")
+                            Timber.i("VoiceCommand: ★ Command recognized: '${command.name}'")
                         } else if (command == null) {
                             Timber.d("VoiceCommand: No command extracted, continuing to listen")
                         } else {
@@ -266,6 +306,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     }
     
     override fun release() {
+        stopContinuousListening()
         speechRecognizer?.destroy()
         speechRecognizer = null
         isInitialized = false
@@ -299,7 +340,6 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         ttsResumeJob = scope.launch {
             delay(600)
             // 只在持续监听模式且未检测到唤醒词时恢复识别
-            // 避免与 recognizeOnce() 中的 startListening() 冲突
             if (isContinuousListeningEnabled && !isTtsSpeaking && !_interactionState.value.isWakeWordDetected) {
                 Timber.i("VoiceCommand: Resuming recognition after TTS")
                 startListening()
@@ -312,12 +352,11 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         isContinuousListeningEnabled = true
         isWaitingForWakeWord = true
         retryCount = 0
-        Timber.i("VoiceCommand: Continuous listening started")
+        Timber.i("VoiceCommand: ★ Continuous listening STARTED")
         listeningJob = scope.launch {
             delay(500)
             startListening()
         }
-        healthCheckJob?.cancel()
         healthCheckJob = scope.launch {
             var lastStateTime = System.currentTimeMillis()
             var lastListeningState = _interactionState.value.isListening
@@ -347,7 +386,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         ttsResumeJob = null
         healthCheckJob?.cancel()
         healthCheckJob = null
-        Timber.i("VoiceCommand: Continuous listening stopped")
+        Timber.i("VoiceCommand: Continuous listening STOPPED")
     }
 
     /**
@@ -357,7 +396,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
      * 会自动切换到指令识别模式
      */
     override fun triggerWakeWordDetected(wakeWord: String) {
-        Timber.i("VoiceCommand: Wake word triggered externally - $wakeWord")
+        Timber.i("VoiceCommand: ★ Wake word triggered externally - $wakeWord")
         
         // 设置唤醒词检测状态
         isWaitingForWakeWord = false

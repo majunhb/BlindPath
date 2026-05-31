@@ -28,14 +28,16 @@ import javax.inject.Inject
 /**
  * 语音唤醒常驻服务
  *
- * 功能：
- * - 前台服务，保活唤醒词检测
- * - 支持双引擎架构（百度 + 科大讯飞语音唤醒）
- * - 自动降级策略（主引擎失败时切换到备选引擎）
- * - 16kHz采样率音频采集
- * - 低功耗运行（锁屏时降低采样频率）
- * - 支持蓝牙耳机/骨传导耳机
- * - 与ASR模块协调，避免冲突
+ * 全程语音交互修复：
+ * 1. 修复凭证缺失时的处理：不再启动无意义的能量检测前台服务
+ * 2. 凭证缺失时直接停止服务，让 VoiceCommandRepositoryImpl 的内置唤醒词检测工作
+ * 3. 添加详细日志帮助诊断唤醒问题
+ *
+ * 架构说明：
+ * - 唤醒词检测有两条路径：
+ *   a) 外部引擎（百度/讯飞）：由 WakeWordService 管理，检测到后发广播
+ *   b) 内置检测（SpeechRecognizer）：由 VoiceCommandRepositoryImpl 管理，在 onResults() 中匹配
+ * - 两条路径互不干扰，内部检测使用 WakeWordConfig.containsWakeWord() 匹配所有别名
  */
 @AndroidEntryPoint
 class WakeWordService : Service() {
@@ -62,9 +64,6 @@ class WakeWordService : Service() {
     // 引擎管理器
     private lateinit var engineManager: WakeWordEngineManager
 
-    // 音频缓冲区（用于累积引擎所需的帧）
-    private val audioBuffer = ArrayList<Short>(512)
-
     companion object {
         const val ACTION_START = "com.blindpath.wakeword.START"
         const val ACTION_STOP = "com.blindpath.wakeword.STOP"
@@ -73,12 +72,6 @@ class WakeWordService : Service() {
 
         private const val NOTIFICATION_CHANNEL_ID = "wakeword_service_channel"
         private const val NOTIFICATION_ID = 1001
-
-        // 引擎配置 - TODO: 从配置文件读取
-        // 凭证已迁移到 BuildConfig，见 local.properties
-        // 凭证已迁移到 BuildConfig，见 local.properties
-        // 凭证已迁移到 BuildConfig，见 local.properties
-        // 凭证已迁移到 BuildConfig，见 local.properties
 
         @Volatile
         var isServiceRunning = false
@@ -89,8 +82,6 @@ class WakeWordService : Service() {
         super.onCreate()
         Timber.i("WakeWordService: onCreate")
         createNotificationChannel()
-        acquireWakeLock()
-        initializeEngineManager()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -198,8 +189,8 @@ class WakeWordService : Service() {
         val xfApiKey = getCredential(BuildConfig.IFLYTEK_API_KEY, "IFLYTEK_API_KEY", localProps)
         val xfApiSecret = getCredential(BuildConfig.IFLYTEK_API_SECRET, "IFLYTEK_API_SECRET", localProps)
         
-        Timber.d("WakeWordService: BAIDU_APP_ID=$baiduAppId")
-        Timber.d("WakeWordService: IFLYTEK_APP_ID=$xfAppId")
+        Timber.d("WakeWordService: BAIDU_APP_ID=${if (baiduAppId.isNotBlank()) "configured" else "EMPTY"}")
+        Timber.d("WakeWordService: IFLYTEK_APP_ID=${if (xfAppId.isNotBlank()) "configured" else "EMPTY"}")
         
         val config = WakeWordEngineManager.EngineConfig(
             primaryEngine = WakeWordEngineManager.EngineType.BAIDU,
@@ -218,6 +209,13 @@ class WakeWordService : Service() {
         Timber.i("WakeWordService: Engine manager initialized with ${engineManager.getCurrentEngineType()}")
     }
 
+    /**
+     * 启动唤醒词检测
+     * 
+     * 全程修复：当没有可用引擎时（凭证缺失 + 讯飞也不可用），
+     * 不再启动无意义的能量检测，直接停止服务。
+     * VoiceCommandRepositoryImpl 的内置 SpeechRecognizer 唤醒词检测会接管。
+     */
     private fun startWakeWordDetection() {
         if (isRunning) {
             Timber.d("WakeWordService: Already running")
@@ -225,11 +223,29 @@ class WakeWordService : Service() {
         }
 
         Timber.i("WakeWordService: Starting wake word detection")
+        
+        // 检查凭证是否可用
+        val localProps = readCredentialsFromAllSources()
+        val baiduAppId = getCredential(BuildConfig.BAIDU_APP_ID, "BAIDU_APP_ID", localProps)
+        val xfAppId = getCredential(BuildConfig.IFLYTEK_APP_ID, "IFLYTEK_APP_ID", localProps)
+        
+        if (baiduAppId.isBlank() && xfAppId.isBlank()) {
+            Timber.w("WakeWordService: ★★★ No Baidu/XF credentials available!")
+            Timber.w("WakeWordService: VoiceCommandRepositoryImpl's built-in wake word detection will handle it")
+            Timber.w("WakeWordService: To enable low-power wake word engine, configure BAIDU_APP_ID/BAIDU_API_KEY/BAIDU_SECRET_KEY in local.properties or assets/credentials.properties")
+            // 不启动服务，让内置检测接管
+            stopSelf()
+            return
+        }
+
         isRunning = true
         isServiceRunning = true
 
         // 启动前台服务
         startForeground(NOTIFICATION_ID, createNotification())
+
+        // 获取 WakeLock（无超时，手动释放）
+        acquireWakeLock()
 
         // 请求音频焦点
         audioFocusManager.requestFocus("wakeword", priority = 10)
@@ -242,11 +258,21 @@ class WakeWordService : Service() {
         // 初始化并启动唤醒词检测
         serviceScope.launch {
             try {
+                initializeEngineManager()
+                
+                val engineType = engineManager.getCurrentEngineType()
+                if (engineType == WakeWordEngineManager.EngineType.ENERGY) {
+                    // 能量检测不可靠，不使用
+                    Timber.w("WakeWordService: Only energy detection available, not reliable. Stopping.")
+                    stopSelf()
+                    return@launch
+                }
+
                 if (engineManager.isCurrentEngineSelfManaged()) {
-                    // 百度引擎：SDK 自己管理音频采集，不需要手动启动 AudioRecord
-                    Timber.i("WakeWordService: Using self-managed audio engine (${engineManager.getCurrentEngineType()})")
+                    // 百度/讯飞引擎：SDK 自己管理音频采集，不需要手动启动 AudioRecord
+                    Timber.i("WakeWordService: Using self-managed audio engine ($engineType)")
                 } else {
-                    // 能量检测：需要手动采集音频
+                    // 非自管理引擎：需要手动采集音频
                     initAudioRecord()
                     startAudioProcessing()
                 }
@@ -268,9 +294,6 @@ class WakeWordService : Service() {
         audioRecord?.stop()
         audioRecord?.release()
         audioRecord = null
-
-        // 清空音频缓冲区
-        audioBuffer.clear()
 
         // 停止蓝牙耳机音频
         audioFocusManager.stopBluetoothSco()
@@ -337,16 +360,15 @@ class WakeWordService : Service() {
             return
         }
 
+        val audioBuffer = ArrayList<Short>(512)
+
         // 将音频数据添加到缓冲区
         for (i in 0 until size) {
             audioBuffer.add(buffer[i])
         }
 
-        // 获取帧长度（不同引擎可能有不同要求）
-        val frameLength = when (engine) {
-            is EnergyWakeWordDetector -> engine.getFrameLength()
-            else -> 512
-        }
+        // 获取帧长度
+        val frameLength = 512
 
         // 处理缓冲区中完整的帧
         while (audioBuffer.size >= frameLength && !isWakeWordDetected) {
@@ -357,22 +379,15 @@ class WakeWordService : Service() {
 
             val detected = engine.process(frame)
             if (detected) {
-                // 唤醒词检测成功
                 break
             }
-        }
-
-        // 防止缓冲区无限增长（保留最多2帧的缓冲）
-        val maxBufferSize = frameLength * 2
-        while (audioBuffer.size > maxBufferSize) {
-            audioBuffer.removeAt(0)
         }
     }
 
     private fun onWakeWordDetected(wakeWord: String) {
         if (isWakeWordDetected) return
 
-        Timber.i("WakeWordService: Wake word detected - $wakeWord")
+        Timber.i("WakeWordService: ★★★ Wake word detected - $wakeWord")
         isWakeWordDetected = true
 
         // 发送广播通知
@@ -426,6 +441,7 @@ class WakeWordService : Service() {
     }
 
     private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -433,8 +449,7 @@ class WakeWordService : Service() {
         ).apply {
             setReferenceCounted(false)
         }
-        // 使用无超时的 acquire， WakeLock 在 releaseWakeLock() 时手动释放
-        // 之前 10 分钟超时会导致长时间使用后唤醒服务被系统回收
+        // 无超时 acquire，在 onDestroy/releaseWakeLock 中手动释放
         wakeLock?.acquire()
     }
 
