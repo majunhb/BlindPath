@@ -143,6 +143,7 @@ git push origin feature/your-feature-name
 
 - 使用 Kotlin 官方编码规范
 - 遵循本项目的 [CODE_STYLE.md](docs/CODE_STYLE.md)
+- 遵循本项目的 [CODE_COMMENTS.md](docs/CODE_COMMENTS.md)（**注释规范**）
 - 代码格式化：使用 `Ctrl+Alt+L` (Windows/Linux) 或 `Cmd+Option+L` (macOS)
 
 ### 文件组织
