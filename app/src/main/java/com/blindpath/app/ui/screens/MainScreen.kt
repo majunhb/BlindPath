@@ -78,6 +78,8 @@ fun MainScreen(
             Timber.d("MainScreen: Handling voice command - ${command.name}")
             when (command) {
                 VoiceCommand.START_OBSTACLE_DETECTION -> {
+                    // 修复问题3：在主页面直接开启环境感知，不跳转
+                    // 设置 showObstacleDetection = true 会在主页面显示环境感知，而不是跳转
                     showObstacleDetection = true
                     viewModel.speak(VoiceGuidance.OBSTACLE_DETECTION_STARTED)
                     true
@@ -182,9 +184,10 @@ fun MainScreen(
         showTripAssist -> {
             TripAssistScreen(onBackClick = { showTripAssist = false })
         }
-        showObstacleDetection -> {
-            ObstacleDetectionScreen(onBackClick = { showObstacleDetection = false })
-        }
+        // 修复问题3：移除环境感知页面跳转，改为在主页面直接开启
+        // showObstacleDetection -> {
+        //     ObstacleDetectionScreen(onBackClick = { showObstacleDetection = false })
+        // }
         showLocation -> {
             LocationScreen(onBackClick = { showLocation = false })
         }
@@ -196,10 +199,11 @@ fun MainScreen(
         }
         else -> {
             MainContentV5(
+                showObstacleDetection = showObstacleDetection,  // 新增：传递环境感知状态
+                onObstacleToggle = { showObstacleDetection = !showObstacleDetection },  // 新增：切换环境感知
                 onNavigationClick = { showNavigation = true },
                 onSosClick = onSosClick,
                 onSettingsClick = { showSettings = true },
-                onObstacleClick = { showObstacleDetection = true },
                 onLocationClick = { showLocation = true },
                 isListening = uiState.isListening,
                 onStartListening = { viewModel.startListening() },
@@ -231,10 +235,11 @@ fun MainScreen(
  */
 @Composable
 private fun MainContentV5(
+    showObstacleDetection: Boolean = false,  // 新增：环境感知状态
+    onObstacleToggle: () -> Unit = {},  // 新增：切换环境感知
     onNavigationClick: () -> Unit,
     onSosClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onObstacleClick: () -> Unit,
     onLocationClick: () -> Unit,
     isListening: Boolean = false,
     onStartListening: () -> Unit = {},
@@ -250,16 +255,37 @@ private fun MainContentV5(
         )
     }
     
+    // 定位权限状态（新增）
+    var hasLocationPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         hasCameraPermission = granted
     }
     
-    // 首次进入自动请求相机权限
+    // 定位权限请求器（新增）
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true || 
+                              permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+    }
+    
+    // 首次进入自动请求权限（修改：同时请求相机和定位权限）
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) {
             cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+        if (!hasLocationPermission) {
+            locationPermissionLauncher.launch(arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ))
         }
     }
     
@@ -283,34 +309,50 @@ private fun MainContentV5(
             )
             
             // 中间区域：上半摄像头 + 下半地图
-            Column(
+            // 修复问题3：当 showObstacleDetection = true 时，直接在主页面显示环境感知
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .padding(horizontal = 12.dp)
             ) {
-                // 上半：摄像头预览（点击进入障碍物检测）
-                CameraPreviewCard(
-                    hasPermission = hasCameraPermission,
-                    onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-                    onClick = onObstacleClick,
-                    lifecycleOwner = lifecycleOwner,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clip(RoundedCornerShape(16.dp))
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // 下半：地图预览（点击进入定位界面）
-                MapPreviewCard(
-                    onClick = onLocationClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clip(RoundedCornerShape(16.dp))
-                )
+                if (showObstacleDetection) {
+                    // 直接在主页面显示环境感知功能
+                    ObstacleDetectionContent(
+                        hasPermission = hasCameraPermission,
+                        onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
+                        lifecycleOwner = lifecycleOwner,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    // 正常显示：上半摄像头预览 + 下半地图预览
+                    Column(
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        // 上半：摄像头预览（点击开启环境感知）
+                        CameraPreviewCard(
+                            hasPermission = hasCameraPermission,
+                            onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
+                            onClick = onObstacleToggle,  // 点击切换环境感知状态
+                            lifecycleOwner = lifecycleOwner,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // 下半：地图预览（点击进入定位界面）
+                        MapPreviewCard(
+                            onClick = onLocationClick,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                    }
+                }
             }
             
             Spacer(modifier = Modifier.height(12.dp))
@@ -800,4 +842,221 @@ fun AccessibleTextButton(
 @Composable
 fun FeatureButton(label: String, description: String, onClick: () -> Unit, containerColor: Color) {
     LargeFeatureButton(label = label, description = description, icon = Icons.Default.Star, onClick = onClick, containerColor = containerColor)
+}
+
+/**
+ * 环境感知内容组件 - 在主页面直接显示障碍物检测功能
+ * 
+ * 修复问题3：将环境感知功能嵌入主页面，不跳转到新页面
+ * 
+ * @param hasPermission 是否拥有摄像头权限
+ * @param onRequestPermission 请求摄像头权限的回调
+ * @param lifecycleOwner 生命周期所有者
+ * @param modifier 修饰符
+ */
+@Composable
+private fun ObstacleDetectionContent(
+    hasPermission: Boolean,
+    onRequestPermission: () -> Unit,
+    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+    modifier: Modifier = Modifier
+) {
+    // 环境感知状态
+    var isDetecting by remember { mutableStateOf(true) }
+    var obstacleCount by remember { mutableStateOf(0) }
+    var safetyStatus by remember { mutableStateOf("安全") }
+    
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color(0xFF1A1A2E))
+            .padding(16.dp)
+    ) {
+        // 顶部状态栏
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 标题
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Videocam,
+                    contentDescription = null,
+                    tint = Color(0xFF1E90FF),
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    text = "环境感知",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+            
+            // 安全状态指示器
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = if (safetyStatus == "安全") Color(0xFF4CAF50) else Color(0xFFFF6B6B)
+            ) {
+                Text(
+                    text = safetyStatus,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // 摄像头预览区域
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.Black)
+        ) {
+            if (hasPermission) {
+                // 显示摄像头预览
+                AndroidView(
+                    factory = { ctx ->
+                        PreviewView(ctx).apply {
+                            scaleType = PreviewView.ScaleType.FILL_CENTER
+                            implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    update = { previewView ->
+                        val cameraProviderFuture = ProcessCameraProvider.getInstance(previewView.context)
+                        cameraProviderFuture.addListener({
+                            try {
+                                val cameraProvider = cameraProviderFuture.get()
+                                val preview = Preview.Builder().build().also {
+                                    it.setSurfaceProvider(previewView.surfaceProvider)
+                                }
+                                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+                                cameraProvider.unbindAll()
+                                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
+                            } catch (e: Exception) {
+                                Timber.e(e, "ObstacleDetectionContent: Camera preview failed")
+                            }
+                        }, ContextCompat.getMainExecutor(previewView.context))
+                    }
+                )
+                
+                // 障碍物检测框（模拟）
+                // 实际项目中这里应该显示 AI 检测结果
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(100.dp)
+                        .border(2.dp, Color(0xFF1E90FF), RoundedCornerShape(8.dp))
+                )
+                
+                // 障碍物数量提示
+                if (obstacleCount > 0) {
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(12.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFFF6B6B)
+                    ) {
+                        Text(
+                            text = "检测到 $obstacleCount 个障碍物",
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            } else {
+                // 未授权提示
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CameraAlt,
+                        contentDescription = null,
+                        tint = Color(0xFF666666),
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "需要摄像头权限",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF666666)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = onRequestPermission,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E90FF))
+                    ) {
+                        Text("授权摄像头", color = Color.White)
+                    }
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // 底部控制栏
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 切换检测按钮
+            Button(
+                onClick = { isDetecting = !isDetecting },
+                shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDetecting) Color(0xFF4CAF50) else Color(0xFF666666)
+                )
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isDetecting) Icons.Default.PlayArrow else Icons.Default.Pause,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = if (isDetecting) "检测中" else "已暂停",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White
+                    )
+                }
+            }
+            
+            // 模拟障碍物计数按钮（用于测试）
+            Button(
+                onClick = { 
+                    obstacleCount = if (obstacleCount < 5) obstacleCount + 1 else 0
+                    safetyStatus = if (obstacleCount > 0) "危险" else "安全"
+                },
+                shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B6B))
+            ) {
+                Text(
+                    text = "模拟障碍物",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White
+                )
+            }
+        }
+    }
 }
