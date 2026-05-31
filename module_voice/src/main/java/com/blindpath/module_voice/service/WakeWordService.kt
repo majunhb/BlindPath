@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import dagger.hilt.android.AndroidEntryPoint
 import com.blindpath.module_voice.BuildConfig
 import com.blindpath.module_voice.domain.model.WakeWordConfig
@@ -177,6 +178,7 @@ class WakeWordService : Service() {
         }
         engineManager.onEngineSwitched = { engineType ->
             Timber.i("WakeWordService: Engine switched to $engineType")
+            updateNotification()
         }
 
         // 读取凭证：优先 BuildConfig，其次 assets/外部文件
@@ -259,7 +261,10 @@ class WakeWordService : Service() {
         serviceScope.launch {
             try {
                 initializeEngineManager()
-                
+
+                // 引擎就绪后更新通知显示实际引擎类型
+                updateNotification()
+
                 val engineType = engineManager.getCurrentEngineType()
                 if (engineType == WakeWordEngineManager.EngineType.ENERGY) {
                     // 能量检测不可靠，不使用
@@ -420,6 +425,13 @@ class WakeWordService : Service() {
     }
 
     private fun createNotification(): Notification {
+        // 安全获取引擎类型，未初始化时显示 "启动中..."
+        val engineType = if (::engineManager.isInitialized) {
+            engineManager.getCurrentEngineType().name
+        } else {
+            "启动中..."
+        }
+
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent().apply {
             setClassName(packageName, "${packageName}.MainActivity")
         }
@@ -432,12 +444,25 @@ class WakeWordService : Service() {
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("助盲智行")
-            .setContentText("语音唤醒服务运行中 [${engineManager.getCurrentEngineType()}]")
+            .setContentText("语音唤醒服务运行中 [$engineType]")
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
             .build()
+    }
+
+    /**
+     * 引擎就绪或切换后更新通知内容
+     */
+    private fun updateNotification() {
+        try {
+            val notificationManager = NotificationManagerCompat.from(this)
+            notificationManager.notify(NOTIFICATION_ID, createNotification())
+            Timber.i("WakeWordService: Notification updated [${engineManager.getCurrentEngineType()}]")
+        } catch (e: Exception) {
+            Timber.w(e, "WakeWordService: Failed to update notification")
+        }
     }
 
     private fun acquireWakeLock() {
