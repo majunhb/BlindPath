@@ -6,9 +6,10 @@ import com.blindpath.module_voice.domain.model.VoiceState
 import com.blindpath.module_voice.domain.model.VoiceStatistics
 import com.blindpath.module_voice.domain.model.VoiceType
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 
 interface VoiceRepository {
-    val voiceState: Flow<VoiceState>
+    val voiceState: StateFlow<VoiceState>
     val statistics: Flow<VoiceStatistics>
 
     suspend fun initialize(): Result<Boolean>

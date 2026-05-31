@@ -45,6 +45,9 @@ class BaiduWakeWordDetector(
         private const val TAG = "BaiduWakeWordDetector"
     }
 
+    /** 记录初始化异常，用于 startListening 时重试（必须在 init{} 之前声明） */
+    private var initializationError: Exception? = null
+
     private var wp: EventManager? = null
     private var isListening = false
     private var isInitialized = false
@@ -58,9 +61,6 @@ class BaiduWakeWordDetector(
             initializationError = e
         }
     }
-
-    /** 记录初始化异常，用于 startListening 时重试 */
-    private var initializationError: Exception? = null
 
     private fun initialize() {
         if (appId.isBlank()) {
