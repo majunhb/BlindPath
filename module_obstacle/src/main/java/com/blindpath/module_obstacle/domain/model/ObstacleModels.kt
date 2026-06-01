@@ -74,10 +74,9 @@ enum class ObstacleType(
     fun getAlertMessage(distance: Float, direction: Direction? = null): String {
         val distanceInt = distance.toInt()
         val directionPrefix = when (direction) {
-            Direction.LEFT, Direction.LEFT_FRONT, Direction.FRONT_LEFT -> "左侧"
-            Direction.RIGHT, Direction.RIGHT_FRONT, Direction.FRONT_RIGHT -> "右侧"
+            Direction.LEFT, Direction.LEFT_FRONT -> "左侧"
+            Direction.RIGHT, Direction.RIGHT_FRONT -> "右侧"
             Direction.CENTER -> ""
-            Direction.FRONT -> ""
             Direction.BACK -> "后方"
             null -> ""
         }
@@ -185,10 +184,7 @@ enum class ObstacleType(
 enum class Direction {
     LEFT,       // 左侧
     LEFT_FRONT, // 左前方
-    FRONT_LEFT, // 左前方
     CENTER,     // 正前方
-    FRONT,      // 正前方
-    FRONT_RIGHT,// 右前方
     RIGHT_FRONT,// 右前方
     RIGHT,      // 右侧
     BACK;       // 后方
@@ -200,10 +196,7 @@ enum class Direction {
         return when (this) {
             LEFT -> "左侧"
             LEFT_FRONT -> "左前方"
-            FRONT_LEFT -> "左前方"
             CENTER -> "正前方"
-            FRONT -> "正前方"
-            FRONT_RIGHT -> "右前方"
             RIGHT_FRONT -> "右前方"
             RIGHT -> "右侧"
             BACK -> "后方"
