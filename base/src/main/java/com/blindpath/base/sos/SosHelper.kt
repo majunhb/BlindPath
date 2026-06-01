@@ -6,7 +6,6 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.telephony.SmsManager
 import androidx.core.content.ContextCompat
-import com.blindpath.base.tts.TtsManager
 import timber.log.Timber
 
 /**
