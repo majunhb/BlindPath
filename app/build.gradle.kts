@@ -69,6 +69,18 @@ dependencies {
     // 百度语音 SDK (app 模块直接引入 AAR，Library 模块编译时用 compileOnly)
     implementation(fileTree("$rootDir/module_voice/libs") { include("*.aar") })
     
+    // Timber logging
+    implementation("com.jakewharton.timber:timber:5.0.1")
+
+    // 高德地图 SDK（AMapLocationClient 等）
+    implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
+
+    // CameraX（ProcessCameraProvider, PreviewView, ImageAnalysis 等）
+    implementation("androidx.camera:camera-core:1.3.1")
+    implementation("androidx.camera:camera-camera2:1.3.1")
+    implementation("androidx.camera:camera-lifecycle:1.3.1")
+    implementation("androidx.camera:camera-view:1.3.1")
+
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
