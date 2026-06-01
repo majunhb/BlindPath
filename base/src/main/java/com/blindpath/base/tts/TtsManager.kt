@@ -9,7 +9,15 @@ import java.util.*
 /**
  * 语音播报服务 - 为视障用户提供语音反馈
  * 已下沉到 base 模块，供所有服务直接使用
+ * 
+ * @deprecated 请使用 [com.blindpath.module_voice.domain.VoiceRepository] 替代，
+ *             它提供了优先级队列、去重、StateFlow 状态管理等更完善的 TTS 能力。
+ *             本类已无实际调用者，将在后续版本移除。
  */
+@Deprecated(
+    message = "Use VoiceRepository instead",
+    replaceWith = ReplaceWith("VoiceRepository", imports = ["com.blindpath.module_voice.domain.VoiceRepository"])
+)
 class TtsManager(private val context: Context) {
 
     private var tts: TextToSpeech? = null
