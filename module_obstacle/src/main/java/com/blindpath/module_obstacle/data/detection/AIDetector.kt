@@ -2,6 +2,7 @@ package com.blindpath.module_obstacle.data.detection
 
 import android.content.Context
 import android.graphics.Bitmap
+import com.blindpath.base.config.AppConfig
 import com.blindpath.module_obstacle.domain.model.*
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -49,8 +50,8 @@ class AIDetector @Inject constructor(
     // 模型配置
     private val modelPath = "yolov8n.tflite"
     private val modelUrl = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite"
-    private val inputSize = 640
-    private val numThreads = 4
+    private val inputSize = AppConfig.AIDetection.INPUT_SIZE
+    private val numThreads = AppConfig.AIDetection.NUM_THREADS
 
     // ============ COCO 80类 到 视障障碍物类型 的映射 ============
     // COCO类别参考: https://cocodataset.org/#home
@@ -254,34 +255,33 @@ class AIDetector @Inject constructor(
                 val response = client.newCall(request).execute()
 
                 if (!response.isSuccessful) {
-                    Timber.e("Download failed with code: ${response.code()}")
+                    Timber.e("Download failed with code: ${response.code}")
                     return@withContext null
                 }
 
                 // 保存到内部存储
-                val responseBody = response.body() ?: return@withContext null
+                val responseBody = response.body ?: return@withContext null
                 outputFile = File(context.filesDir, modelPath)
-                val inputStream = responseBody.byteStream()
-                val outputStream = FileOutputStream(outputFile)
-
-                val buffer = ByteArray(4096)
-                var bytesRead: Int
-                var totalBytes: Long = 0
                 val fileSize = responseBody.contentLength()
 
-                while (true) {
-                    bytesRead = inputStream?.read(buffer) ?: -1
-                    if (bytesRead == -1) break
-                    outputStream.write(buffer, 0, bytesRead)
-                    totalBytes += bytesRead
-                    if (fileSize > 0) {
-                        val progress = (totalBytes * 100 / fileSize).toInt()
-                        Timber.d("Download progress: $progress%")
+                responseBody.byteStream().use { inputStream ->
+                    FileOutputStream(outputFile).use { outputStream ->
+                        val buffer = ByteArray(4096)
+                        var bytesRead: Int
+                        var totalBytes: Long = 0
+
+                        while (true) {
+                            bytesRead = inputStream.read(buffer)
+                            if (bytesRead == -1) break
+                            outputStream.write(buffer, 0, bytesRead)
+                            totalBytes += bytesRead
+                            if (fileSize > 0) {
+                                val progress = (totalBytes * 100 / fileSize).toInt()
+                                Timber.d("Download progress: $progress%")
+                            }
+                        }
                     }
                 }
-
-                outputStream.close()
-                inputStream?.close()
 
                 Timber.d("Model downloaded successfully: ${outputFile.absolutePath} (${outputFile.length()} bytes)")
                 return@withContext outputFile
@@ -481,10 +481,10 @@ class AIDetector @Inject constructor(
         return when {
             ratio < 0.15f -> Direction.LEFT
             ratio < 0.30f -> Direction.LEFT_FRONT
-            ratio < 0.40f -> Direction.FRONT_LEFT
+            ratio < 0.40f -> Direction.LEFT_FRONT
             ratio < 0.50f -> Direction.CENTER
             ratio < 0.60f -> Direction.CENTER
-            ratio < 0.70f -> Direction.FRONT_RIGHT
+            ratio < 0.70f -> Direction.RIGHT_FRONT
             ratio < 0.85f -> Direction.RIGHT_FRONT
             else -> Direction.RIGHT
         }
