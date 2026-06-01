@@ -1,47 +1,30 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("com.google.dagger.hilt.android")
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.hilt.android)
     id("com.google.devtools.ksp")
 }
 
 android {
     namespace = "com.blindpath.app"
-    compileSdk = 34
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
         applicationId = "com.blindpath.app"
-        minSdk = 26
-        targetSdk = 34
-        versionCode = 8
-        versionName = "3.5"
+        minSdk = libs.versions.minSdk.get().toInt()
+        targetSdk = libs.versions.targetSdk.get().toInt()
+        versionCode = 1
+        versionName = "1.0"
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
-
-        // 凭证配置：从 local.properties 读取，通过 manifestPlaceholders 注入到 AndroidManifest.xml
-        manifestPlaceholders += mapOf(
-            "BAIDU_APP_ID" to (project.findProperty("BAIDU_APP_ID") as String? ?: ""),
-            "BAIDU_API_KEY" to (project.findProperty("BAIDU_API_KEY") as String? ?: ""),
-            "BAIDU_SECRET_KEY" to (project.findProperty("BAIDU_SECRET_KEY") as String? ?: "")
-        )
-
-        ndk {
-            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
-        }
     }
 
     buildTypes {
-        debug {
-            // Debug 版本也启用基础优化
-            isMinifyEnabled = false
-            isShrinkResources = false
-        }
         release {
-            // Release 版本启用完整优化
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -57,41 +40,13 @@ android {
     }
     buildFeatures {
         compose = true
-        buildConfig = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.10"
+        kotlinCompilerExtensionVersion = libs.versions.kotlin.compiler.extension.get()
     }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
-            // 排除未使用的资源
-            excludes += "/META-INF/DEPENDENCIES"
-            excludes += "/META-INF/LICENSE"
-            excludes += "/META-INF/LICENSE.txt"
-            excludes += "/META-INF/NOTICE"
-            excludes += "/META-INF/NOTICE.txt"
-        }
-
-        jniLibs {
-            // 压缩 JNI 库（减少约 30% 体积）
-            useLegacyPackaging = false
-        }
-    }
-    
-    // Bundle 优化（AAB 格式）
-    bundle {
-        language {
-            // 启用语言资源分割，用户只下载设备语言资源
-            enableSplit = true
-        }
-        density {
-            // 启用密度资源分割，用户只下载设备密度资源
-            enableSplit = true
-        }
-        abi {
-            // 启用 ABI 分割，用户只下载设备架构资源
-            enableSplit = true
         }
     }
 }
@@ -99,61 +54,44 @@ android {
 dependencies {
     implementation(project(":base"))
     implementation(project(":module_obstacle"))
-    implementation(project(":module_indoor"))
     implementation(project(":module_navigation"))
     implementation(project(":module_voice"))
     implementation(project(":module_settings"))
     implementation(project(":module_community"))
-    implementation(project(":module_trip_assist"))
-
-    // 科大讯飞 AIKit SDK（本地AAR依赖）
-    implementation(files("libs/AIKit.aar"))
-    implementation(files("libs/SparkChain.aar"))
-
-    // ============ 高德地图 SDK ============
-    // 方案一：仅定位 + 搜索（减少约 20MB）
-    // 如果不需要地图显示，使用此方案
-    // implementation("com.amap.api:location:6.5.1")
-    // implementation("com.amap.api:search:9.7.4")
     
-    // 方案二：一体包（包含地图显示，体积较大）
-    // 当前使用此方案，如需优化体积可切换到方案一
-    implementation(libs.amap.sdk)
-
-    // CameraX - 首页摄像头预览
-    implementation(libs.bundles.camerax)
-
-    // Hilt - 使用 version catalog
+    // Hilt
     implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
+    ksp(libs.hilt.android.compiler)
     implementation(libs.hilt.navigation.compose)
-
-    // Core - 使用 version catalog
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.process)
-    implementation(libs.androidx.activity.compose)
-
-    // Timber
-    implementation(libs.timber)
-
-    // CameraX - 使用 version catalog bundle
-    implementation(libs.bundles.camerax)
-
-    // Compose - 使用 version catalog
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.bundles.compose)
-    implementation(libs.androidx.compose.material.icons)
-
+    
+    // Core
+    implementation(libs.core.ktx)
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.process)
+    implementation(libs.activity.compose)
+    
+    // Compose
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.tooling.preview)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.extended)
+    
     // Debug
-    debugImplementation(libs.bundles.compose.debug)
-
-    // Test dependencies - 使用 version catalog
-    testImplementation(libs.bundles.testing)
-
+    debugImplementation(libs.compose.ui.tooling)
+    debugImplementation(libs.compose.ui.test.manifest)
+    
+    // Test dependencies
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.arch.core.testing)
+    testImplementation(libs.lifecycle.runtime.testing)
+    
     // Android Test
-    androidTestImplementation(libs.bundles.android.testing)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.espresso.core)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
 }

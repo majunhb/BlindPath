@@ -1,16 +1,16 @@
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
-    id("com.google.dagger.hilt.android")
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.hilt.android)
     id("com.google.devtools.ksp")
 }
 
 android {
     namespace = "com.blindpath.base"
-    compileSdk = 34
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 26
+        minSdk = libs.versions.minSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
     }
@@ -30,55 +30,49 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
-        freeCompilerArgs += listOf(
-            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api"
-        )
     }
     buildFeatures {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.10"
+        kotlinCompilerExtensionVersion = libs.versions.kotlin.compiler.extension.get()
     }
 }
 
 dependencies {
-    // Hilt - 使用 version catalog
+    // Hilt
     implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
-    implementation(libs.hilt.navigation.compose)
-
-    // WorkManager + Hilt Worker
-    implementation(libs.workmanager)
-    implementation(libs.hilt.work)
-    ksp(libs.hilt.compiler.androidx)
-    implementation(libs.androidx.lifecycle.viewmodel)
-    implementation(libs.androidx.lifecycle.runtime)
-
-    // Retrofit + OkHttp - 使用 version catalog bundle
-    implementation(libs.bundles.network)
-
-    // DataStore
-    implementation(libs.datastore.preferences)
-
-    // Room - 使用 version catalog bundle
-    implementation(libs.bundles.room)
-    ksp(libs.room.compiler)
-
-    // Compose - 使用 version catalog
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.bundles.compose)
-    implementation(libs.androidx.compose.material.icons)
-
+    ksp(libs.hilt.android.compiler)
+    
     // Core
-    implementation(libs.androidx.core.ktx)
-
-    // Timber
-    implementation(libs.timber)
+    implementation(libs.core.ktx)
+    implementation(libs.lifecycle.runtime.ktx)
 
     // Coroutines
-    implementation(libs.kotlinx.coroutines.android)
-
+    implementation(libs.coroutines.android)
+    implementation(libs.coroutines.core)
+    
+    // Compose
+    implementation(platform(libs.compose.bom))
+    implementation(libs.compose.ui)
+    implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.material3)
+    
+    // Logging
+    implementation(libs.timber)
+    
+    // Room
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+    
+    // WorkManager
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
+    
     // Test dependencies
-    testImplementation(libs.bundles.testing)
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.arch.core.testing)
 }

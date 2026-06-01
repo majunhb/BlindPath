@@ -2,7 +2,6 @@ package com.blindpath.module_navigation.service
 
 import android.app.Notification
 import android.app.PendingIntent
-import android.app.Service
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
@@ -13,6 +12,8 @@ import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
+import androidx.lifecycle.LifecycleService
+import androidx.lifecycle.lifecycleScope
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -29,7 +30,7 @@ import javax.inject.Inject
  * 4. 导航指令按距离段播报（不再每5米报一次）
  */
 @AndroidEntryPoint
-class NavigationService : Service() {
+class NavigationService : LifecycleService() {
 
     @Inject
     lateinit var navigationRepository: NavigationRepository
@@ -37,7 +38,7 @@ class NavigationService : Service() {
     @Inject
     lateinit var voiceRepository: VoiceRepository
 
-    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+        // lifecycleScope inherited from LifecycleService
     private var isRunning = false
 
     // 防重复播报
@@ -58,11 +59,11 @@ class NavigationService : Service() {
         const val CHANNEL_NAVIGATION = "channel_navigation"
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent: Intent): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        serviceScope.launch {
+        lifecycleScope.launch {
             voiceRepository.initialize()
         }
     }
@@ -84,7 +85,7 @@ class NavigationService : Service() {
         val notification = createNotification("正在定位...")
         startForeground(NOTIFICATION_ID, notification)
 
-        serviceScope.launch {
+        lifecycleScope.launch {
             try {
                 // 启动高精度定位
                 val result = navigationRepository.startNavigation()
@@ -139,7 +140,7 @@ class NavigationService : Service() {
     private fun stopNavigation() {
         isRunning = false
 
-        serviceScope.launch {
+        lifecycleScope.launch {
             navigationRepository.stopNavigation()
             voiceRepository.speak("导航已关闭，祝您平安", queueMode = false)
         }
@@ -176,7 +177,7 @@ class NavigationService : Service() {
             GpsQuality.POOR -> "GPS信号弱，精度${String.format("%.1f", accuracy)}米，请在开阔地带重新定位"
         }
 
-        serviceScope.launch {
+        lifecycleScope.launch {
             voiceRepository.speak(announcement, queueMode = true)
         }
 
@@ -191,7 +192,7 @@ class NavigationService : Service() {
     private fun announceWeakSignal() {
         if (!hasAnnouncedWeakSignal) {
             hasAnnouncedWeakSignal = true
-            serviceScope.launch {
+            lifecycleScope.launch {
                 voiceRepository.speak("警告：GPS信号弱，可能影响定位精度，请在开阔地带重新获取信号", queueMode = false)
             }
         }
@@ -207,7 +208,7 @@ class NavigationService : Service() {
         if (lastInstruction != instruction || distanceChanged) {
             lastInstruction = instruction
             lastKnownDistance = remainingDistance
-            serviceScope.launch {
+            lifecycleScope.launch {
                 voiceRepository.speakNavigation(instruction)
             }
         }
@@ -265,6 +266,5 @@ class NavigationService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        serviceScope.cancel()
     }
 }

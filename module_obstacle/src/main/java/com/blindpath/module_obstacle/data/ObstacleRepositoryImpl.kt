@@ -1,7 +1,6 @@
 package com.blindpath.module_obstacle.data
 
 import android.content.Context
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
@@ -16,8 +15,6 @@ import androidx.core.content.ContextCompat
 import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.common.ObstacleAlert
 import com.blindpath.base.common.Result
-import com.blindpath.base.config.AppConfig
-import com.blindpath.base.error.DegradationManager
 import com.blindpath.module_obstacle.data.detection.AIDetector
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
@@ -50,109 +47,33 @@ class ObstacleRepositoryImpl @Inject constructor(
     private var analysisJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    // CameraX Preview use case - 用于显示相机预览
-    private var cameraPreview: androidx.camera.core.Preview? = null
-    private var previewSurfaceProvider: androidx.camera.core.Preview.SurfaceProvider? = null
-
     private var latestObstacles: List<DetectedObstacle> = emptyList()
     private var useFrontCamera = false
     private var lastAlertTime = 0L
     private var lastSceneAnnouncementTime = 0L
-    private val alertCooldown = AppConfig.ObstacleAlert.ALERT_COOLDOWN_MS    // 预警冷却时间（毫秒）
-    private val sceneCooldown = AppConfig.ObstacleAlert.SCENE_COOLDOWN_MS    // 场景播报冷却时间
+    private val alertCooldown = 2000L // 预警冷却时间（毫秒）
+    private val sceneCooldown = 8000L // 场景播报冷却时间
 
     // ============ 多障碍物播报队列 ============
     private var lastMultiObstacleAnnouncement = 0L
-    private val multiObstacleCooldown = AppConfig.ObstacleAlert.MULTI_OBSTACLE_COOLDOWN_MS // 多障碍物播报间隔
+    private val multiObstacleCooldown = 3000L // 多障碍物播报间隔
 
     private var isCameraStarting = false
     private var isCameraStarted = false
-    private var isInitialized = false
-    private var lastFrameTimestamp = 0L  // 用于计算FPS
-
-    override suspend fun initialize(): Result<Boolean> {
-        return withContext(Dispatchers.IO) {
-            try {
-                if (isInitialized) {
-                    Timber.d("Obstacle repository already initialized")
-                    return@withContext Result.Success(true)
-                }
-
-                Timber.d("Initializing obstacle repository")
-                
-                // 初始化AI检测器（会自动尝试 YOLOv8，失败则回退到 ML Kit）
-                val modelLoaded = aiDetector.loadModel()
-                if (modelLoaded) {
-                    _state.update { it.copy(isModelLoaded = true) }
-                    Timber.i("AI detector initialized successfully (YOLOv8 or ML Kit)")
-                } else {
-                    Timber.e("AI detector initialization failed completely")
-                    _state.update { it.copy(
-                        isModelLoaded = false,
-                        lastError = "AI检测器初始化失败，无法进行障碍物检测"
-                    ) }
-                    return@withContext Result.Error(message = "AI检测器初始化失败")
-                }
-
-                isInitialized = true
-                Timber.i("Obstacle repository initialized successfully")
-                Result.Success(true)
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to initialize obstacle repository")
-                Result.Error(message = e.message ?: "初始化失败")
-            }
-        }
-    }
 
     override suspend fun startDetection(): Result<Boolean> {
         return withContext(Dispatchers.IO) {
             try {
                 Timber.d("Starting obstacle detection")
 
-                // 检查 AI 检测功能是否被降级
-                val isAIDegraded = DegradationManager.isFeatureDegraded(DegradationManager.Feature.AI_DETECTION)
-                if (isAIDegraded) {
-                    Timber.w("AI detection is degraded, using reduced functionality mode")
+                // 加载模型（失败也继续，使用演示模式）
+                val modelLoaded = aiDetector.loadModel()
+                if (!modelLoaded) {
+                    Timber.w("AI模型加载失败，将使用演示模式")
+                    _state.update { it.copy(lastError = "AI模型加载失败，将使用演示模式") }
                 }
 
-                // 确保已初始化
-                if (!isInitialized) {
-                    try {
-                        val initResult = initialize()
-                        if (initResult is Result.Error) {
-                            Timber.w("Initialization failed, but continuing with camera: ${initResult.message}")
-                        }
-                    } catch (e: Exception) {
-                        Timber.e(e, "Initialization exception, continuing anyway")
-                    }
-                }
-
-                // 检查模型是否已加载（可能使用了 ML Kit 回退）
-                try {
-                    val isModelReady = aiDetector.isModelLoaded()
-                    if (isModelReady) {
-                        _state.update { it.copy(isModelLoaded = true) }
-                        Timber.d("Detection model is ready")
-                    } else {
-                        Timber.w("Detection model not ready, will try to load")
-                        // 尝试重新加载模型
-                        try {
-                            val loaded = aiDetector.loadModel()
-                            if (loaded) {
-                                _state.update { it.copy(isModelLoaded = true) }
-                                Timber.d("Model loaded successfully on retry")
-                            } else {
-                                Timber.w("Model load failed on retry, camera will still start")
-                                _state.update { it.copy(lastError = "AI模型加载失败，将使用基础检测") }
-                            }
-                        } catch (e: Exception) {
-                            Timber.e(e, "Model load exception on retry")
-                            _state.update { it.copy(lastError = "AI模型加载异常，将使用基础检测") }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Timber.e(e, "Error checking model status")
-                }
+                _state.update { it.copy(isModelLoaded = true) }
 
                 // 启动摄像头（同步等待完成）
                 val cameraStarted = startCameraSync()
@@ -162,12 +83,8 @@ class ObstacleRepositoryImpl @Inject constructor(
                     return@withContext Result.Error(message = "摄像头启动失败")
                 }
 
-                // 重置场景识别器（安全调用）
-                try {
-                    sceneClassifier.reset()
-                } catch (e: Exception) {
-                    Timber.w(e, "Failed to reset scene classifier, continuing anyway")
-                }
+                // 重置场景识别器
+                sceneClassifier.reset()
 
                 _state.update {
                     it.copy(
@@ -179,7 +96,7 @@ class ObstacleRepositoryImpl @Inject constructor(
 
                 Result.Success(true)
             } catch (e: Exception) {
-                Timber.e(e, "Failed to start detection: ${e.javaClass.simpleName}: ${e.message}")
+                Timber.e(e, "Failed to start detection")
                 _state.update { it.copy(lastError = "启动失败: ${e.message}") }
                 Result.Error(message = e.message ?: "启动失败")
             }
@@ -225,8 +142,8 @@ class ObstacleRepositoryImpl @Inject constructor(
 
     override fun getAlertLevel(distance: Float): AlertLevel {
         return when {
-            distance < AppConfig.ObstacleAlert.DANGER_DISTANCE -> AlertLevel.DANGER
-            distance < AppConfig.ObstacleAlert.WARNING_DISTANCE -> AlertLevel.WARNING
+            distance < 0.5f -> AlertLevel.DANGER
+            distance < 1.0f -> AlertLevel.WARNING
             else -> AlertLevel.SAFE
         }
     }
@@ -296,46 +213,20 @@ class ObstacleRepositoryImpl @Inject constructor(
             try {
                 Timber.d("Starting camera...")
 
-                // 1. 检查摄像头权限
-                if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-                    Timber.e("Camera permission not granted")
-                    _state.update { it.copy(lastError = "摄像头权限未授予，请在设置中允许摄像头权限") }
-                    isCameraStarting = false
-                    return@withContext false
-                }
-
-                // 2. 检查摄像头硬件是否存在
-                val packageManager = context.packageManager
-                if (!packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_CAMERA)) {
-                    Timber.e("No camera hardware available")
-                    _state.update { it.copy(lastError = "设备没有摄像头硬件") }
-                    isCameraStarting = false
-                    return@withContext false
-                }
-
-                // 3. 先停止之前的摄像头
-                try {
-                    stopCameraUnsafe()
-                } catch (e: Exception) {
-                    Timber.w(e, "Error stopping previous camera")
-                }
+                // 先停止之前的摄像头
+                stopCameraUnsafe()
 
                 cameraExecutor = Executors.newSingleThreadExecutor()
 
                 val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
 
-                // 等待CameraProvider准备完成（增加超时时间）
+                // 等待CameraProvider准备完成
                 val provider = try {
                     withContext(Dispatchers.IO) {
-                        cameraProviderFuture.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                        cameraProviderFuture.get(5, java.util.concurrent.TimeUnit.SECONDS)
                     }
-                } catch (e: java.util.concurrent.TimeoutException) {
-                    Timber.e(e, "Camera provider timeout")
-                    _state.update { it.copy(lastError = "摄像头初始化超时，请重启应用") }
-                    isCameraStarting = false
-                    return@withContext false
                 } catch (e: Exception) {
-                    Timber.e(e, "Failed to get camera provider: ${e.javaClass.simpleName}")
+                    Timber.e(e, "Failed to get camera provider")
                     _state.update { it.copy(lastError = "无法获取摄像头: ${e.message}") }
                     isCameraStarting = false
                     return@withContext false
@@ -350,83 +241,46 @@ class ObstacleRepositoryImpl @Inject constructor(
 
                 cameraProvider = provider
 
-                // 检查是否有可用的摄像头
-                try {
-                    val cameraSelector = if (useFrontCamera) {
-                        CameraSelector.DEFAULT_FRONT_CAMERA
-                    } else {
-                        CameraSelector.DEFAULT_BACK_CAMERA
-                    }
+                val cameraSelector = if (useFrontCamera) {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                } else {
+                    CameraSelector.DEFAULT_BACK_CAMERA
+                }
 
-                    // 验证摄像头是否存在
-                    val hasCamera = try {
-                        provider.hasCamera(cameraSelector)
-                    } catch (e: Exception) {
-                        Timber.w(e, "Failed to check camera availability")
-                        true // 假设存在，继续尝试
-                    }
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                    .build()
 
-                    if (!hasCamera) {
-                        Timber.e("Camera not available: ${if (useFrontCamera) "front" else "back"}")
-                        _state.update { it.copy(lastError = "${if (useFrontCamera) "前置" else "后置"}摄像头不可用") }
-                        isCameraStarting = false
-                        return@withContext false
-                    }
-
-                    // 创建 Preview 用例 - 用于显示相机预览
-                    cameraPreview = androidx.camera.core.Preview.Builder()
-                        .setTargetAspectRatio(androidx.camera.core.AspectRatio.RATIO_16_9)
-                        .build()
-
-                    // 设置 SurfaceProvider（如果已有）
-                    previewSurfaceProvider?.let { surfaceProvider ->
-                        cameraPreview?.setSurfaceProvider(surfaceProvider)
-                    }
-
-                    val imageAnalysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
-                        .build()
-
-                    val executor = cameraExecutor!!
-                    imageAnalysis.setAnalyzer(executor) { imageProxy ->
-                        try {
-                            processImage(imageProxy)
-                        } catch (e: Exception) {
-                            Timber.e(e, "Image analysis error")
-                            imageProxy.close()
-                        }
-                    }
-
-                    // 使用 ProcessLifecycleOwner 绑定生命周期
+                val executor = cameraExecutor!!
+                imageAnalysis.setAnalyzer(executor) { imageProxy ->
                     try {
-                        // 先解绑所有之前的绑定
-                        cameraProvider?.unbindAll()
-
-                        val useCases = mutableListOf<androidx.camera.core.UseCase>()
-                        cameraPreview?.let { useCases.add(it) }
-                        useCases.add(imageAnalysis)
-
-                        cameraProvider?.bindToLifecycle(
-                            androidx.lifecycle.ProcessLifecycleOwner.get(),
-                            cameraSelector,
-                            *useCases.toTypedArray()
-                        )
-
-                        isCameraStarted = true
-                        isCameraStarting = false
-                        _state.update { it.copy(isCameraReady = true) }
-                        Timber.d("Camera started successfully")
-                        true
+                        processImage(imageProxy)
                     } catch (e: Exception) {
-                        Timber.e(e, "Camera binding failed: ${e.javaClass.simpleName}: ${e.message}")
-                        _state.update { it.copy(lastError = "摄像头启动失败: ${e.message}") }
-                        isCameraStarting = false
-                        false
+                        Timber.e(e, "Image analysis error")
+                        imageProxy.close()
                     }
+                }
+
+                // 使用 ProcessLifecycleOwner 绑定生命周期
+                try {
+                    // 先解绑所有之前的绑定
+                    cameraProvider?.unbindAll()
+                    
+                    cameraProvider?.bindToLifecycle(
+                        androidx.lifecycle.ProcessLifecycleOwner.get(),
+                        cameraSelector,
+                        imageAnalysis
+                    )
+
+                    isCameraStarted = true
+                    isCameraStarting = false
+                    _state.update { it.copy(isCameraReady = true) }
+                    Timber.d("Camera started successfully")
+                    true
                 } catch (e: Exception) {
-                    Timber.e(e, "Camera setup failed: ${e.javaClass.simpleName}")
-                    _state.update { it.copy(lastError = "摄像头配置失败: ${e.message}") }
+                    Timber.e(e, "Camera binding failed: ${e.javaClass.simpleName}: ${e.message}")
+                    _state.update { it.copy(lastError = "摄像头启动失败: ${e.message}") }
                     isCameraStarting = false
                     false
                 }
@@ -461,97 +315,42 @@ class ObstacleRepositoryImpl @Inject constructor(
             Timber.w(e, "Failed to shutdown executor")
         }
         cameraExecutor = null
-        cameraPreview = null
-        previewSurfaceProvider = null
-    }
-
-    /**
-     * 设置 Preview 的 SurfaceProvider（由 CameraPreview Composable 调用）
-     */
-    override fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider) {
-        previewSurfaceProvider = provider
-        cameraPreview?.setSurfaceProvider(provider)
-        Timber.d("Preview SurfaceProvider set")
     }
 
     private fun processImage(imageProxy: ImageProxy) {
         analysisJob?.cancel()
         analysisJob = scope.launch {
             try {
-                // 安全地转换图像
-                val bitmap = try {
-                    imageProxyToBitmap(imageProxy)
-                } catch (e: Exception) {
-                    Timber.e(e, "Failed to convert image to bitmap")
-                    null
-                }
-                
+                val bitmap = imageProxyToBitmap(imageProxy)
                 if (bitmap != null) {
-                    // 检查 AI 检测是否被禁用
-                    val isAIDisabled = DegradationManager.getDegradationLevel(DegradationManager.Feature.AI_DETECTION) ==
-                            DegradationManager.DegradationLevel.DISABLED
-                    
-                    // AI目标检测（安全调用，降级模式下跳过）
-                    val obstacles = if (isAIDisabled) {
-                        Timber.d("AI detection disabled, skipping detection")
-                        emptyList()
-                    } else {
-                        try {
-                            aiDetector.detect(bitmap)
-                        } catch (e: Exception) {
-                            Timber.e(e, "AI detection failed")
-                            emptyList()
-                        }
-                    }
+                    // AI目标检测
+                    val obstacles = aiDetector.detect(bitmap)
                     latestObstacles = obstacles
 
-                    // 场景识别（安全调用）
-                    val sceneResult = try {
-                        sceneClassifier.recognizeScene(bitmap, obstacles)
-                    } catch (e: Exception) {
-                        Timber.e(e, "Scene classification failed")
-                        null
+                    // 场景识别
+                    val sceneResult = sceneClassifier.recognizeScene(bitmap, obstacles)
+
+                    // 更新状态
+                    _state.update {
+                        it.copy(
+                            detectedObstacles = obstacles,
+                            sceneRecognition = sceneResult,
+                            fps = try {
+                                (1000 / (imageProxy.imageInfo.timestamp / 1_000_000)).toInt().coerceIn(0, 60)
+                            } catch (e: Exception) {
+                                30
+                            }
+                        )
                     }
 
-                    // 更新状态（安全调用）
-                    try {
-                        // 计算FPS
-                        val currentTimestamp = imageProxy.imageInfo.timestamp
-                        val fpsValue = if (lastFrameTimestamp > 0) {
-                            val frameIntervalMs = (currentTimestamp - lastFrameTimestamp) / 1_000_000
-                            if (frameIntervalMs > 0) (1000f / frameIntervalMs).toInt().coerceIn(0, 60) else 0
-                        } else {
-                            0
-                        }
-                        lastFrameTimestamp = currentTimestamp
-                        
-                        _state.update {
-                            it.copy(
-                                detectedObstacles = obstacles,
-                                sceneRecognition = sceneResult,
-                                fps = fpsValue
-                            )
-                        }
-                    } catch (e: Exception) {
-                        Timber.e(e, "Failed to update state")
-                    }
+                    // 处理预警
+                    processAlert(obstacles)
 
-                    // 处理预警（安全调用）
-                    try {
-                        processAlert(obstacles)
-                    } catch (e: Exception) {
-                        Timber.e(e, "Failed to process alert")
-                    }
-
-                    // 处理场景变化（安全调用）
-                    try {
-                        processSceneChange(sceneResult)
-                    } catch (e: Exception) {
-                        Timber.e(e, "Failed to process scene change")
-                    }
+                    // 处理场景变化
+                    processSceneChange(sceneResult)
                 }
             } catch (e: Exception) {
-                Timber.e(e, "Image processing failed: ${e.javaClass.simpleName}: ${e.message}")
+                Timber.e(e, "Image processing failed")
             } finally {
                 try {
                     imageProxy.close()
@@ -657,29 +456,15 @@ class ObstacleRepositoryImpl @Inject constructor(
         }
     }
 
+    /**
+     * 将 CameraX ImageProxy 转为 Bitmap
+     * 使用直接 YUV->RGB 转换，避免 JPEG 编码/解码的 GC 开销
+     */
     private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
         return try {
-            // 安全地获取缓冲区
-            val yBuffer = try {
-                imageProxy.planes[0].buffer
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to get Y buffer")
-                return null
-            }
-            
-            val uBuffer = try {
-                imageProxy.planes[1].buffer
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to get U buffer")
-                return null
-            }
-            
-            val vBuffer = try {
-                imageProxy.planes[2].buffer
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to get V buffer")
-                return null
-            }
+            val yBuffer = imageProxy.planes[0].buffer
+            val uBuffer = imageProxy.planes[1].buffer
+            val vBuffer = imageProxy.planes[2].buffer
 
             val ySize = yBuffer.remaining()
             val uSize = uBuffer.remaining()
@@ -690,36 +475,56 @@ class ObstacleRepositoryImpl @Inject constructor(
             vBuffer.get(nv21, ySize, vSize)
             uBuffer.get(nv21, ySize + vSize, uSize)
 
-            val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, null)
-            val out = ByteArrayOutputStream()
-            yuvImage.compressToJpeg(Rect(0, 0, imageProxy.width, imageProxy.height), 80, out)
-            val imageBytes = out.toByteArray()
-
-            var bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+            // 直接 YUV->RGB 转换，避免 JPEG 编解码
+            val bitmap = Bitmap.createBitmap(imageProxy.width, imageProxy.height, Bitmap.Config.ARGB_8888)
+            val pixels = IntArray(imageProxy.width * imageProxy.height)
+            decodeYUV420ToRGB(nv21, pixels, imageProxy.width, imageProxy.height)
+            bitmap.setPixels(pixels, 0, imageProxy.width, 0, 0, imageProxy.width, imageProxy.height)
 
             // 旋转角度
-            val rotation = try {
-                imageProxy.imageInfo.rotationDegrees
-            } catch (e: Exception) {
-                Timber.w(e, "Failed to get rotation")
-                0
-            }
-            
-            if (rotation != 0 && bitmap != null) {
+            val rotation = imageProxy.imageInfo.rotationDegrees
+            if (rotation != 0) {
                 val matrix = Matrix()
                 matrix.postRotate(rotation.toFloat())
-                bitmap = try {
-                    Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-                } catch (e: Exception) {
-                    Timber.w(e, "Failed to rotate bitmap")
-                    bitmap
-                }
+                return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
             }
 
             bitmap
         } catch (e: Exception) {
-            Timber.e(e, "ImageProxy to Bitmap failed: ${e.javaClass.simpleName}: ${e.message}")
+            Timber.e(e, "ImageProxy to Bitmap failed")
             null
+        }
+    }
+
+    /**
+     * YUV420 NV21 转 RGB 像素数组（避免 JPEG 编解码）
+     * 直接颜色空间转换，内存分配更少、速度更快
+     */
+    private fun decodeYUV420ToRGB(nv21: ByteArray, pixels: IntArray, width: Int, height: Int) {
+        val frameSize = width * height
+        var pixelIndex = 0
+        for (y in 0 until height) {
+            val uvRowIndex = y shr 1
+            for (x in 0 until width) {
+                val uvColIndex = x shr 1
+                val yIndex = y * width + x
+                val uvIndex = frameSize + uvRowIndex * width + uvColIndex * 2
+
+                val Y = nv21[yIndex].toInt() and 0xFF
+                val U = nv21[uvIndex].toInt() and 0xFF
+                val V = nv21[uvIndex + 1].toInt() and 0xFF
+
+                // YUV -> RGB 转换（BT.601 标准）
+                var r = Y + 1.402f * (V - 128)
+                var g = Y - 0.344f * (U - 128) - 0.714f * (V - 128)
+                var b = Y + 1.772f * (U - 128)
+
+                r = r.coerceIn(0f, 255f)
+                g = g.coerceIn(0f, 255f)
+                b = b.coerceIn(0f, 255f)
+
+                pixels[pixelIndex++] = (0xFF shl 24) or ((r.toInt()) shl 16) or ((g.toInt()) shl 8) or (b.toInt())
+            }
         }
     }
 

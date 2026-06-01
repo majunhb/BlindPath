@@ -1,16 +1,16 @@
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
-    id("com.google.dagger.hilt.android")
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.hilt.android)
     id("com.google.devtools.ksp")
 }
 
 android {
     namespace = "com.blindpath.module_navigation"
-    compileSdk = 34
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 26
+        minSdk = libs.versions.minSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
     }
@@ -36,25 +36,29 @@ android {
 dependencies {
     implementation(project(":base"))
     implementation(project(":module_voice"))
-
-    // Hilt - 使用 version catalog
+    
+    // Hilt
     implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
-
-    // 高德地图 SDK
-    implementation(libs.amap.sdk)
+    ksp(libs.hilt.android.compiler)
+    
+    // Location
+    implementation(libs.play.services.location)
 
     // Timber
     implementation(libs.timber)
 
-    // Coroutines - 使用 version catalog bundle
-    implementation(libs.bundles.coroutines)
-
+    // Coroutines
+    implementation(libs.coroutines.android)
+    implementation(libs.coroutines.core)
+    
     // Core
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime)
-    implementation(libs.androidx.lifecycle.service)
-
+    implementation(libs.core.ktx)
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.service)
+    
     // Test dependencies
-    testImplementation(libs.bundles.testing)
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.arch.core.testing)
 }

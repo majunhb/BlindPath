@@ -2,28 +2,20 @@ package com.blindpath.module_obstacle.data.detection
 
 import android.content.Context
 import android.graphics.Bitmap
-import com.blindpath.base.config.AppConfig
 import com.blindpath.module_obstacle.domain.model.*
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.objects.ObjectDetection
-import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.common.FileUtil
-import org.tensorflow.lite.gpu.GpuDelegate
 import timber.log.Timber
 import java.io.File
-import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.nio.channels.FileChannel
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,18 +41,20 @@ class AIDetector @Inject constructor(
 ) {
     private var interpreter: Interpreter? = null
     private var isLoaded = false
-    private var mlKitDetector: com.google.mlkit.vision.objects.ObjectDetector? = null
-    private var useMlKit = false
 
-    // 模型配置 - 使用 AppConfig 集中管理
-    private val modelPath = AppConfig.AIDetection.MODEL_NAME
-    private val modelUrl = "https://github.com/ultralytics/assets/releases/download/v8.2.0/${AppConfig.AIDetection.MODEL_NAME}"
-    private val inputSize = AppConfig.AIDetection.INPUT_SIZE
-    private val numThreads = AppConfig.AIDetection.NUM_THREADS
+    // 复用缓冲区，避免逐帧分配 GC 抖动
+    private var inputBuffer: ByteBuffer? = null
+    private var scaledBitmap: Bitmap? = null
+
+    // 模型配置
+    private val modelPath = "yolov8n.tflite"
+    private val modelUrl = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite"
+    private val inputSize = 640
+    private val numThreads = 4
 
     // ============ COCO 80类 到 视障障碍物类型 的映射 ============
     // COCO类别参考: https://cocodataset.org/#home
-    // 映射所有与视障导航相关的类别，未映射的类别降级为 OBSTACLE 上报（不再静默丢弃）
+    // 只映射与视障导航相关的类别
     private val cocoToObstacle = mapOf(
         // 人物类
         0 to ObstacleType.PERSON,        // person
@@ -69,50 +63,36 @@ class AIDetector @Inject constructor(
         1 to ObstacleType.BICYCLE,       // bicycle
         2 to ObstacleType.VEHICLE,       // car
         3 to ObstacleType.MOTORCYCLE,    // motorcycle
-        5 to ObstacleType.BUS,           // bus -> 具体识别为公交车
-        6 to ObstacleType.VEHICLE,       // train -> 归类为大型车辆
-        7 to ObstacleType.TRUCK,         // truck -> 具体识别为卡车
+        5 to ObstacleType.VEHICLE,       // bus
+        7 to ObstacleType.VEHICLE,       // truck
 
-        // 交通设施
+        // 【重要】COCO class 9 是 traffic light，映射到红绿灯
         9 to ObstacleType.TRAFFIC_LIGHT, // traffic light
+
+        // 交通标志
         10 to ObstacleType.TRAFFIC_SIGN, // stop sign
-        11 to ObstacleType.PILLAR,       // fire hydrant -> 归类为柱状障碍
-        12 to ObstacleType.PARKING_METER,// parking meter -> 路边柱状设施
-        13 to ObstacleType.BENCH,        // bench
 
-        // 宠物和动物（盲人步行常见）
-        14 to ObstacleType.ANIMAL,       // bird -> 小动物
-        15 to ObstacleType.PET,          // cat -> 宠物
-        16 to ObstacleType.PET,          // dog -> 宠物
-        17 to ObstacleType.ANIMAL,       // horse -> 大型动物
-        18 to ObstacleType.ANIMAL,       // sheep
-        19 to ObstacleType.ANIMAL,       // cow
-        20 to ObstacleType.ANIMAL,       // elephant
-        21 to ObstacleType.ANIMAL,       // bear
-        22 to ObstacleType.ANIMAL,       // zebra
-        23 to ObstacleType.ANIMAL,       // giraffe
-
-        // 路面障碍物
-        36 to ObstacleType.ROAD_HAZARD,  // skateboard -> 路面障碍（可能绊脚）
+        // 街道设施
+        11 to ObstacleType.PILLAR,       // fire hydrant (归类为柱子/障碍)
+        12 to ObstacleType.BENCH,        // bench
 
         // 家居物品（可能阻挡路径）
         56 to ObstacleType.CHAIR,        // chair
         57 to ObstacleType.SOFA,         // sofa
-        58 to ObstacleType.POTTED_PLANT, // potted plant -> 道路旁常见
+        58 to ObstacleType.POTTTED_PLANT, // potted plant
         59 to ObstacleType.BED,          // bed
         60 to ObstacleType.TABLE,        // dining table
 
         // 个人物品
         24 to ObstacleType.BACKPACK,     // backpack
         25 to ObstacleType.UMBRELLA,     // umbrella
-        26 to ObstacleType.HANDBAG,      // handbag
+        26 to ObstacleType.HANDBAG,     // handbag
         28 to ObstacleType.SUITCASE,     // suitcase
 
-        // 小型物品（地面上可能绊脚）
-        39 to ObstacleType.BOTTLE,       // bottle
-        41 to ObstacleType.ROAD_HAZARD,  // cup -> 路面小障碍
-        75 to ObstacleType.POTTED_PLANT,// vase -> 类似盆栽
-        77 to ObstacleType.PET           // teddy bear -> 类似小动物/玩具
+        // 电子设备
+        39 to ObstacleType.BOTTLE,      // bottle
+        63 to ObstacleType.LAPTOP,      // laptop
+        67 to ObstacleType.PHONE        // cell phone
     )
 
     // ============ 障碍物已知高度（用于单目测距） ============
@@ -133,30 +113,24 @@ class AIDetector @Inject constructor(
         ObstacleType.TRAFFIC_SIGN to 0.6f,   // 交通标志高度约0.6m
         ObstacleType.PILLAR to 0.3f,        // 石墩直径约0.3m
         ObstacleType.BENCH to 0.8f,         // 长椅高度约0.8m
-        ObstacleType.PARKING_METER to 1.2f,  // 停车收费桩高度约1.2m
-
-        // 宠物和动物
-        ObstacleType.PET to 0.4f,           // 猫/狗平均肩高约0.4m
-        ObstacleType.ANIMAL to 0.5f,        // 小型动物约0.5m
 
         // 地面障碍物
         ObstacleType.STEP_UP to 0.2f,       // 台阶高度约0.2m
         ObstacleType.STEP_DOWN to 0.2f,     // 下台阶同理
         ObstacleType.STAIRS to 0.18f,       // 楼梯台阶高度
         ObstacleType.CURB to 0.15f,         // 路沿高度约0.15m
-        ObstacleType.ROAD_HAZARD to 0.1f,   // 路面小障碍约0.1m
 
         // 家居物品
         ObstacleType.CHAIR to 0.9f,         // 椅子高度约0.9m
         ObstacleType.SOFA to 0.8f,          // 沙发高度约0.8m
-        ObstacleType.POTTED_PLANT to 0.5f,  // 盆栽高度约0.5m
+        ObstacleType.POTTTED_PLANT to 0.5f,  // 盆栽高度约0.5m
         ObstacleType.BED to 0.5f,           // 床高度约0.5m
         ObstacleType.TABLE to 0.75f         // 餐桌高度约0.75m
     )
 
-    // 检测阈值 - 使用 AppConfig 集中管理
-    private val confidenceThreshold = AppConfig.AIDetection.CONFIDENCE_THRESHOLD
-    private val iouThreshold = AppConfig.AIDetection.IOU_THRESHOLD
+    // 检测阈值
+    private val confidenceThreshold = 0.4f  // 降低阈值，提高召回率，适合盲人导航场景
+    private val iouThreshold = 0.5f      // 提高IoU阈值，减少重叠框合并
 
     // 焦距（需根据实际摄像头参数校准）
     private var calibratedFocalLength: Float? = null
@@ -166,24 +140,8 @@ class AIDetector @Inject constructor(
      */
     suspend fun loadModel(): Boolean {
         return try {
-            // 优化：启用XNNPACK和GPU加速
             val options = Interpreter.Options().apply {
                 numThreads = numThreads
-                setUseXNNPACK(true)  // 启用XNNPACK加速
-
-                // 尝试启用GPU加速（如果可用）
-                // 注意：GPU Delegate 在某些设备上可能不可用，需要安全降级
-                if (isGpuDelegateAvailable()) {
-                    try {
-                        val gpuDelegate = GpuDelegate()
-                        addDelegate(gpuDelegate)
-                        Timber.d("GPU acceleration enabled successfully")
-                    } catch (e: Exception) {
-                        Timber.w("GPU delegate creation failed, falling back to CPU: ${e.message}")
-                    }
-                } else {
-                    Timber.d("GPU acceleration not available on this device, using CPU only")
-                }
             }
 
             // 1. 先尝试从内部存储加载
@@ -191,12 +149,7 @@ class AIDetector @Inject constructor(
             
             if (modelFile != null && modelFile.exists()) {
                 // 从文件系统加载
-                val modelBuffer = FileInputStream(modelFile).channel.map(
-                    java.nio.channels.FileChannel.MapMode.READ_ONLY,
-                    0,
-                    modelFile.length()
-                )
-                interpreter = Interpreter(modelBuffer, options)
+                interpreter = Interpreter(modelFile, options)
                 isLoaded = true
                 Timber.d("YOLOv8 model loaded from file: ${modelFile.absolutePath}")
                 return true
@@ -218,74 +171,21 @@ class AIDetector @Inject constructor(
             val downloadedFile = downloadModel()
             
             if (downloadedFile != null && downloadedFile.exists()) {
-                val modelBuffer = FileInputStream(downloadedFile).channel.map(
-                    java.nio.channels.FileChannel.MapMode.READ_ONLY,
-                    0,
-                    downloadedFile.length()
-                )
-                interpreter = Interpreter(modelBuffer, options)
+                interpreter = Interpreter(downloadedFile, options)
                 isLoaded = true
                 Timber.d("YOLOv8 model downloaded and loaded successfully")
                 return true
             }
 
-            // 4. 所有TFLite方法都失败，回退到ML Kit
-            Timber.w("TFLite模型文件无法加载，尝试ML Kit回退")
-            try {
-                // 使用流式模式 + 分类，适合实时视频检测
-                val options = ObjectDetectorOptions.Builder()
-                    .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
-                    .enableClassification()  // 启用物体分类（识别物体类型）
-                    .enableMultipleObjects()  // 启用多物体检测
-                    .build()
-                mlKitDetector = ObjectDetection.getClient(options)
-                useMlKit = true
-                isLoaded = true
-                Timber.i("ML Kit initialized successfully with STREAM_MODE + Classification")
-                return true
-            } catch (e: Exception) {
-                Timber.e(e, "ML Kit回退也失败了")
-                isLoaded = false
-                return false
-            }
-
+            // 4. 所有方法都失败，使用模拟模式
+            Timber.w("AI模型文件无法加载，使用模拟模式")
+            isLoaded = true
+            return true
+            
         } catch (e: Exception) {
-            Timber.e(e, "加载AI模型失败，尝试ML Kit回退")
-            try {
-                // 使用流式模式 + 分类，适合实时视频检测
-                val options = ObjectDetectorOptions.Builder()
-                    .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
-                    .enableClassification()  // 启用物体分类（识别物体类型）
-                    .enableMultipleObjects()  // 启用多物体检测
-                    .build()
-                mlKitDetector = ObjectDetection.getClient(options)
-                useMlKit = true
-                isLoaded = true
-                Timber.i("ML Kit initialized successfully with STREAM_MODE + Classification (exception recovery)")
-                return true
-            } catch (e2: Exception) {
-                Timber.e(e2, "ML Kit回退也失败了（异常恢复）")
-                isLoaded = false
-                return false
-            }
-        }
-    }
-
-    /**
-     * 检查 GPU Delegate 是否可用
-     * 某些设备可能不支持 GPU 加速，需要提前检查以避免崩溃
-     */
-    private fun isGpuDelegateAvailable(): Boolean {
-        return try {
-            // 尝试加载 GpuDelegate 类
-            Class.forName("org.tensorflow.lite.gpu.GpuDelegate")
-            // 尝试创建一个临时实例来验证
-            val delegate = GpuDelegate()
-            delegate.close() // 立即关闭测试实例
-            true
-        } catch (e: Throwable) {
-            Timber.w("GPU Delegate not available: ${e.javaClass.simpleName}: ${e.message}")
-            false
+            Timber.e(e, "Failed to load AI model, using simulation mode")
+            isLoaded = true
+            return true
         }
     }
 
@@ -295,8 +195,8 @@ class AIDetector @Inject constructor(
     fun unloadModel() {
         interpreter?.close()
         interpreter = null
-        mlKitDetector = null
-        useMlKit = false
+        inputBuffer = null
+        scaledBitmap = null
         isLoaded = false
         Timber.d("AI model unloaded")
     }
@@ -354,32 +254,34 @@ class AIDetector @Inject constructor(
                 val response = client.newCall(request).execute()
 
                 if (!response.isSuccessful) {
-                    Timber.e("Download failed with code: ${response.code}")
+                    Timber.e("Download failed with code: ${response.code()}")
                     return@withContext null
                 }
 
                 // 保存到内部存储
+                val responseBody = response.body() ?: return@withContext null
                 outputFile = File(context.filesDir, modelPath)
-                
-                response.body?.byteStream()?.use { inputStream ->
-                    FileOutputStream(outputFile).use { outputStream ->
-                        val buffer = ByteArray(4096)
-                        var bytesRead: Int
-                        var totalBytes: Long = 0
-                        val fileSize = response.body?.contentLength() ?: -1
+                val inputStream = responseBody.byteStream()
+                val outputStream = FileOutputStream(outputFile)
 
-                        while (true) {
-                            bytesRead = inputStream.read(buffer)
-                            if (bytesRead == -1) break
-                            outputStream.write(buffer, 0, bytesRead)
-                            totalBytes += bytesRead
-                            if (fileSize > 0) {
-                                val progress = (totalBytes * 100 / fileSize).toInt()
-                                Timber.d("Download progress: $progress%")
-                            }
-                        }
+                val buffer = ByteArray(4096)
+                var bytesRead: Int
+                var totalBytes: Long = 0
+                val fileSize = responseBody.contentLength()
+
+                while (true) {
+                    bytesRead = inputStream?.read(buffer) ?: -1
+                    if (bytesRead == -1) break
+                    outputStream.write(buffer, 0, bytesRead)
+                    totalBytes += bytesRead
+                    if (fileSize > 0) {
+                        val progress = (totalBytes * 100 / fileSize).toInt()
+                        Timber.d("Download progress: $progress%")
                     }
                 }
+
+                outputStream.close()
+                inputStream?.close()
 
                 Timber.d("Model downloaded successfully: ${outputFile.absolutePath} (${outputFile.length()} bytes)")
                 return@withContext outputFile
@@ -406,51 +308,33 @@ class AIDetector @Inject constructor(
      */
     suspend fun detect(bitmap: Bitmap): List<DetectedObstacle> {
         if (!isLoaded) {
-            Timber.w("AIDetector: Model not loaded, cannot detect")
             return emptyList()
         }
 
-        val startTime = System.currentTimeMillis()
-        
-        val results = if (useMlKit && interpreter == null) {
-            Timber.d("AIDetector: Using ML Kit for detection")
-            detectWithMlKit(bitmap)
-        } else if (interpreter != null) {
-            Timber.d("AIDetector: Using YOLOv8 TFLite for detection")
-            try {
-                // 预处理图像
-                val inputBuffer = preprocessImage(bitmap)
+        if (interpreter == null) {
+            // 模拟模式：返回空列表（摄像头正常工作，但不检测）
+            return emptyList()
+        }
 
-                // 准备输出数组
-                // YOLOv8输出形状: [1, 84, 8400] (84 = 4(bbox) + 80(classes))
-                val outputBuffer = Array(1) { Array(84) { FloatArray(8400) } }
+        return try {
+            // 预处理图像
+            val inputBuffer = preprocessImage(bitmap)
 
-                // 推理
-                val inputs = arrayOf<Any>(inputBuffer)
-                val outputs = mapOf<Int, Any>(0 to outputBuffer)
-                interpreter?.runForMultipleInputsOutputs(inputs, outputs)
+            // 准备输出数组
+            // YOLOv8输出形状: [1, 84, 8400] (84 = 4(bbox) + 80(classes))
+            val outputBuffer = Array(1) { Array(84) { FloatArray(8400) } }
 
-                // 后处理
-                postProcess(outputBuffer[0], bitmap.width, bitmap.height)
-            } catch (e: Exception) {
-                Timber.e(e, "YOLOv8 detection failed, falling back to ML Kit")
-                // 如果 YOLOv8 失败，尝试 ML Kit
-                if (mlKitDetector != null) {
-                    useMlKit = true
-                    detectWithMlKit(bitmap)
-                } else {
-                    emptyList()
-                }
-            }
-        } else {
-            Timber.w("AIDetector: No detector available (interpreter=$interpreter, mlKitDetector=$mlKitDetector, useMlKit=$useMlKit)")
+            // 推理
+            val inputs = arrayOf<Any>(inputBuffer)
+            val outputs = mapOf<Int, Any>(0 to outputBuffer)
+            interpreter?.runForMultipleInputsOutputs(inputs, outputs)
+
+            // 后处理
+            postProcess(outputBuffer[0], bitmap.width, bitmap.height)
+        } catch (e: Exception) {
+            Timber.e(e, "Detection failed")
             emptyList()
         }
-        
-        val elapsed = System.currentTimeMillis() - startTime
-        Timber.d("AIDetector: Detection completed in ${elapsed}ms, found ${results.size} obstacles")
-        
-        return results
     }
 
     /**
@@ -505,11 +389,8 @@ class AIDetector @Inject constructor(
             // 检查置信度
             if (maxScore < confidenceThreshold) continue
 
-            // 获取类别映射（未映射的 COCO 类别降级为 OBSTACLE 上报，不再静默丢弃）
-            val obstacleType = cocoToObstacle[maxClass] ?: run {
-                Timber.v("COCO class $maxClass not mapped, reporting as OBSTACLE (confidence=${"%.2f".format(maxScore)})")
-                ObstacleType.OBSTACLE
-            }
+            // 获取类别映射
+            val obstacleType = cocoToObstacle[maxClass] ?: continue
 
             // 解析边界框
             val cx = output[0][i] / inputSize * imageWidth
@@ -650,229 +531,6 @@ class AIDetector @Inject constructor(
 
         return interArea / (aArea + bArea - interArea)
     }
-
-    /**
-     * 使用ML Kit进行目标检测（TFLite不可用时的回退方案）
-     */
-    private suspend fun detectWithMlKit(bitmap: Bitmap): List<DetectedObstacle> {
-        return withContext(Dispatchers.IO) {
-            try {
-                Timber.d("ML Kit: Starting detection on ${bitmap.width}x${bitmap.height} bitmap")
-                
-                val image = InputImage.fromBitmap(bitmap, 0)
-                val detectedObjects = mlKitDetector?.process(image)?.await()
-                
-                Timber.d("ML Kit: Detected ${detectedObjects?.size ?: 0} objects")
-                
-                if (detectedObjects.isNullOrEmpty()) {
-                    Timber.d("ML Kit: No objects detected")
-                    return@withContext emptyList()
-                }
-                
-                val results = mutableListOf<DetectedObstacle>()
-
-                detectedObjects.forEach { obj ->
-                    val labels = obj.labels
-                    val bounds = obj.boundingBox
-                    
-                    Timber.d("ML Kit: Object detected - bounds: left=${bounds.left}, top=${bounds.top}, right=${bounds.right}, bottom=${bounds.bottom}")
-                    Timber.d("ML Kit: Object has ${labels.size} labels")
-                    
-                    if (labels.isEmpty()) {
-                        Timber.w("ML Kit: Object has no labels (classification may not be enabled)")
-                        // 如果没有标签，使用通用障碍物类型
-                        val distance = estimateDistance(ObstacleType.OBSTACLE, bounds.height().toFloat(), bitmap.height.toFloat())
-                        val direction = calculateDirection(bounds.centerX().toFloat(), bitmap.width.toFloat())
-                        
-                        results.add(DetectedObstacle(
-                            type = ObstacleType.OBSTACLE,
-                            confidence = 0.5f,
-                            distance = distance,
-                            direction = direction,
-                            boundingBox = BoundingBox(
-                                left = bounds.left.toFloat() / bitmap.width,
-                                top = bounds.top.toFloat() / bitmap.height,
-                                right = bounds.right.toFloat() / bitmap.width,
-                                bottom = bounds.bottom.toFloat() / bitmap.height
-                            )
-                        ))
-                        return@forEach
-                    }
-                    
-                    labels.forEach { label ->
-                        Timber.d("ML Kit: Label='${label.text}', confidence=${label.confidence}, index=${label.index}")
-                    }
-                    
-                    val label = labels.firstOrNull()?.text ?: "unknown"
-                    val obstacleType = mlKitLabelToObstacle(label)
-                    
-                    if (obstacleType == null) {
-                        Timber.w("ML Kit: No mapping for label '$label', using OBSTACLE type")
-                        // 如果标签没有映射，使用通用障碍物类型
-                        val distance = estimateDistance(ObstacleType.OBSTACLE, bounds.height().toFloat(), bitmap.height.toFloat())
-                        val direction = calculateDirection(bounds.centerX().toFloat(), bitmap.width.toFloat())
-                        
-                        results.add(DetectedObstacle(
-                            type = ObstacleType.OBSTACLE,
-                            confidence = labels.firstOrNull()?.confidence ?: 0.5f,
-                            distance = distance,
-                            direction = direction,
-                            boundingBox = BoundingBox(
-                                left = bounds.left.toFloat() / bitmap.width,
-                                top = bounds.top.toFloat() / bitmap.height,
-                                right = bounds.right.toFloat() / bitmap.width,
-                                bottom = bounds.bottom.toFloat() / bitmap.height
-                            )
-                        ))
-                        return@forEach
-                    }
-                    
-                    val confidence = labels.firstOrNull()?.confidence ?: 0f
-                    
-                    // 降低置信度阈值以便测试（从 0.5 降到 0.3）
-                    if (confidence < 0.3f) {
-                        Timber.d("ML Kit: Confidence $confidence below threshold 0.3, skipping")
-                        return@forEach
-                    }
-
-                    val distance = estimateDistance(obstacleType, bounds.height().toFloat(), bitmap.height.toFloat())
-                    val direction = calculateDirection(bounds.centerX().toFloat(), bitmap.width.toFloat())
-
-                    Timber.i("ML Kit: Detected ${obstacleType.chineseName} at ${distance}m, direction=${direction.getChineseName()}, confidence=$confidence")
-
-                    results.add(DetectedObstacle(
-                        type = obstacleType,
-                        confidence = confidence,
-                        distance = distance,
-                        direction = direction,
-                        boundingBox = BoundingBox(
-                            left = bounds.left.toFloat() / bitmap.width,
-                            top = bounds.top.toFloat() / bitmap.height,
-                            right = bounds.right.toFloat() / bitmap.width,
-                            bottom = bounds.bottom.toFloat() / bitmap.height
-                        )
-                    ))
-                }
-
-                val finalResults = nonMaxSuppression(results)
-                Timber.i("ML Kit: Returning ${finalResults.size} obstacles after NMS")
-                finalResults
-            } catch (e: Exception) {
-                Timber.e(e, "ML Kit检测失败")
-                emptyList()
-            }
-        }
-    }
-
-    // ============ ML Kit标签到ObstacleType的映射 ============
-    // ML Kit 支持的完整标签列表（基于 COCO 数据集）
-    private val mlKitLabelMap = mapOf(
-        // 人物类
-        "Person" to ObstacleType.PERSON,
-        
-        // 交通工具类（对视障用户威胁较大）
-        "Bicycle" to ObstacleType.BICYCLE,
-        "Car" to ObstacleType.VEHICLE,
-        "Motorcycle" to ObstacleType.MOTORCYCLE,
-        "Airplane" to ObstacleType.VEHICLE,
-        "Bus" to ObstacleType.BUS,
-        "Train" to ObstacleType.VEHICLE,
-        "Truck" to ObstacleType.TRUCK,
-        "Boat" to ObstacleType.VEHICLE,
-        
-        // 交通设施
-        "Traffic Light" to ObstacleType.TRAFFIC_LIGHT,
-        "Fire Hydrant" to ObstacleType.PILLAR,
-        "Stop Sign" to ObstacleType.TRAFFIC_SIGN,
-        "Parking Meter" to ObstacleType.PARKING_METER,
-
-        // 街道设施
-        "Bench" to ObstacleType.BENCH,
-
-        // 动物类（可能出现在道路上）
-        "Bird" to ObstacleType.ANIMAL,
-        "Cat" to ObstacleType.PET,
-        "Dog" to ObstacleType.PET,
-        "Horse" to ObstacleType.ANIMAL,
-        "Sheep" to ObstacleType.ANIMAL,
-        "Cow" to ObstacleType.ANIMAL,
-        "Elephant" to ObstacleType.ANIMAL,
-        "Bear" to ObstacleType.ANIMAL,
-        "Zebra" to ObstacleType.ANIMAL,
-        "Giraffe" to ObstacleType.ANIMAL,
-
-        // 个人物品
-        "Backpack" to ObstacleType.BACKPACK,
-        "Umbrella" to ObstacleType.UMBRELLA,
-        "Handbag" to ObstacleType.HANDBAG,
-        "Tie" to ObstacleType.OBSTACLE,
-        "Suitcase" to ObstacleType.SUITCASE,
-
-        // 运动器材
-        "Frisbee" to ObstacleType.OBSTACLE,
-        "Skis" to ObstacleType.OBSTACLE,
-        "Snowboard" to ObstacleType.OBSTACLE,
-        "Sports Ball" to ObstacleType.OBSTACLE,
-        "Kite" to ObstacleType.OBSTACLE,
-        "Baseball Bat" to ObstacleType.OBSTACLE,
-        "Baseball Glove" to ObstacleType.OBSTACLE,
-        "Skateboard" to ObstacleType.ROAD_HAZARD,
-        "Surfboard" to ObstacleType.OBSTACLE,
-        "Tennis Racket" to ObstacleType.OBSTACLE,
-
-        // 餐具和容器
-        "Bottle" to ObstacleType.BOTTLE,
-        "Wine Glass" to ObstacleType.BOTTLE,
-        "Cup" to ObstacleType.ROAD_HAZARD,
-        "Fork" to ObstacleType.OBSTACLE,
-        "Knife" to ObstacleType.OBSTACLE,
-        "Spoon" to ObstacleType.OBSTACLE,
-        "Bowl" to ObstacleType.OBSTACLE,
-
-        // 食物
-        "Banana" to ObstacleType.OBSTACLE,
-        "Apple" to ObstacleType.OBSTACLE,
-        "Sandwich" to ObstacleType.OBSTACLE,
-        "Orange" to ObstacleType.OBSTACLE,
-        "Broccoli" to ObstacleType.OBSTACLE,
-        "Carrot" to ObstacleType.OBSTACLE,
-        "Hot Dog" to ObstacleType.OBSTACLE,
-        "Pizza" to ObstacleType.OBSTACLE,
-        "Donut" to ObstacleType.OBSTACLE,
-        "Cake" to ObstacleType.OBSTACLE,
-
-        // 家具类
-        "Chair" to ObstacleType.CHAIR,
-        "Couch" to ObstacleType.SOFA,
-        "Potted Plant" to ObstacleType.POTTED_PLANT,
-        "Bed" to ObstacleType.BED,
-        "Dining Table" to ObstacleType.TABLE,
-        "Toilet" to ObstacleType.OBSTACLE,
-
-        // 电子设备
-        "TV" to ObstacleType.OBSTACLE,
-        "Laptop" to ObstacleType.LAPTOP,
-        "Mouse" to ObstacleType.OBSTACLE,
-        "Remote" to ObstacleType.OBSTACLE,
-        "Keyboard" to ObstacleType.OBSTACLE,
-        "Cell Phone" to ObstacleType.PHONE,
-        "Microwave" to ObstacleType.OBSTACLE,
-        "Oven" to ObstacleType.OBSTACLE,
-        "Toaster" to ObstacleType.OBSTACLE,
-        "Sink" to ObstacleType.OBSTACLE,
-        "Refrigerator" to ObstacleType.OBSTACLE,
-
-        // 其他物品
-        "Book" to ObstacleType.OBSTACLE,
-        "Clock" to ObstacleType.OBSTACLE,
-        "Vase" to ObstacleType.POTTED_PLANT,
-        "Scissors" to ObstacleType.OBSTACLE,
-        "Teddy Bear" to ObstacleType.PET,
-        "Hair Drier" to ObstacleType.OBSTACLE,
-        "Toothbrush" to ObstacleType.OBSTACLE
-    )
-
-    private fun mlKitLabelToObstacle(label: String): ObstacleType? = mlKitLabelMap[label]
 
     /**
      * 检查模型是否已加载

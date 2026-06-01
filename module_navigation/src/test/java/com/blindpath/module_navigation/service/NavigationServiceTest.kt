@@ -17,10 +17,10 @@ class NavigationServiceTest {
      * 播报导航指令（防重复逻辑）
      * 规则：
      * 1. 指令变化时播报
-     * 2. 距离变化 >= 5 米时播报
+     * 2. 距离变化 >= 3 米时播报
      */
     fun shouldSpeak(instruction: String, remainingDistance: Int): Boolean {
-        val distanceChanged = abs(remainingDistance - lastKnownDistance) >= 5
+        val distanceChanged = abs(remainingDistance - lastKnownDistance) >= 3
 
         if (lastInstruction != instruction || distanceChanged) {
             lastInstruction = instruction
@@ -53,10 +53,10 @@ class NavigationServiceTest {
 
         // When
         shouldSpeak(instruction, 100)
-        val result = shouldSpeak(instruction, 95) // 变化5米
+        val result = shouldSpeak(instruction, 95) // 变化3米
 
         // Then
-        assert(result) { "距离变化5米应该播报" }
+        assert(result) { "距离变化3米应该播报" }
         assert(lastKnownDistance == 95)
     }
 
@@ -70,7 +70,7 @@ class NavigationServiceTest {
         val result = shouldSpeak(instruction, 97) // 变化3米
 
         // Then
-        assert(!result) { "距离变化小于5米不应该播报" }
+        assert(!result) { "距离变化小于3米不应该播报" }
         assert(lastKnownDistance == 100) { "距离应该保持不变" }
     }
 
@@ -95,12 +95,12 @@ class NavigationServiceTest {
         // Given
         val instruction = "接近目标"
 
-        // When - 距离从 95 变到 100（变化5米）
+        // When - 距离从 95 变到 100（变化3米）
         shouldSpeak(instruction, 95)
         val result = shouldSpeak(instruction, 100)
 
         // Then
-        assert(result) { "距离变化刚好5米应该播报" }
+        assert(result) { "距离变化刚好3米应该播报" }
     }
 
     @Test
@@ -111,7 +111,7 @@ class NavigationServiceTest {
         // When - 距离递减
         shouldSpeak(instruction, 100)
         shouldSpeak(instruction, 90) // 变化10米
-        shouldSpeak(instruction, 85) // 变化5米
+        shouldSpeak(instruction, 85) // 变化3米
         val result = shouldSpeak(instruction, 83) // 变化2米
 
         // Then

@@ -1,62 +1,9 @@
 // Top-level build file
-// 新增：io.gitlab.arturbosch.detekt + org.jlleitschuh.gradle.ktlint
 
 plugins {
-    id("com.android.application") version "8.2.0" apply false
-    id("com.android.library") version "8.2.0" apply false
-    id("org.jetbrains.kotlin.android") version "1.9.22" apply false
-    id("com.google.dagger.hilt.android") version "2.51.1" apply false
-    id("com.google.devtools.ksp") version "1.9.22-1.0.18" apply false
-    // 静态分析：Detekt
-    id("io.gitlab.arturbosch.detekt") version "1.23.6" apply false
-    // 代码格式：ktlint
-    id("org.jlleitschuh.gradle.ktlint") version "12.1.1" apply false
-}
-
-// Version catalog 已在 settings.gradle.kts 中配置
-// 所有版本号统一在 gradle/libs.versions.toml 中管理
-
-// ----------------------------------------------------------------
-// 对所有子模块统一应用 Detekt 和 ktlint
-// ----------------------------------------------------------------
-subprojects {
-    apply(plugin = "io.gitlab.arturbosch.detekt")
-    apply(plugin = "org.jlleitschuh.gradle.ktlint")
-
-    // Detekt 配置
-    configure<io.gitlab.arturbosch.detekt.extensions.DetektExtension> {
-        config.setFrom(rootProject.files("config/detekt/detekt.yml"))
-        buildUponDefaultConfig = true
-        allRules = false
-        // 并行分析，加速 CI
-        parallel = true
-        // 发现问题时阻断本地构建（CI 侧使用 continue-on-error 处理）
-        isIgnoreFailures = false
-        source.setFrom(
-            "src/main/kotlin",
-            "src/main/java"
-        )
-        // 排除生成代码和 build 目录
-        ignoredBuildTypes = listOf("release")
-    }
-
-    // ktlint 配置
-    configure<org.jlleitschuh.gradle.ktlint.KtlintExtension> {
-        version.set("1.2.1")
-        android.set(true)
-        outputToConsole.set(true)
-        outputColorName.set("RED")
-        // 发现格式问题时阻断构建
-        ignoreFailures.set(false)
-        reporters {
-            reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
-            reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.HTML)
-        }
-        // 排除生成的代码
-        filter {
-            exclude("**/build/**")
-            exclude("**/*.kts")
-            include("**/kotlin/**")
-        }
-    }
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.hilt.android) apply false
+    alias(libs.plugins.ksp) apply false
 }

@@ -31,127 +31,127 @@ fun CommunityScreen(
     val uiState by viewModel.uiState.collectAsState()
     var currentTab by remember { mutableStateOf(0) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { 
-                    Text("社区互助", fontWeight = FontWeight.Bold) 
-                },
-                navigationIcon = {
-                    // 增强返回按钮视觉效果
-                    TextButton(
-                        onClick = onBackClick,
-                        modifier = Modifier.semantics {
-                            contentDescription = "返回主界面按钮"
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.ArrowBack,
-                            contentDescription = null,
-                            modifier = Modifier.size(28.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("返回", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            )
-        }
-    ) { padding ->
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(24.dp)
-                    .verticalScroll(rememberScrollState())
-                    .semantics { contentDescription = "社区互助页面" }
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState())
+                .semantics { contentDescription = "社区互助页面" }
+        ) {
+            // 标题
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-
-                // 角色切换标签
-                TabRow(
-                    selectedTabIndex = currentTab,
+                Icon(
+                    imageVector = Icons.Default.Person,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "社区互助",
+                    style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.semantics {
-                        contentDescription = "功能切换标签"
+                        contentDescription = "社区互助页面"
                     }
-                ) {
-                    Tab(
-                        selected = currentTab == 0,
-                        onClick = { currentTab = 0 },
-                        text = {
-                            Text(
-                                "我的请求",
-                                modifier = Modifier.semantics {
-                                    contentDescription = if (currentTab == 0) "我的请求，当前页面" else "我的请求"
-                                }
-                            )
-                        }
-                    )
-                    Tab(
-                        selected = currentTab == 1,
-                        onClick = { currentTab = 1 },
-                        text = {
-                            Text(
-                                "寻找志愿者",
-                                modifier = Modifier.semantics {
-                                    contentDescription = if (currentTab == 1) "寻找志愿者，当前页面" else "寻找志愿者"
-                                }
-                            )
-                        }
-                    )
-                    Tab(
-                        selected = currentTab == 2,
-                        onClick = { currentTab = 2 },
-                        text = {
-                            Text(
-                                "成为志愿者",
-                                modifier = Modifier.semantics {
-                                    contentDescription = if (currentTab == 2) "成为志愿者，当前页面" else "成为志愿者"
-                                }
-                            )
-                        }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // 标签内容
-                when (currentTab) {
-                    0 -> MyRequestsTab(
-                        requests = uiState.requests,
-                        onCancel = { viewModel.cancelRequest(it) },
-                        onComplete = { viewModel.completeRequest(it) },
-                        onNewRequest = { startLocation, endLocation, duration ->
-                            viewModel.requestAccompany(startLocation, endLocation, duration)
-                        }
-                    )
-                    1 -> FindVolunteersTab(volunteers = uiState.volunteers)
-                    2 -> BecomeVolunteerTab(
-                        currentUser = uiState.currentUser,
-                        onRegister = { viewModel.registerAsVolunteer(it) },
-                        onSwitchBack = { viewModel.switchToBlindUser() }
-                    )
-                }
+                )
             }
 
-            // 成功消息提示
-            uiState.showSuccessMessage?.let { message ->
-                Snackbar(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp)
-                        .semantics { contentDescription = message },
-                    action = {
-                        TextButton(onClick = { viewModel.dismissMessage() }) {
-                            Text("关闭")
-                        }
-                    }
-                ) {
-                    Text(message)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "志愿者陪伴，安全出行",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.semantics {
+                    contentDescription = "志愿者陪伴，安全出行"
                 }
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 角色切换标签
+            TabRow(
+                selectedTabIndex = currentTab,
+                modifier = Modifier.semantics {
+                    contentDescription = "功能切换标签"
+                }
+            ) {
+                Tab(
+                    selected = currentTab == 0,
+                    onClick = { currentTab = 0 },
+                    text = {
+                        Text(
+                            "我的请求",
+                            modifier = Modifier.semantics {
+                                contentDescription = if (currentTab == 0) "我的请求，当前页面" else "我的请求"
+                            }
+                        )
+                    }
+                )
+                Tab(
+                    selected = currentTab == 1,
+                    onClick = { currentTab = 1 },
+                    text = {
+                        Text(
+                            "寻找志愿者",
+                            modifier = Modifier.semantics {
+                                contentDescription = if (currentTab == 1) "寻找志愿者，当前页面" else "寻找志愿者"
+                            }
+                        )
+                    }
+                )
+                Tab(
+                    selected = currentTab == 2,
+                    onClick = { currentTab = 2 },
+                    text = {
+                        Text(
+                            "成为志愿者",
+                            modifier = Modifier.semantics {
+                                contentDescription = if (currentTab == 2) "成为志愿者，当前页面" else "成为志愿者"
+                            }
+                        )
+                    }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 根据标签显示不同内容
+            when (currentTab) {
+                0 -> MyRequestsTab(
+                    requests = uiState.requests,
+                    onCancel = { viewModel.cancelRequest(it) },
+                    onComplete = { viewModel.completeRequest(it) },
+                    onNewRequest = { start, end, duration ->
+                        viewModel.requestAccompany(start, end, duration)
+                    }
+                )
+                1 -> FindVolunteersTab(volunteers = uiState.volunteers)
+                2 -> BecomeVolunteerTab(
+                    currentUser = uiState.currentUser,
+                    onRegister = { viewModel.registerAsVolunteer(it) },
+                    onSwitchBack = { viewModel.switchToBlindUser() }
+                )
+            }
+        }
+
+        // 成功消息提示
+        uiState.showSuccessMessage?.let { message ->
+            Snackbar(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(16.dp)
+                    .semantics { contentDescription = message },
+                action = {
+                    TextButton(onClick = { viewModel.dismissMessage() }) {
+                        Text("关闭")
+                    }
+                }
+            ) {
+                Text(message)
             }
         }
     }
@@ -190,7 +190,7 @@ fun MyRequestsTab(
         // 请求列表
         if (requests.isEmpty()) {
             EmptyStateCard(
-                icon = Icons.Default.EventBusy,
+                icon = Icons.Default.DateRange,
                 title = "暂无陪伴请求",
                 description = "您还没有发起任何陪伴请求，点击上方按钮发起请求"
             )
@@ -254,7 +254,7 @@ fun RequestCard(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.TripOrigin,
+                    imageVector = Icons.Default.Place,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
@@ -265,7 +265,7 @@ fun RequestCard(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.Flag,
+                    imageVector = Icons.Default.Star,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(20.dp)
@@ -401,7 +401,7 @@ fun FindVolunteersTab(volunteers: List<Volunteer>) {
 
         if (volunteers.isEmpty()) {
             EmptyStateCard(
-                icon = Icons.Default.PersonSearch,
+                icon = Icons.Default.Search,
                 title = "暂无可用志愿者",
                 description = "稍后再试，或成为志愿者帮助他人"
             )
@@ -483,7 +483,7 @@ fun VolunteerCard(volunteer: Volunteer) {
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.Schedule,
+                        imageVector = Icons.Default.DateRange,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(16.dp)
@@ -572,7 +572,7 @@ fun BecomeVolunteerTab(
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            imageVector = Icons.Default.VolunteerActivism,
+                            imageVector = Icons.Default.Favorite,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(48.dp)

@@ -18,7 +18,7 @@ object SosHelper {
     private const val TAG = "SosHelper"
 
     // 预设紧急联系人（可配置化）
-    private var emergencyContacts = listOf("110")
+    private var emergencyContacts = emptyList<String>()
 
     /**
      * 设置紧急联系人

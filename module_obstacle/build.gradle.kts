@@ -1,16 +1,16 @@
 plugins {
     id("com.android.library")
-    id("org.jetbrains.kotlin.android")
-    id("com.google.dagger.hilt.android")
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.hilt.android)
     id("com.google.devtools.ksp")
 }
 
 android {
     namespace = "com.blindpath.module_obstacle"
-    compileSdk = 34
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 26
+        minSdk = libs.versions.minSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
     }
@@ -37,35 +37,39 @@ dependencies {
     implementation(project(":base"))
     implementation(project(":module_voice"))
     
-    // Hilt - 使用 version catalog
+    // Hilt
     implementation(libs.hilt.android)
-    ksp(libs.hilt.compiler)
+    ksp(libs.hilt.android.compiler)
     
-    // CameraX - 使用 version catalog bundle
-    implementation(libs.bundles.camerax)
+    // CameraX
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
     
-    // ML Kit Object Detection
-    implementation(libs.mlkit.objectDetection)
+    // ML Kit
+    implementation(libs.mlkit.obj.detection)
     
-    // TensorFlow Lite - 使用 version catalog bundle
-    implementation(libs.bundles.tensorflow.lite)
-    
+    // TensorFlow Lite
+    implementation(libs.tensorflow.lite)
+    implementation(libs.tensorflow.lite.support)
+
     // Timber
     implementation(libs.timber)
-    
-    // OkHttp
-    implementation(libs.okhttp)
-    
-    // Coroutines - 使用 version catalog bundle
-    implementation(libs.bundles.coroutines)
-    implementation(libs.kotlinx.coroutines.play.services)
+
+    // Coroutines
+    implementation(libs.coroutines.android)
+    implementation(libs.coroutines.core)
     
     // Core
-    implementation(libs.androidx.core.ktx)
-    implementation(libs.androidx.lifecycle.runtime)
-    implementation(libs.androidx.lifecycle.service)
-    implementation(libs.androidx.lifecycle.process)
+    implementation(libs.core.ktx)
+    implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.service)
+    implementation(libs.lifecycle.process)
     
     // Test dependencies
-    testImplementation(libs.bundles.testing)
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    testImplementation(libs.coroutines.test)
+    testImplementation(libs.arch.core.testing)
 }

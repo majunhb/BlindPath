@@ -206,7 +206,10 @@ fun rememberScaledFontSize(baseFontSize: androidx.compose.ui.unit.TextUnit): and
     val context = LocalContext.current
     val settings = remember { AccessibilitySettings(context) }
     
-    return (baseFontSize.value * settings.fontScale).sp
+    return androidx.compose.ui.unit.TextUnit(
+        value = (baseFontSize.value * settings.fontScale).coerceIn(8f, 96f),
+        type = androidx.compose.ui.unit.TextUnitType.Sp
+    )
 }
 
 /**
