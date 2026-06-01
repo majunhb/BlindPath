@@ -20,9 +20,8 @@ import com.blindpath.base.sos.SosHelper
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.domain.VoiceRepository
+import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -48,7 +47,7 @@ class MainActivity : ComponentActivity() {
             pendingAction?.let { performAction(it) }
         } else {
             Toast.makeText(this, "需要权限才能使用此功能", Toast.LENGTH_LONG).show()
-            CoroutineScope(Dispatchers.Main).launch {
+            lifecycleScope.launch {
                 voiceRepository.speak("需要相关权限才能使用此功能，请在设置中授权", queueMode = false)
             }
         }
@@ -59,7 +58,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         // 初始化语音
-        CoroutineScope(Dispatchers.Main).launch {
+        lifecycleScope.launch {
             voiceRepository.initialize()
             voiceRepository.speak("智行助盲应用已启动", queueMode = false)
         }
@@ -136,31 +135,31 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun performSos() {
-        CoroutineScope(Dispatchers.Main).launch {
+        lifecycleScope.launch {
             voiceRepository.speak("正在发起紧急求助", queueMode = false)
-        }
 
-        // 获取 GPS 位置
-        val location = if (SosHelper.hasLocationPermission(this)) {
-            navigationRepository.getCurrentLocation()
-        } else {
-            null
-        }
-
-        // 发送 SOS 短信
-        SosHelper.sendSos(
-            context = this,
-            location = location,
-            onSent = {
-                runOnUiThread {
-                    Toast.makeText(this, "求助短信已发送", Toast.LENGTH_SHORT).show()
-                }
-            },
-            onError = { error ->
-                runOnUiThread {
-                    Toast.makeText(this, error, Toast.LENGTH_LONG).show()
-                }
+            // 获取 GPS 位置
+            val location = if (SosHelper.hasLocationPermission(this@MainActivity)) {
+                navigationRepository.getCurrentLocation()
+            } else {
+                null
             }
-        )
+
+            // 发送 SOS 短信
+            SosHelper.sendSos(
+                context = this@MainActivity,
+                location = location,
+                onSent = {
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, "求助短信已发送", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onError = { error ->
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
+                    }
+                }
+            )
+        }
     }
 }
