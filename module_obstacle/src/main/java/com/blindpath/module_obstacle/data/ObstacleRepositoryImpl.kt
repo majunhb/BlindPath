@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.common.ObstacleAlert
 import com.blindpath.base.common.Result
+import com.blindpath.base.config.AppConfig
 import com.blindpath.module_obstacle.data.detection.AIDetector
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
@@ -51,12 +52,13 @@ class ObstacleRepositoryImpl @Inject constructor(
     private var useFrontCamera = false
     private var lastAlertTime = 0L
     private var lastSceneAnnouncementTime = 0L
-    private val alertCooldown = 2000L // 预警冷却时间（毫秒）
-    private val sceneCooldown = 8000L // 场景播报冷却时间
+    private var lastFrameTimestamp = 0L
+    private val alertCooldown = AppConfig.ObstacleAlert.ALERT_COOLDOWN_MS
+    private val sceneCooldown = AppConfig.ObstacleAlert.SCENE_COOLDOWN_MS
 
     // ============ 多障碍物播报队列 ============
     private var lastMultiObstacleAnnouncement = 0L
-    private val multiObstacleCooldown = 3000L // 多障碍物播报间隔
+    private val multiObstacleCooldown = AppConfig.ObstacleAlert.MULTI_OBSTACLE_COOLDOWN_MS
 
     private var isCameraStarting = false
     private var isCameraStarted = false
@@ -82,8 +84,8 @@ class ObstacleRepositoryImpl @Inject constructor(
             try {
                 Timber.d("Starting obstacle detection")
 
-                // 加载模型（失败也继续，使用演示模式）
-                val modelLoaded = aiDetector.loadModel()
+                // 加载模型（避免重复加载）
+                val modelLoaded = if (aiDetector.isModelLoaded()) true else aiDetector.loadModel()
                 if (!modelLoaded) {
                     Timber.w("AI模型加载失败，将使用演示模式")
                     _state.update { it.copy(lastError = "AI模型加载失败，将使用演示模式") }
@@ -163,8 +165,8 @@ class ObstacleRepositoryImpl @Inject constructor(
 
     override fun getAlertLevel(distance: Float): AlertLevel {
         return when {
-            distance < 0.5f -> AlertLevel.DANGER
-            distance < 1.0f -> AlertLevel.WARNING
+            distance < AppConfig.ObstacleAlert.DANGER_DISTANCE -> AlertLevel.DANGER
+            distance < AppConfig.ObstacleAlert.WARNING_DISTANCE -> AlertLevel.WARNING
             else -> AlertLevel.SAFE
         }
     }
@@ -356,11 +358,7 @@ class ObstacleRepositoryImpl @Inject constructor(
                         it.copy(
                             detectedObstacles = obstacles,
                             sceneRecognition = sceneResult,
-                            fps = try {
-                                (1000 / (imageProxy.imageInfo.timestamp / 1_000_000)).toInt().coerceIn(0, 60)
-                            } catch (e: Exception) {
-                                30
-                            }
+                            fps = calculateFps(imageProxy.imageInfo.timestamp)
                         )
                     }
 
@@ -554,5 +552,24 @@ class ObstacleRepositoryImpl @Inject constructor(
         val out = ByteArrayOutputStream()
         yuvImage.compressToJpeg(Rect(0, 0, width, height), 80, out)
         return BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
+    }
+
+    /**
+     * 基于帧间时间戳差值计算实时 FPS
+     */
+    private fun calculateFps(timestampNs: Long): Int {
+        return try {
+            if (lastFrameTimestamp > 0) {
+                val frameIntervalMs = (timestampNs - lastFrameTimestamp) / 1_000_000
+                val fps = if (frameIntervalMs > 0) (1000f / frameIntervalMs).toInt() else 60
+                fps.coerceIn(0, 60)
+            } else {
+                0 // 第一帧，无历史数据
+            }
+        } catch (_: Exception) {
+            30
+        } finally {
+            lastFrameTimestamp = timestampNs
+        }
     }
 }
