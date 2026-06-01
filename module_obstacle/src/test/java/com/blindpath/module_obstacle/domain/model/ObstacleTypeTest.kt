@@ -118,7 +118,7 @@ class ObstacleTypeTest {
 
     @Test
     fun `alert message with FRONT direction should not include direction prefix`() {
-        val message = ObstacleType.PERSON.getAlertMessage(2.0f, Direction.FRONT)
+        val message = ObstacleType.PERSON.getAlertMessage(2.0f, Direction.CENTER)
 
         // 前方是默认方向，不需要特别标注
         assertFalse("Message should not mention front explicitly", message.contains("前"))
