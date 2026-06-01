@@ -100,6 +100,15 @@ class ObstacleServiceEnhanced : Service() {
     private fun startObstacle() {
         if (isRunning) return
 
+        // 检查功能是否因外部降级而不可用（如系统低电/网络离线等）
+        if (!DegradationManager.isFeatureAvailable(DegradationManager.Feature.CAMERA)) {
+            Timber.w("Camera is disabled via degradation, cannot start obstacle detection")
+            serviceScope.launch {
+                voiceRepository.speak("摄像头功能不可用，无法启动障碍物检测", queueMode = false)
+            }
+            return
+        }
+
         isRunning = true
 
         // 检查电量并设置初始模式
