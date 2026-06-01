@@ -255,12 +255,12 @@ class AIDetector @Inject constructor(
                 val response = client.newCall(request).execute()
 
                 if (!response.isSuccessful) {
-                    Timber.e("Download failed with code: ${response.code}")
+                    Timber.e("Download failed with code: ${response.code()}")
                     return@withContext null
                 }
 
                 // 保存到内部存储
-                val responseBody = response.body ?: return@withContext null
+                val responseBody = response.body() ?: return@withContext null
                 outputFile = File(context.filesDir, modelPath)
                 val fileSize = responseBody.contentLength()
 
