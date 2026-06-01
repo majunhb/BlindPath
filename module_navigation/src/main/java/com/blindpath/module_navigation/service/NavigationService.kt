@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.blindpath.base.config.AppConfig
+import com.blindpath.base.error.DegradationManager
 import com.blindpath.module_navigation.data.GpsQuality
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_voice.domain.VoiceRepository
@@ -78,6 +79,21 @@ class NavigationService : LifecycleService() {
 
     private fun startNavigation() {
         if (isRunning) return
+
+        // 检查 GPS 降级状态
+        if (!DegradationManager.isFeatureAvailable(DegradationManager.Feature.GPS_NAVIGATION)) {
+            Timber.w("GPS navigation is disabled, cannot start")
+            lifecycleScope.launch {
+                voiceRepository.speak("导航功能当前不可用，请检查定位权限", queueMode = false)
+            }
+            return
+        }
+        if (DegradationManager.isFeatureDegraded(DegradationManager.Feature.GPS_NAVIGATION)) {
+            Timber.w("GPS navigation is degraded, starting in reduced mode")
+            lifecycleScope.launch {
+                voiceRepository.speak("GPS信号较弱，导航精度可能降低", queueMode = false)
+            }
+        }
 
         isRunning = true
 
