@@ -369,7 +369,17 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     
     override fun setWakeWordEnabled(enabled: Boolean) {
         _interactionState.update { it.copy(isWakeWordEnabled = enabled) }
-        if (enabled) startContinuousListening() else stopContinuousListening()
+        if (enabled) {
+            // ★ 修复：启动持续监听前先取消 ttsResumeJob，
+            // 防止 notifyTtsStop() 的延迟恢复协程与 startContinuousListening 竞争，
+            // 导致 startListening() 被重复调用引发 ERROR_RECOGNIZER_BUSY
+            ttsResumeJob?.cancel()
+            ttsResumeJob = null
+            isTtsSpeaking = false   // 确保 guard 不阻塞第一次 startListening
+            startContinuousListening()
+        } else {
+            stopContinuousListening()
+        }
     }
     
     /** TTS 开始播报时调用 */

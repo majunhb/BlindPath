@@ -50,7 +50,7 @@ class BaiduWakeWordDetector(
 
     private var wp: EventManager? = null
     private var isListening = false
-    private var isInitialized = false
+    var isInitialized = false
 
     init {
         try {
@@ -72,14 +72,30 @@ class BaiduWakeWordDetector(
         // bindService() 是异步的，但 SDK 内部事件回调 Runnable 在 Handler 上 post 时
         // 引用的 EventListener 可能为 null，导致 NullPointerException 崩溃
         // 进程内模式直接在当前进程创建事件管理器，不存在异步绑定问题
-        wp = EventManagerFactory.create(context, "wp", false)  // useRemote=false，进程内模式
+        try {
+            wp = EventManagerFactory.create(context, "wp", false)  // useRemote=false，进程内模式
+        } catch (e: NullPointerException) {
+            // 百度 SDK 内部 EventListener 为 null 时会抛出 NPE
+            // 这是 SDK 已知问题，在部分 Android 版本/设备上复现
+            Timber.e(e, "$TAG: EventManagerFactory.create() threw NPE (SDK bug), marking as unavailable")
+            throw e
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: EventManagerFactory.create() failed")
+            throw e
+        }
 
         if (wp == null) {
             throw IllegalStateException("Failed to create EventManager (AIDL mode)")
         }
 
-        // 注册事件监听器
-        wp?.registerListener(eventListener)
+        // 注册事件监听器（必须在 create 成功后立即注册，防止 SDK 内部回调时 listener 为 null）
+        try {
+            wp?.registerListener(eventListener)
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: Failed to register event listener")
+            wp = null
+            throw IllegalStateException("Failed to register event listener: ${e.message}")
+        }
 
         isInitialized = true
         Timber.i("$TAG: Initialized successfully with direct EventManagerFactory (AppID: $appId)")
@@ -112,7 +128,7 @@ class BaiduWakeWordDetector(
                     Timber.i("$TAG: Detection result - desc: $desc, word: $word, error: $errorCode")
 
                     if (errorCode == 0) {
-                        val detectedWord = word.ifEmpty { desc.ifEmpty { wakeWord } }
+                        val detectedWord = (word.ifEmpty { desc.ifEmpty { wakeWord } }).toString()
                         onWakeWordDetected.invoke(detectedWord)
                     } else {
                         Timber.w("$TAG: Wake up returned error code: $errorCode")

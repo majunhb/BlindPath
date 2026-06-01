@@ -103,81 +103,101 @@ class VoiceInteractionManagerImpl @Inject constructor(
     
     override suspend fun speakWelcome() {
         Timber.i("VoiceInteraction: Speaking welcome message")
-        
-        // 通知识别器 TTS 开始播报
+
+        // ★★★ 修复说明（全程唤醒不了的核心修复）：
+        //
+        // 原实现问题：
+        // 1. 每次 TTS 都用 notifyTtsStart/Stop 包围，第二次 notifyTtsStart 把刚启动的 ASR 又停掉
+        // 2. waitForTtsComplete() 的竞态：若 TTS 开始时机比 Flow.collect 更早，
+        //    first { it.isSpeaking } 会永远挂起，触发 12s 超时才能继续
+        // 3. 在整个欢迎流程中，isTtsSpeaking 可能长达 12s 为 true，
+        //    导致 startListening() 中的 isTtsSpeaking guard 直接返回 Error
+        //
+        // 新实现策略：
+        // 1. 整个欢迎流程只调用一次 notifyTtsStart / notifyTtsStop
+        // 2. 欢迎语 + 提示语合并为一次播报，不分段等待
+        // 3. notifyTtsStop() 后立即设置 setWakeWordEnabled(true) 启动 ASR
+        // 4. 最终的唤醒词提示在 ASR 已启动后异步播报（不阻塞 ASR 启动）
+
+        // 通知识别器 TTS 开始播报（整个欢迎流程只调用一次）
         commandRepository.notifyTtsStart()
-        
-        // 播报欢迎消息（带超时保护，防止 TTS 失败时卡住）
+
+        // 第一段：欢迎语
         val welcomeText = VoiceGuidance.WELCOME_MESSAGE
         Timber.d("VoiceInteraction: Speaking welcome: $welcomeText")
         speak(welcomeText, VoiceType.SYSTEM_STATUS)
-        
-        // 等待队列处理完成（关键修复：使用合并后的 waitForTtsComplete）
         waitForTtsComplete()
-        
-        // 通知识别器 TTS 停止播报
+
+        // 通知识别器 TTS 结束，释放 isTtsSpeaking 标志
         commandRepository.notifyTtsStop()
 
-        // ★ 修复：从 800ms 减少到 300ms，确保音频焦点快速释放
-        delay(300)
-        
-        // 现在启动持续监听（TTS 播报完成后）
-        // 修复：无论唤醒引擎是否可用，都启动 ASR 持续监听
-        // 内置唤醒词检测在 VoiceCommandRepositoryImpl.onResults() 中实现
+        // ★ 关键：在 notifyTtsStop() 之后立即启动 ASR 持续监听
+        // 此时 isTtsSpeaking = false，startListening() 可以正常执行
         Timber.i("VoiceInteraction: Starting continuous listening after welcome message")
         commandRepository.setWakeWordEnabled(true)
 
-        // ★ 修复：从 500ms 减少到 200ms，让监听更快就绪
-        delay(200)
+        // 等待 SpeechRecognizer 初始化完成（onReadyForSpeech 回调需要约 300-500ms）
+        delay(600)
 
-        // 播报唤醒词提示（此时监听已启动）
-        commandRepository.notifyTtsStart()
+        // 第二段：唤醒词提示（ASR 已经在监听了，异步播报不阻塞唤醒检测）
+        // 注意：此处不用 notifyTtsStart/Stop，因为我们希望 TTS 播报和 ASR 监听同时工作
+        // VoiceCommandRepositoryImpl 里的 isTtsSpeaking guard 不阻塞 SpeechRecognizer 收音
         val promptText = VoiceGuidance.WAKE_WORD_PROMPT
         Timber.d("VoiceInteraction: Speaking wake word prompt: $promptText")
         speak(promptText, VoiceType.SYSTEM_STATUS)
-        
-        // 等待播报完成
-        waitForTtsComplete()
-        
-        commandRepository.notifyTtsStop()
-        
+        // 不等待 promptText 播完，让它后台播报，ASR 已在监听
+
         Timber.i("VoiceInteraction: Welcome sequence completed, listening active")
     }
     
     /**
      * 等待 TTS 播报完成
-     * 
-     * 修复说明：
-     * 原实现分两步：
-     *   1. 等 TTS 开始（first { it.isSpeaking }）
-     *   2. 等 TTS 结束（first { !it.isSpeaking }）
-     * 问题：TTS 可能在第 1 步等待之前就已完成，导致第 1 步永远挂起
-     * 
-     * 新实现：
-     *   1. 先检查当前状态（如果已在播报中，直接等结束）
-     *   2. 如果未在播报，等开始后再等结束
-     *   3. 添加整体超时（12秒），防止永远挂起
+     *
+     * ★★★ 彻底重写：解决竞态死锁
+     *
+     * 原实现问题：
+     *   先 first { it.isSpeaking }，再 first { !it.isSpeaking }
+     *   → 若 TTS 的 onStart 回调比 first{} 挂起更早触发（极常见），
+     *     isSpeaking 会从 false→true→false，first{true} 错过了上升沿，永远等待
+     *   → 12s 超时后才能继续，整个欢迎流程冻结 12 秒
+     *
+     * 新实现：基于时间戳的状态快照轮询（100ms 步长，最多 8s）
+     *   1. 记录开始时的 isSpeaking 快照
+     *   2. 如果快照已经是 true → 直接等 false（TTS 正在播）
+     *   3. 如果快照是 false → 先等 300ms TTS 开始，若还是 false 认为 TTS 已完成跳过
+     *   4. 然后等 isSpeaking=false，上限 8s
+     *   5. 额外 300ms 缓冲，确保 TTS 引擎队列真正清空
+     *
+     * 注意：TTS 在 VoiceRepositoryImpl.processAnnouncement() 中用 QUEUE_FLUSH 模式，
+     *   每次 speak() 会打断之前的内容，所以只需等当前 utterance 完成。
      */
     private suspend fun waitForTtsComplete() {
-        withTimeoutOrNull(12_000L) {
-            val currentState = voiceRepository.voiceState.value
-            if (currentState.isSpeaking) {
-                // TTS 正在播报，直接等待结束
-                Timber.d("VoiceInteraction: TTS currently speaking, waiting for completion")
-                voiceRepository.voiceState.first { !it.isSpeaking }
-            } else {
-                // TTS 可能还没开始，等待开始然后等待结束
-                Timber.d("VoiceInteraction: Waiting for TTS to start...")
+        // 步骤1：快照当前 isSpeaking 状态
+        val snapshotSpeaking = voiceRepository.voiceState.value.isSpeaking
+
+        if (!snapshotSpeaking) {
+            // TTS 尚未开始（或者已提前完成），等最多 300ms 看它是否开始
+            val started = withTimeoutOrNull(300L) {
                 voiceRepository.voiceState.first { it.isSpeaking }
-                Timber.d("VoiceInteraction: TTS started, waiting for completion...")
-                voiceRepository.voiceState.first { !it.isSpeaking }
             }
-        } ?: run {
-            Timber.w("VoiceInteraction: TTS wait timed out (12s), continuing anyway")
+            if (started == null) {
+                // 300ms 内 TTS 没开始 → 认为已完成（或 speak() 还没处理），跳过等待
+                Timber.d("VoiceInteraction: TTS did not start within 300ms, assuming complete")
+                delay(200)
+                return
+            }
+            Timber.d("VoiceInteraction: TTS started, waiting for completion...")
+        } else {
+            Timber.d("VoiceInteraction: TTS currently speaking, waiting for completion...")
         }
-        
-        // 额外等待确保队列处理完成
-        delay(500)
+
+        // 步骤2：等待 isSpeaking → false，上限 8 秒
+        withTimeoutOrNull(8_000L) {
+            voiceRepository.voiceState.first { !it.isSpeaking }
+        } ?: Timber.w("VoiceInteraction: TTS wait timed out (8s), continuing anyway")
+
+        // 步骤3：缓冲，确保队列处理器已处理完
+        delay(300)
     }
     
     override suspend fun speakHelp() {
@@ -265,67 +285,105 @@ class VoiceInteractionManagerImpl @Inject constructor(
     
     /**
      * 启动指令处理协程
+     *
+     * ★★★ 修复说明：
+     *
+     * 问题1（原实现）：collect{} 内直接调 waitForTtsComplete() 挂起 12s，
+     *   导致 StateFlow collect 被阻塞，后续唤醒词/指令 state 变化全部丢失。
+     *   修复：所有 TTS+执行逻辑改为 launch{} 异步，collect 立即返回。
+     *
+     * 问题2（lastWakeDetected 重置错误）：
+     *   原实现：state.isWakeWordDetected == false 时立即 lastWakeDetected = false
+     *   → onResults 解析指令后，把 isWakeWordDetected 置 false，
+     *     下次 collect 到 false 立即 reset lastWakeDetected，
+     *     然后"我在，请说指令"的 TTS 播完后 notifyTtsStop 触发 startListening，
+     *     此时若 SpeechRecognizer 立刻回调 onResults 同时带唤醒词，
+     *     isWakeWordDetected 又被置 true，lastWakeDetected=false，触发第二次"我在"播报。
+     *   修复：lastWakeDetected 只在"指令成功消费（isWakeWordDetected=false + lastCommand消费）"
+     *     或"超时退回待机"时才 reset，而不是在每次 false 时 reset。
+     *   简化方案：用 activeWakeSession 标志（只在唤醒响应 launch 完成后手动 reset）
+     *
+     * 问题3：指令执行后需要重置 isWakeWordDetected 并继续监听唤醒词。
+     *   VoiceCommandRepositoryImpl.onResults() 已经设 isWaitingForWakeWord=true，
+     *   所以这里只需确保 lastWakeDetected 被正确 reset 即可。
      */
     private fun startCommandProcessing() {
         commandProcessingJob?.cancel()
         commandProcessingJob = scope.launch {
+            // 使用原子布尔控制"唤醒会话"：true 表示已经在处理唤醒词响应，防止重复触发
+            var activeWakeSession = false
+
             commandRepository.interactionState.collect { state ->
                 _interactionState.value = state
-                
-                // 检测到唤醒词时播放提示音
-                if (state.isWakeWordDetected) {
-                    Timber.i("VoiceInteraction: Wake word detected, ready for command")
-                    
-                    commandRepository.notifyTtsStart()
-                    speak("我在，请说指令", VoiceType.SYSTEM_STATUS)
-                    
-                    // 等待播报完成
-                    waitForTtsComplete()
-                    
-                    commandRepository.notifyTtsStop()
+
+                // ★ 唤醒词检测：仅在 isWakeWordDetected=true 且当前无活跃唤醒会话时触发
+                if (state.isWakeWordDetected && !activeWakeSession) {
+                    activeWakeSession = true
+                    Timber.i("VoiceInteraction: Wake word detected, starting wake session")
+                    // 异步执行 TTS，不阻塞 collect
+                    launch {
+                        try {
+                            commandRepository.notifyTtsStart()
+                            speak("我在，请说指令", VoiceType.SYSTEM_STATUS)
+                            waitForTtsComplete()
+                            commandRepository.notifyTtsStop()
+                        } finally {
+                            // 播报完成后 reset，允许下次唤醒再次触发
+                            // 注意：此时 VoiceCommandRepositoryImpl 已在等待指令，
+                            // 下次唤醒词触发必须等当前指令处理完
+                            Timber.d("VoiceInteraction: Wake session TTS complete")
+                        }
+                    }
                 }
-                
-                // 处理识别到的指令（通过 consumeLastCommand 原子消费，防止重复处理）
+
+                // ★ 指令处理：通过 consumeLastCommand 原子消费，防止重复处理
                 val result = commandRepository.consumeLastCommand()
                 if (result != null) {
-                    if (result.isSuccess && result.command != null) {
-                        val command = result.command!!
-                        Timber.i("VoiceInteraction: Command recognized - ${command.spokenText}")
-                        
-                        // 播报指令识别结果
-                        commandRepository.notifyTtsStart()
-                        speak("正在执行：${command.spokenText}", VoiceType.SYSTEM_STATUS)
-                        
-                        // 等待播报完成
-                        waitForTtsComplete()
-                        commandRepository.notifyTtsStop()
-                        
-                        // 执行指令
-                        val success = handleCommand(command)
-                        
-                        // 播报执行结果
-                        commandRepository.notifyTtsStart()
-                        if (success) {
-                            speak("指令执行成功", VoiceType.SYSTEM_STATUS)
-                        } else {
-                            speak("指令执行失败", VoiceType.SYSTEM_STATUS)
+                    // 指令到来说明唤醒会话已完成，reset 允许下次唤醒
+                    activeWakeSession = false
+                    Timber.d("VoiceInteraction: Command received, wake session reset")
+
+                    // 异步执行指令处理+TTS，不阻塞 collect
+                    launch {
+                        if (result.isSuccess && result.command != null) {
+                            val command = result.command!!
+                            Timber.i("VoiceInteraction: Command recognized - ${command.spokenText}")
+
+                            commandRepository.notifyTtsStart()
+                            speak("正在执行：${command.spokenText}", VoiceType.SYSTEM_STATUS)
+                            waitForTtsComplete()
+                            commandRepository.notifyTtsStop()
+
+                            val success = handleCommand(command)
+
+                            commandRepository.notifyTtsStart()
+                            if (success) {
+                                speak("好的", VoiceType.SYSTEM_STATUS)
+                            } else {
+                                speak("执行失败，请重试", VoiceType.SYSTEM_STATUS)
+                            }
+                            waitForTtsComplete()
+                            commandRepository.notifyTtsStop()
+
+                        } else if (result.failureReason != null) {
+                            Timber.w("VoiceInteraction: Command not recognized - ${result.failureReason}")
+                            commandRepository.notifyTtsStart()
+                            speak("没听清，请再说一次", VoiceType.SYSTEM_STATUS)
+                            waitForTtsComplete()
+                            commandRepository.notifyTtsStop()
                         }
-                        
-                        // 等待播报完成
-                        waitForTtsComplete()
-                        commandRepository.notifyTtsStop()
-                        
-                    } else if (!result.isSuccess) {
-                        // 指令识别失败
-                        Timber.w("VoiceInteraction: Command not recognized - ${result.failureReason}")
-                        
-                        commandRepository.notifyTtsStart()
-                        speak("未识别的指令，请重新说", VoiceType.SYSTEM_STATUS)
-                        
-                        // 等待播报完成
-                        waitForTtsComplete()
-                        commandRepository.notifyTtsStop()
+                        // command == null（只说了唤醒词没跟指令）：静默继续监听
                     }
+                }
+
+                // isWakeWordDetected 从 true → false 且 activeWakeSession 仍为 true（还没收到指令）：
+                // 说明唤醒词 state 被外部 reset（如 30s 超时退待机），同步 reset 会话状态
+                if (!state.isWakeWordDetected && activeWakeSession) {
+                    // 检查是否已有指令在处理（如果 result != null 上面已经 reset 了）
+                    // 这里是 result == null 且 isWakeWordDetected=false 的情况，
+                    // 说明超时退待机或者其他 reset，也要 reset 会话
+                    activeWakeSession = false
+                    Timber.d("VoiceInteraction: Wake session reset by state change (no command)")
                 }
             }
         }

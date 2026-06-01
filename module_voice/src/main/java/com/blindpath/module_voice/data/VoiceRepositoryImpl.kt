@@ -86,7 +86,7 @@ class VoiceRepositoryImpl @Inject constructor(
                 delay(10_000)
                 if (continuation.isActive) {
                     Timber.e("TTS initialization timed out after 10s")
-                    continuation.resume(Result.Error(message = "TTS 初始化超时（10秒）"), null)
+                    continuation.resume(Result.Error(message = "TTS 初始化超时（10秒）"))
                 }
             }
 
@@ -239,7 +239,10 @@ class VoiceRepositoryImpl @Inject constructor(
         }
 
         val utteranceId = UUID.randomUUID().toString()
-        tts?.speak(request.text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
+        // ★ 修复：interruptCurrent=true（EMERGENCY）才用 QUEUE_FLUSH 打断当前播报
+        // 其他优先级用 QUEUE_ADD，让当前语句播完再排队，避免欢迎语被提示语截断
+        val queueMode = if (request.interruptCurrent) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+        tts?.speak(request.text, queueMode, null, utteranceId)
 
         // 记录播报
         recordAnnouncement(request)

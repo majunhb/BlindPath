@@ -105,6 +105,11 @@ class WakeWordEngineManager(private val context: Context) {
 
     /**
      * 创建百度语音唤醒引擎
+     *
+     * 注意：BaiduWakeWordDetector 在构造函数的 init{} 块中调用 initialize()
+     * 如果百度 SDK 内部抛出 NullPointerException（EventListener 为 null 的已知 bug），
+     * init 块会捕获并将 isInitialized 标记为 false。
+     * 此处检查 isInitialized，如果为 false 则视为创建失败，返回 null 触发降级。
      */
     private fun createBaiduEngine(): BaiduWakeWordDetector? {
         if (config.baiduAppId.isBlank() || config.baiduApiKey.isBlank()) {
@@ -112,21 +117,38 @@ class WakeWordEngineManager(private val context: Context) {
             return null
         }
 
-        val detector = BaiduWakeWordDetector(
-            context = context,
-            appId = config.baiduAppId,
-            apiKey = config.baiduApiKey,
-            secretKey = config.baiduSecretKey,
-            wakeWordAssetPath = config.baiduWakeWordAsset,
-            wakeWord = config.wakeWord,
-            onWakeWordDetected = { keyword ->
-                onWakeWordDetected?.invoke(keyword)
-            }
-        )
+        return try {
+            val detector = BaiduWakeWordDetector(
+                context = context,
+                appId = config.baiduAppId,
+                apiKey = config.baiduApiKey,
+                secretKey = config.baiduSecretKey,
+                wakeWordAssetPath = config.baiduWakeWordAsset,
+                wakeWord = config.wakeWord,
+                onWakeWordDetected = { keyword ->
+                    onWakeWordDetected?.invoke(keyword)
+                }
+            )
 
-        // 百度引擎需要手动启动监听
-        detector.startListening()
-        return detector
+            // 检查百度 SDK 是否真正初始化成功
+            // BaiduWakeWordDetector.init{} 块中可能因 EventManagerFactory NPE 而失败
+            if (!detector.isInitialized || !detector.isListening()) {
+                Timber.w("WakeWordEngineManager: Baidu engine created but not initialized (SDK NPE likely)")
+                // 释放资源，防止 SDK 后台线程继续访问已 null 的 listener
+                try {
+                    detector.release()
+                } catch (e: Exception) {
+                    Timber.w(e, "WakeWordEngineManager: Error releasing failed Baidu detector")
+                }
+                return null
+            }
+
+            Timber.i("WakeWordEngineManager: Baidu engine initialized successfully")
+            detector
+        } catch (e: Exception) {
+            Timber.e(e, "WakeWordEngineManager: Baidu engine creation failed (likely SDK bug)")
+            null
+        }
     }
 
     /**

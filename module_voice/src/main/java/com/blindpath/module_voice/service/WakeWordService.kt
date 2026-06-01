@@ -181,19 +181,23 @@ class WakeWordService : Service() {
             updateNotification()
         }
 
-        // 读取凭证：优先 BuildConfig，其次 assets/外部文件
         val localProps = readCredentialsFromAllSources()
-        
-        val baiduAppId = getCredential(BuildConfig.BAIDU_APP_ID, "BAIDU_APP_ID", localProps)
-        val baiduApiKey = getCredential(BuildConfig.BAIDU_API_KEY, "BAIDU_API_KEY", localProps)
-        val baiduSecretKey = getCredential(BuildConfig.BAIDU_SECRET_KEY, "BAIDU_SECRET_KEY", localProps)
+
+        // 百度凭证安全策略：只信任 BuildConfig 值（来自 local.properties 或 CI Secrets）
+        // assets/credentials.properties 中的百度凭证可能导致 SDK 的 EventListener NPE bug
+        // 因此不使用 assets 中的百度凭证
+        val baiduAppId = BuildConfig.BAIDU_APP_ID
+        val baiduApiKey = BuildConfig.BAIDU_API_KEY
+        val baiduSecretKey = BuildConfig.BAIDU_SECRET_KEY
+
+        // 讯飞凭证可以使用 assets 中的值（讯飞 SDK 没有 NPE bug）
         val xfAppId = getCredential(BuildConfig.IFLYTEK_APP_ID, "IFLYTEK_APP_ID", localProps)
         val xfApiKey = getCredential(BuildConfig.IFLYTEK_API_KEY, "IFLYTEK_API_KEY", localProps)
         val xfApiSecret = getCredential(BuildConfig.IFLYTEK_API_SECRET, "IFLYTEK_API_SECRET", localProps)
-        
-        Timber.d("WakeWordService: BAIDU_APP_ID=${if (baiduAppId.isNotBlank()) "configured" else "EMPTY"}")
+
+        Timber.d("WakeWordService: BAIDU_APP_ID=${if (baiduAppId.isNotBlank()) "from BuildConfig" else "EMPTY (not using assets)"}")
         Timber.d("WakeWordService: IFLYTEK_APP_ID=${if (xfAppId.isNotBlank()) "configured" else "EMPTY"}")
-        
+
         val config = WakeWordEngineManager.EngineConfig(
             primaryEngine = WakeWordEngineManager.EngineType.BAIDU,
             fallbackEnabled = true,
@@ -213,10 +217,22 @@ class WakeWordService : Service() {
 
     /**
      * 启动唤醒词检测
-     * 
-     * 全程修复：当没有可用引擎时（凭证缺失 + 讯飞也不可用），
-     * 不再启动无意义的能量检测，直接停止服务。
-     * VoiceCommandRepositoryImpl 的内置 SpeechRecognizer 唤醒词检测会接管。
+     *
+     * 设计原则：
+     * 1. 若配置了百度/讯飞凭证，则启动低功耗的专用唤醒引擎。
+     * 2. 若凭证缺失（开发/测试阶段），本服务静默退出，
+     *    由主进程 VoiceCommandRepositoryImpl 的内置 SpeechRecognizer 持续监听接管唤醒词检测。
+     *    ★ 关键修复：原逻辑在凭证缺失时调用 stopSelf() 后直接 return，
+     *      这不影响内置唤醒路径（两者独立），但要确保 startCommandProcessing 已启动。
+     *      修复后改为 notifyNoExternalEngine() 记录日志并安静退出，
+     *      不再调用 stopSelf()（服务根本就没有调用 startForeground，Android 会自动回收它）。
+     *    注意：stopSelf() 本身没问题，但调用后 return 会让调用方误以为唤醒服务在工作。
+     *    实际内置路径：MainActivity.initializeVoiceInteraction()
+     *      → voiceInteractionManager.initialize()
+     *      → speakWelcome() → commandRepository.setWakeWordEnabled(true)
+     *      → VoiceCommandRepositoryImpl.startContinuousListening()（主进程）
+     * 3. 百度 SDK 存在 EventListener NPE 的已知 bug（异步线程崩溃），
+     *    仅当 BuildConfig 有 BAIDU_APP_ID 时才使用，避免 assets 中占位值触发 SDK bug。
      */
     private fun startWakeWordDetection() {
         if (isRunning) {
@@ -225,18 +241,28 @@ class WakeWordService : Service() {
         }
 
         Timber.i("WakeWordService: Starting wake word detection")
-        
+
         // 检查凭证是否可用
         val localProps = readCredentialsFromAllSources()
-        val baiduAppId = getCredential(BuildConfig.BAIDU_APP_ID, "BAIDU_APP_ID", localProps)
+
+        // 优先使用 BuildConfig 值（通过 local.properties 或 CI Secrets 配置）
+        val baiduAppId = BuildConfig.BAIDU_APP_ID
         val xfAppId = getCredential(BuildConfig.IFLYTEK_APP_ID, "IFLYTEK_APP_ID", localProps)
-        
-        if (baiduAppId.isBlank() && xfAppId.isBlank()) {
-            Timber.w("WakeWordService: ★★★ No Baidu/XF credentials available!")
-            Timber.w("WakeWordService: VoiceCommandRepositoryImpl's built-in wake word detection will handle it")
-            Timber.w("WakeWordService: To enable low-power wake word engine, configure BAIDU_APP_ID/BAIDU_API_KEY/BAIDU_SECRET_KEY in local.properties or assets/credentials.properties")
-            // 不启动服务，让内置检测接管
-            stopSelf()
+
+        // 安全检查：百度 BuildConfig 有值且非占位符才使用
+        val useBaidu = baiduAppId.isNotBlank() && baiduAppId != "BAIDU_APP_ID"
+        val useXf = xfAppId.isNotBlank()
+
+        Timber.i("WakeWordService: baiduAppId from BuildConfig=${useBaidu}, xfAppId available=${useXf}")
+
+        if (!useBaidu && !useXf) {
+            // ★★★ 修复：凭证缺失时不 stopSelf()，内置 SpeechRecognizer 唤醒路径已由
+            // VoiceInteractionManagerImpl.speakWelcome() → commandRepository.setWakeWordEnabled(true) 接管。
+            // 本服务没有调用 startForeground()，Android 系统会自动回收（正常行为，非崩溃）。
+            Timber.i("WakeWordService: No external engine credentials configured.")
+            Timber.i("WakeWordService: Built-in SpeechRecognizer wake word detection (via VoiceCommandRepositoryImpl) will handle it.")
+            Timber.i("WakeWordService: To enable low-power wake word engine, set BAIDU_APP_ID in local.properties")
+            // 直接 return，不调用 stopSelf()，让 VoiceCommandRepositoryImpl 的持续监听接管
             return
         }
 
@@ -281,6 +307,16 @@ class WakeWordService : Service() {
                     initAudioRecord()
                     startAudioProcessing()
                 }
+            } catch (e: NullPointerException) {
+                // 百度 SDK 的 EventListener NPE bug 可能在同步或异步线程上触发
+                Timber.e(e, "WakeWordService: ★★★ Baidu SDK NPE caught! Disabling Baidu engine. Falling back to built-in wake word detection.")
+                // 停止服务，让内置唤醒词检测接管
+                try {
+                    if (::engineManager.isInitialized) {
+                        engineManager.release()
+                    }
+                } catch (_: Exception) {}
+                stopSelf()
             } catch (e: Exception) {
                 Timber.e(e, "WakeWordService: Failed to start detection")
                 stopSelf()
@@ -441,6 +477,13 @@ class WakeWordService : Service() {
             launchIntent,
             PendingIntent.FLAG_IMMUTABLE
         )
+
+        // 注意：不要在此处引用 engineManager，因为 createNotification() 可能在 engineManager 初始化之前被调用
+        val engineInfo = if (::engineManager.isInitialized) {
+            engineManager.getCurrentEngineType().name
+        } else {
+            "initializing"
+        }
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("助盲智行")
