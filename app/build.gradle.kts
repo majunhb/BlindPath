@@ -63,6 +63,8 @@ dependencies {
     implementation(project(":module_voice"))
     implementation(project(":module_settings"))
     implementation(project(":module_community"))
+    implementation(project(":module_trip_assist"))
+    implementation(project(":module_indoor"))
 
     // 百度语音 SDK (app 模块直接引入 AAR，Library 模块编译时用 compileOnly)
     implementation(fileTree("$rootDir/module_voice/libs") { include("*.aar") })
