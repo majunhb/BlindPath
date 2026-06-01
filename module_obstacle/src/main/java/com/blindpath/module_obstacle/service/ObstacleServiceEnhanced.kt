@@ -36,7 +36,7 @@ import javax.inject.Inject
  * - 温度监控：过热时自动降频
  */
 @AndroidEntryPoint
-class ObstacleService : Service() {
+class ObstacleServiceEnhanced : Service() {
 
     @Inject
     lateinit var obstacleRepository: ObstacleRepository
@@ -69,7 +69,7 @@ class ObstacleService : Service() {
         const val CHANNEL_OBSTACLE = "channel_obstacle"
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onBind(intent: Intent): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()

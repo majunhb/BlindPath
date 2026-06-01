@@ -43,6 +43,7 @@ dependencies {
     
     // Location
     implementation(libs.play.services.location)
+    implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
 
     // Timber
     implementation(libs.timber)

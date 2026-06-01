@@ -13,6 +13,14 @@ android {
         minSdk = libs.versions.minSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
+
+        // 语音 SDK 凭证 (CI 使用空值，真实环境通过 local.properties 覆盖)
+        buildConfigField("String", "BAIDU_APP_ID", "\"${project.findProperty("BAIDU_APP_ID") ?: ""}\"")
+        buildConfigField("String", "BAIDU_API_KEY", "\"${project.findProperty("BAIDU_API_KEY") ?: ""}\"")
+        buildConfigField("String", "BAIDU_SECRET_KEY", "\"${project.findProperty("BAIDU_SECRET_KEY") ?: ""}\"")
+        buildConfigField("String", "IFLYTEK_APP_ID", "\"${project.findProperty("IFLYTEK_APP_ID") ?: ""}\"")
+        buildConfigField("String", "IFLYTEK_API_KEY", "\"${project.findProperty("IFLYTEK_API_KEY") ?: ""}\"")
+        buildConfigField("String", "IFLYTEK_API_SECRET", "\"${project.findProperty("IFLYTEK_API_SECRET") ?: ""}\"")
     }
 
     buildTypes {
@@ -24,6 +32,10 @@ android {
             )
         }
     }
+    buildFeatures {
+        buildConfig = true
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -46,9 +58,13 @@ dependencies {
     // Core
     implementation(libs.core.ktx)
     implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.viewmodel.ktx)
 
     // Coroutines
     implementation(libs.coroutines.android)
+
+    // 百度语音 SDK (本地 AAR，已包含 auth + asr + aipe 全部类)
+    implementation(fileTree("libs") { include("*.aar") })
     
     // Test dependencies
     testImplementation(libs.junit)

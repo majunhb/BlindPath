@@ -79,7 +79,7 @@ class AIDetector @Inject constructor(
         // 家居物品（可能阻挡路径）
         56 to ObstacleType.CHAIR,        // chair
         57 to ObstacleType.SOFA,         // sofa
-        58 to ObstacleType.POTTTED_PLANT, // potted plant
+        58 to ObstacleType.POTTED_PLANT, // potted plant
         59 to ObstacleType.BED,          // bed
         60 to ObstacleType.TABLE,        // dining table
 
@@ -123,7 +123,7 @@ class AIDetector @Inject constructor(
         // 家居物品
         ObstacleType.CHAIR to 0.9f,         // 椅子高度约0.9m
         ObstacleType.SOFA to 0.8f,          // 沙发高度约0.8m
-        ObstacleType.POTTTED_PLANT to 0.5f,  // 盆栽高度约0.5m
+        ObstacleType.POTTED_PLANT to 0.5f,  // 盆栽高度约0.5m
         ObstacleType.BED to 0.5f,           // 床高度约0.5m
         ObstacleType.TABLE to 0.75f         // 餐桌高度约0.75m
     )

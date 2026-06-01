@@ -61,6 +61,22 @@ class ObstacleRepositoryImpl @Inject constructor(
     private var isCameraStarting = false
     private var isCameraStarted = false
 
+    override suspend fun initialize(): Result<Boolean> {
+        return try {
+            Timber.d("Initializing obstacle module")
+            val modelLoaded = aiDetector.loadModel()
+            if (modelLoaded) {
+                _state.update { it.copy(isModelLoaded = true) }
+                Result.Success(true)
+            } else {
+                Result.Error(message = "AI模型加载失败")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Initialize failed")
+            Result.Error(message = e.message ?: "初始化失败")
+        }
+    }
+
     override suspend fun startDetection(): Result<Boolean> {
         return withContext(Dispatchers.IO) {
             try {
@@ -139,6 +155,11 @@ class ObstacleRepositoryImpl @Inject constructor(
     }
 
     override fun getLatestObstacles(): List<DetectedObstacle> = latestObstacles
+
+    override fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider) {
+        // 预览 SurfaceProvider 留待 CameraX Preview 用例集成时使用
+        Timber.d("Preview surface provider set")
+    }
 
     override fun getAlertLevel(distance: Float): AlertLevel {
         return when {

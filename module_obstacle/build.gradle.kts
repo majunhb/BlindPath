@@ -47,8 +47,11 @@ dependencies {
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
     
-    // ML Kit
-    implementation(libs.mlkit.obj.detection)
+    // ML Kit (排除 -api 变体，避免与 tensorflow-lite 的 namespace 冲突)
+    implementation(libs.mlkit.obj.detection) {
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-api")
+        exclude(group = "org.tensorflow", module = "tensorflow-lite-support-api")
+    }
     
     // TensorFlow Lite
     implementation(libs.tensorflow.lite)
