@@ -43,10 +43,9 @@ enum class IndoorObstacleType(val chineseName: String, val priority: Int) {
     fun getAlertMessage(distance: Float, direction: Direction? = null): String {
         val distanceInt = distance.toInt()
         val directionPrefix = when (direction) {
-            Direction.LEFT, Direction.LEFT_FRONT, Direction.FRONT_LEFT -> "左侧"
-            Direction.RIGHT, Direction.RIGHT_FRONT, Direction.FRONT_RIGHT -> "右侧"
+            Direction.LEFT, Direction.LEFT_FRONT -> "左侧"
+            Direction.RIGHT, Direction.RIGHT_FRONT -> "右侧"
             Direction.CENTER -> ""
-            Direction.FRONT -> ""
             Direction.BACK -> "后方"
             null -> ""
         }
