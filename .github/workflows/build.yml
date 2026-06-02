@@ -51,19 +51,18 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Create local.properties and inject API credentials
-
+      - name: Inject API credentials
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
           mkdir -p ~/.gradle
-          cat >> ~/.gradle/gradle.properties << 'EOF'
-          BAIDU_APP_ID=${{ secrets.BAIDU_APP_ID }}
-          BAIDU_API_KEY=${{ secrets.BAIDU_API_KEY }}
-          BAIDU_SECRET_KEY=${{ secrets.BAIDU_SECRET_KEY }}
-          IFLYTEK_APP_ID=${{ secrets.IFLYTEK_APP_ID }}
-          IFLYTEK_API_KEY=${{ secrets.IFLYTEK_API_KEY }}
-          IFLYTEK_API_SECRET=${{ secrets.IFLYTEK_API_SECRET }}
-          EOF
+          echo "BAIDU_APP_ID=${{ secrets.BAIDU_APP_ID }}" >> ~/.gradle/gradle.properties
+          echo "BAIDU_API_KEY=${{ secrets.BAIDU_API_KEY }}" >> ~/.gradle/gradle.properties
+          echo "BAIDU_SECRET_KEY=${{ secrets.BAIDU_SECRET_KEY }}" >> ~/.gradle/gradle.properties
+          echo "IFLYTEK_APP_ID=${{ secrets.IFLYTEK_APP_ID }}" >> ~/.gradle/gradle.properties
+          echo "IFLYTEK_API_KEY=${{ secrets.IFLYTEK_API_KEY }}" >> ~/.gradle/gradle.properties
+          echo "IFLYTEK_API_SECRET=${{ secrets.IFLYTEK_API_SECRET }}" >> ~/.gradle/gradle.properties
+          echo "Credentials injected"
+
           echo "Credentials injected into ~/.gradle/gradle.properties"
 
 
