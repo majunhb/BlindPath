@@ -44,7 +44,8 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-       - name: Create local.properties and inject API credentials
+      - name: Create local.properties and inject API credentials
+
         run: |
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
           mkdir -p ~/.gradle
