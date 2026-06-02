@@ -88,6 +88,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     private var retryCount = 0
     private val maxRetries = 5
     private var healthCheckJob: Job? = null
+    private var recreateJob: Job? = null  // 防止并发重建
     
     // TTS 协调机制
     @Volatile
@@ -139,29 +140,27 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                     }
                     // 需要重建识别器的错误
                     SpeechRecognizer.ERROR_RECOGNIZER_BUSY, SpeechRecognizer.ERROR_CLIENT -> {
+                        // 防止并发重建：已有重建任务进行中则跳过
+                        if (recreateJob?.isActive == true) {
+                            Timber.d("VoiceCommand: Recreate already in progress, skipping")
+                            return
+                        }
                         retryCount++
                         if (retryCount <= maxRetries) {
                             val delayMs = minOf(1000L * retryCount, 5000L)
-                            scope.launch {
+                            recreateJob = scope.launch {
                                 delay(delayMs)
                                 if (isContinuousListeningEnabled) {
-                                    // 重建 SpeechRecognizer 实例
-                                    speechRecognizer?.destroy()
-                                    speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
-                                    speechRecognizer?.setRecognitionListener(recognitionListener)
-                                    Timber.i("VoiceCommand: Recreated SpeechRecognizer instance (attempt $retryCount)")
+                                    safeRecreateRecognizer("attempt $retryCount")
                                     startListening()
                                 }
                             }
                         } else {
-                            // 超过重试次数，彻底重建
+                            // 超过重试次数，彻底重建（更长冷却）
                             retryCount = 0
-                            scope.launch {
-                                delay(2000)
-                                speechRecognizer?.destroy()
-                                speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
-                                speechRecognizer?.setRecognitionListener(recognitionListener)
-                                Timber.w("VoiceCommand: Max retries exceeded, full reset")
+                            recreateJob = scope.launch {
+                                delay(3000)
+                                safeRecreateRecognizer("full reset after max retries")
                                 if (isContinuousListeningEnabled) startListening()
                             }
                         }
@@ -354,8 +353,37 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         }?.let { Result.Success(it) } ?: Result.Error(message = "语音识别超时")
     }
     
+    /**
+     * 安全重建 SpeechRecognizer：先 cancel → 清 listener → destroy → 延迟 → 重建
+     * 解决 ERROR_RECOGNIZER_BUSY 死循环：旧实例未完全释放时新建会导致永久忙碌
+     */
+    private suspend fun safeRecreateRecognizer(reason: String) {
+        try {
+            Timber.i("VoiceCommand: Safe recreate start ($reason)")
+            // 1. 停止当前识别
+            speechRecognizer?.cancel()
+            // 2. 移除 listener 防止回调到已销毁实例
+            speechRecognizer?.setRecognitionListener(null)
+            // 3. 销毁旧实例
+            speechRecognizer?.destroy()
+            speechRecognizer = null
+            // 4. 等待系统释放麦克风资源（关键！）
+            delay(500)
+            // 5. 创建新实例
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
+            speechRecognizer?.setRecognitionListener(recognitionListener)
+            Timber.i("VoiceCommand: Safe recreate done ($reason)")
+        } catch (e: Exception) {
+            Timber.e(e, "VoiceCommand: Safe recreate failed ($reason)")
+            speechRecognizer = null
+        }
+    }
+
     override fun release() {
+        recreateJob?.cancel()
         stopContinuousListening()
+        speechRecognizer?.cancel()
+        speechRecognizer?.setRecognitionListener(null)
         speechRecognizer?.destroy()
         speechRecognizer = null
         isInitialized = false
@@ -402,6 +430,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             // 只在持续监听模式且未检测到唤醒词时恢复识别
             if (isContinuousListeningEnabled && !isTtsSpeaking && !_interactionState.value.isWakeWordDetected) {
                 Timber.i("VoiceCommand: Resuming recognition after TTS")
+                recreateJob?.cancel()
                 startListening()
             }
         }
@@ -412,6 +441,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         isContinuousListeningEnabled = true
         isWaitingForWakeWord = true
         retryCount = 0
+        recreateJob?.cancel()  // 取消待定重建
         Timber.i("VoiceCommand: ★ Continuous listening STARTED")
         listeningJob = scope.launch {
             // ★ 修复：从 500ms 减少到 200ms，加快监听启动
@@ -432,6 +462,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
                     if (elapsed > 8000 && !currentState) {
                         Timber.w("VoiceCommand: Health check restart (inactive ${elapsed}ms)")
                         lastStateTime = System.currentTimeMillis()
+                        recreateJob?.cancel()
                         startListening()
                     }
                 }
@@ -445,6 +476,8 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         listeningJob = null
         ttsResumeJob?.cancel()
         ttsResumeJob = null
+        recreateJob?.cancel()
+        recreateJob = null
         healthCheckJob?.cancel()
         healthCheckJob = null
         Timber.i("VoiceCommand: Continuous listening STOPPED")
