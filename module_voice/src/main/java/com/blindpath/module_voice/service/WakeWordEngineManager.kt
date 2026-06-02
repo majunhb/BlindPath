@@ -132,7 +132,8 @@ class WakeWordEngineManager(private val context: Context) {
 
             // 检查百度 SDK 是否真正初始化成功
             // BaiduWakeWordDetector.init{} 块中可能因 EventManagerFactory NPE 而失败
-            if (!detector.isInitialized || !detector.isListening()) {
+            // 注意：startListening() 由外部调用，此处仅检查初始化状态
+            if (!detector.isInitialized) {
                 Timber.w("WakeWordEngineManager: Baidu engine created but not initialized (SDK NPE likely)")
                 // 释放资源，防止 SDK 后台线程继续访问已 null 的 listener
                 try {
@@ -219,6 +220,13 @@ class WakeWordEngineManager(private val context: Context) {
      * 获取当前引擎
      */
     fun getCurrentEngine(): WakeWordDetector? = currentEngine
+
+    /**
+     * 启动当前引擎的唤醒词监听
+     */
+    fun startListening() {
+        currentEngine?.startListening()
+    }
 
     /**
      * 获取当前引擎类型

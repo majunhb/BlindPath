@@ -193,7 +193,7 @@ class XfWakeWordDetector(
         }
     }
 
-    fun startListening() {
+    override fun startListening() {
         if (!isInitialized || aiHelper == null) {
             Timber.w("$TAG: Not initialized")
             return

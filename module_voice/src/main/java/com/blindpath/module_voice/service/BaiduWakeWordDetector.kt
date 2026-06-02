@@ -180,7 +180,7 @@ class BaiduWakeWordDetector(
      * - "words": 唤醒词文本列表（JSONArray 格式）
      * - "accept-audio-volume": 是否接受音频音量回调
      */
-    fun startListening() {
+    override fun startListening() {
         // 检查是否已初始化
         if (!isInitialized || wp == null) {
             Timber.w("$TAG: Not initialized, attempting re-initialization")

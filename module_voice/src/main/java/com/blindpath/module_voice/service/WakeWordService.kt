@@ -301,7 +301,10 @@ class WakeWordService : Service() {
 
                 if (engineManager.isCurrentEngineSelfManaged()) {
                     // 百度/讯飞引擎：SDK 自己管理音频采集，不需要手动启动 AudioRecord
-                    Timber.i("WakeWordService: Using self-managed audio engine ($engineType)")
+                    // ★★ 关键修复：必须调用 startListening() 才能真正开始检测唤醒词
+                    Timber.i("WakeWordService: Using self-managed audio engine ($engineType), starting listener...")
+                    engineManager.startListening()
+                    Timber.i("WakeWordService: Self-managed engine listener started")
                 } else {
                     // 非自管理引擎：需要手动采集音频
                     initAudioRecord()
@@ -535,6 +538,7 @@ class WakeWordService : Service() {
  * 唤醒词检测器接口
  */
 interface WakeWordDetector {
+    fun startListening()
     fun process(audioData: ShortArray): Boolean
     fun release()
 }

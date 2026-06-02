@@ -32,6 +32,11 @@ class EnergyWakeWordDetector(
      * @param audioData 16-bit PCM 音频数据
      * @return 是否检测到声音（注意：不是唤醒词）
      */
+    override fun startListening() {
+        // Energy detector only works via process() calls, nothing to start
+        Timber.d("$TAG: startListening (no-op for energy detector)")
+    }
+
     override fun process(audioData: ShortArray): Boolean {
         if (!isInitialized) return false
 
