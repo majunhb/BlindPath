@@ -45,6 +45,11 @@ class MainActivity : ComponentActivity() {
         val allGranted = permissions.all { it.value }
         if (allGranted) {
             pendingAction?.let { performAction(it) }
+            // 如果位置权限被授予且之前未自动启动，则启动定位服务
+            if (permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
+                autoStartLocationIfPermitted()
+            }
         } else {
             Toast.makeText(this, "需要权限才能使用此功能", Toast.LENGTH_LONG).show()
             lifecycleScope.launch {
@@ -63,6 +68,9 @@ class MainActivity : ComponentActivity() {
             voiceRepository.speak("智行助盲应用已启动", queueMode = false)
         }
 
+        // 自动启动定位服务（不需要用户点击）
+        autoStartLocationIfPermitted()
+
         setContent {
             BlindPathTheme {
                 Surface(
@@ -71,12 +79,33 @@ class MainActivity : ComponentActivity() {
                 ) {
                     MainScreen(
                         obstacleRepository = obstacleRepository,
+                        navigationRepository = navigationRepository,
                         onObstacleDetectionClick = { requestPermissionAndAction("obstacle") },
                         onLocationClick = { requestPermissionAndAction("location") },
                         onSosClick = { requestPermissionAndAction("sos") }
                     )
                 }
             }
+        }
+    }
+
+    /**
+     * 自动启动定位服务（如果权限已授予）
+     * 用户在打开APP首页时即获得实时定位信息，无需跳转
+     */
+    private fun autoStartLocationIfPermitted() {
+        val permissions = arrayOf(
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+        val allGranted = permissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+        if (allGranted) {
+            val intent = Intent(this, com.blindpath.module_navigation.service.NavigationService::class.java).apply {
+                action = com.blindpath.module_navigation.service.NavigationService.ACTION_START
+            }
+            startForegroundService(intent)
         }
     }
 

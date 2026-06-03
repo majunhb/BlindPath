@@ -87,11 +87,12 @@ class ObstacleRepositoryImpl @Inject constructor(
                 // 加载模型（避免重复加载）
                 val modelLoaded = if (aiDetector.isModelLoaded()) true else aiDetector.loadModel()
                 if (!modelLoaded) {
-                    Timber.w("AI模型加载失败，将使用演示模式")
-                    _state.update { it.copy(lastError = "AI模型加载失败，将使用演示模式") }
+                    Timber.w("AI模型加载失败，尝试使用演示数据")
+                    _state.update { it.copy(isModelLoaded = false, lastError = "AI模型未加载，障碍物检测精度受限") }
+                    // 不返回Error，允许继续启动摄像头并收集数据，后续可能会下载成功
                 }
 
-                _state.update { it.copy(isModelLoaded = true) }
+                _state.update { it.copy(isModelLoaded = modelLoaded) }
 
                 // 启动摄像头（同步等待完成）
                 val cameraStarted = startCameraSync()

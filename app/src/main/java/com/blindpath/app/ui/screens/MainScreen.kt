@@ -37,6 +37,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.module_obstacle.domain.ObstacleRepository
+import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
 import com.blindpath.module_trip_assist.ui.TripAssistScreen
@@ -58,6 +59,7 @@ import java.util.concurrent.Executors
 @Composable
 fun MainScreen(
     obstacleRepository: ObstacleRepository,
+    navigationRepository: NavigationRepository,
     onObstacleDetectionClick: () -> Unit = {},
     onLocationClick: () -> Unit = {},
     onSosClick: () -> Unit = {},
@@ -204,15 +206,17 @@ fun MainScreen(
         }
         else -> {
             MainContentV5(
-                showObstacleDetection = showObstacleDetection,  // 新增：传递环境感知状态
-                onObstacleToggle = { showObstacleDetection = !showObstacleDetection },  // 新增：切换环境感知
+                showObstacleDetection = showObstacleDetection,
+                onObstacleToggle = { showObstacleDetection = !showObstacleDetection },
                 onNavigationClick = { showNavigation = true },
                 onSosClick = onSosClick,
                 onSettingsClick = { showSettings = true },
                 onLocationClick = { showLocation = true },
                 isListening = uiState.isListening,
                 onStartListening = { viewModel.startListening() },
-                onStopListening = { viewModel.stopListening() }
+                onStopListening = { viewModel.stopListening() },
+                obstacleRepository = obstacleRepository,
+                navigationRepository = navigationRepository
             )
         }
     }
@@ -240,15 +244,17 @@ fun MainScreen(
  */
 @Composable
 private fun MainContentV5(
-    showObstacleDetection: Boolean = false,  // 新增：环境感知状态
-    onObstacleToggle: () -> Unit = {},  // 新增：切换环境感知
+    showObstacleDetection: Boolean = false,
+    onObstacleToggle: () -> Unit = {},
     onNavigationClick: () -> Unit,
     onSosClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onLocationClick: () -> Unit,
     isListening: Boolean = false,
     onStartListening: () -> Unit = {},
-    onStopListening: () -> Unit = {}
+    onStopListening: () -> Unit = {},
+    obstacleRepository: ObstacleRepository,
+    navigationRepository: NavigationRepository
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -322,11 +328,12 @@ private fun MainContentV5(
                     .padding(horizontal = 12.dp)
             ) {
                 if (showObstacleDetection) {
-                    // 直接在主页面显示环境感知功能
+                    // 直接在主页面显示环境感知功能（连接真实AI检测数据）
                     ObstacleDetectionContent(
                         hasPermission = hasCameraPermission,
                         onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
                         lifecycleOwner = lifecycleOwner,
+                        obstacleRepository = obstacleRepository,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
@@ -348,9 +355,10 @@ private fun MainContentV5(
                         
                         Spacer(modifier = Modifier.height(8.dp))
                         
-                        // 下半：地图预览（点击进入定位界面）
+                        // 下半：地图预览（显示实时位置）
                         MapPreviewCard(
                             onClick = onLocationClick,
+                            navigationRepository = navigationRepository,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .weight(1f)
@@ -493,36 +501,77 @@ private fun CameraPreviewCard(
 @Composable
 private fun MapPreviewCard(
     onClick: () -> Unit,
+    navigationRepository: NavigationRepository,
     modifier: Modifier = Modifier
 ) {
+    val navState by navigationRepository.navigationState.collectAsStateWithLifecycle()
+    
     Box(
         modifier = modifier
             .background(Color(0xFFF5F5F5))
             .clickable(onClick = onClick)
             .semantics {
-                contentDescription = "位置感知，点击查看详细位置信息"
+                contentDescription = "位置感知，${if (navState.isLocationAvailable) "当前位置可用" else "正在获取位置"}"
             }
     ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = Icons.Default.Map,
-                contentDescription = null,
-                tint = Color(0xFF1E90FF),
-                modifier = Modifier.size(48.dp)
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "位置感知",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF666666)
-            )
+        if (navState.isLocationAvailable && navState.currentLocation != null) {
+            // 显示实时位置信息
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // GPS 信号图标
+                Icon(
+                    imageVector = Icons.Default.MyLocation,
+                    contentDescription = null,
+                    tint = Color(0xFF4CAF50),
+                    modifier = Modifier.size(40.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "GPS 信号正常",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF4CAF50),
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "经度: ${String.format("%.4f", navState.currentLocation!!.longitude)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF666666)
+                )
+                Text(
+                    text = "纬度: ${String.format("%.4f", navState.currentLocation!!.latitude)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF666666)
+                )
+            }
+        } else {
+            // 未获取到位置时显示等待状态
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Map,
+                    contentDescription = null,
+                    tint = Color(0xFF1E90FF),
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "正在获取位置...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF666666)
+                )
+            }
         }
         
-        // 点击提示叠加层
+        // 点击查看详情的提示
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -542,7 +591,7 @@ private fun MapPreviewCard(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "点击查看位置",
+                    text = "查看详情",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
@@ -864,12 +913,22 @@ private fun ObstacleDetectionContent(
     hasPermission: Boolean,
     onRequestPermission: () -> Unit,
     lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+    obstacleRepository: ObstacleRepository,
     modifier: Modifier = Modifier
 ) {
-    // 环境感知状态
+    // 观察真实的障碍物检测状态
+    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle()
     var isDetecting by remember { mutableStateOf(true) }
-    var obstacleCount by remember { mutableStateOf(0) }
-    var safetyStatus by remember { mutableStateOf("安全") }
+    
+    // 从真实状态中读取数据
+    val safetyStatus = when {
+        obstacleState.currentAlert?.level == com.blindpath.base.common.AlertLevel.DANGER -> "危险"
+        obstacleState.currentAlert?.level == com.blindpath.base.common.AlertLevel.WARNING -> "警告"
+        obstacleState.isRunning -> "安全"
+        else -> "待机"
+    }
+    val obstacleCount = obstacleState.detectedObstacles.size
+    val currentAlert = obstacleState.currentAlert
     
     Column(
         modifier = modifier
@@ -902,10 +961,15 @@ private fun ObstacleDetectionContent(
                 )
             }
             
-            // 安全状态指示器
+            // 安全状态指示器（基于真实检测结果）
             Surface(
                 shape = RoundedCornerShape(50),
-                color = if (safetyStatus == "安全") Color(0xFF4CAF50) else Color(0xFFFF6B6B)
+                color = when (safetyStatus) {
+                    "危险" -> Color(0xFFFF6B6B)
+                    "警告" -> Color(0xFFFFB347)
+                    "安全" -> Color(0xFF4CAF50)
+                    else -> Color(0xFF666666)
+                }
             ) {
                 Text(
                     text = safetyStatus,
@@ -955,17 +1019,8 @@ private fun ObstacleDetectionContent(
                     }
                 )
                 
-                // 障碍物检测框（模拟）
-                // 实际项目中这里应该显示 AI 检测结果
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(100.dp)
-                        .border(2.dp, Color(0xFF1E90FF), RoundedCornerShape(8.dp))
-                )
-                
-                // 障碍物数量提示
-                if (obstacleCount > 0) {
+                // AI检测结果叠加层（真实数据）
+                if (obstacleState.isRunning && obstacleCount > 0) {
                     Surface(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -973,15 +1028,46 @@ private fun ObstacleDetectionContent(
                         shape = RoundedCornerShape(8.dp),
                         color = Color(0xFFFF6B6B)
                     ) {
-                        Text(
-                            text = "检测到 $obstacleCount 个障碍物",
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                            Text(
+                                text = "检测到 $obstacleCount 个障碍物",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                            // 显示最近的障碍物信息
+                            obstacleState.detectedObstacles.firstOrNull()?.let { first ->
+                                Text(
+                                    text = "${first.type.chineseName} ${String.format("%.1f", first.distance)}m",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Color.White
+                                )
+                            }
+                        }
                     }
                 }
+                
+                // AI检测框叠加（真实数据）
+                obstacleState.detectedObstacles.take(5).forEach { obstacle ->
+                    val boxColor = when (obstacle.distance) {
+                        in 0f..1f -> Color(0xFFFF6B6B)  // 危险：红色
+                        in 1f..3f -> Color(0xFFFFB347)  // 警告：橙色
+                        else -> Color(0xFF1E90FF)         // 注意：蓝色
+                    }
+                    Box(
+                        modifier = Modifier
+                            .offset(
+                                x = ((obstacle.boundingBox.left * 1000).toInt()).dp,
+                                y = ((obstacle.boundingBox.top * 1000).toInt()).dp
+                            )
+                            .size(
+                                width = ((obstacle.boundingBox.right - obstacle.boundingBox.left) * 1000).dp,
+                                height = ((obstacle.boundingBox.bottom - obstacle.boundingBox.top) * 1000).dp
+                            )
+                            .border(2.dp, boxColor, RoundedCornerShape(4.dp))
+                    )
+                }
+                
             } else {
                 // 未授权提示
                 Column(
@@ -1015,53 +1101,52 @@ private fun ObstacleDetectionContent(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        // 底部控制栏
-        Row(
+        // 底部状态信息栏
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically
+            shape = RoundedCornerShape(12.dp),
+            color = Color(0xFF2A2A3E)
         ) {
-            // 切换检测按钮
-            Button(
-                onClick = { isDetecting = !isDetecting },
-                shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isDetecting) Color(0xFF4CAF50) else Color(0xFF666666)
+            Row(
+                modifier = Modifier.padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                // 检测状态
+                InfoChip(
+                    label = "状态",
+                    value = if (obstacleState.isRunning) "检测中" else "待机",
+                    valueColor = if (obstacleState.isRunning) Color(0xFF4CAF50) else Color(0xFF666666)
                 )
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isDetecting) Icons.Default.PlayArrow else Icons.Default.Pause,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = if (isDetecting) "检测中" else "已暂停",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color.White
-                    )
-                }
-            }
-            
-            // 模拟障碍物计数按钮（用于测试）
-            Button(
-                onClick = { 
-                    obstacleCount = if (obstacleCount < 5) obstacleCount + 1 else 0
-                    safetyStatus = if (obstacleCount > 0) "危险" else "安全"
-                },
-                shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF6B6B))
-            ) {
-                Text(
-                    text = "模拟障碍物",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White
+                // 模型状态
+                InfoChip(
+                    label = "模型",
+                    value = if (obstacleState.isModelLoaded) "已加载" else "未加载",
+                    valueColor = if (obstacleState.isModelLoaded) Color(0xFF4CAF50) else Color(0xFFFF6B6B)
+                )
+                // FPS
+                InfoChip(
+                    label = "FPS",
+                    value = "${obstacleState.fps}",
+                    valueColor = Color(0xFF1E90FF)
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun InfoChip(label: String, value: String, valueColor: Color) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color(0xFF888888)
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = valueColor
+        )
     }
 }

@@ -49,7 +49,12 @@ class AIDetector @Inject constructor(
 
     // 模型配置
     private val modelPath = "yolov8n.tflite"
-    private val modelUrl = "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite"
+    private val minValidModelSize = 1024 // 有效模型至少1KB
+    // 多镜像下载地址（优先国内可访问源）
+    private val modelUrls = listOf(
+        "https://github.com/majunhb/BlindPath/releases/download/models/yolov8n.tflite", // 项目自有 release
+        "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite",  // 官方 release
+    )
     private val inputSize = AppConfig.AIDetection.INPUT_SIZE
     private val numThreads = AppConfig.AIDetection.NUM_THREADS
 
@@ -148,45 +153,65 @@ class AIDetector @Inject constructor(
             // 1. 先尝试从内部存储加载
             val modelFile = getModelFile()
             
-            if (modelFile != null && modelFile.exists()) {
-                // 从文件系统加载
+            if (modelFile != null && modelFile.exists() && modelFile.length() >= minValidModelSize) {
                 interpreter = Interpreter(modelFile, options)
                 isLoaded = true
                 Timber.d("YOLOv8 model loaded from file: ${modelFile.absolutePath}")
                 return true
             }
 
-            // 2. 尝试从assets加载
+            // 2. 尝试从assets加载（检查是否为LFS占位符）
             try {
-                val assetBuffer = FileUtil.loadMappedFile(context, modelPath)
-                interpreter = Interpreter(assetBuffer.asReadOnlyBuffer(), options)
-                isLoaded = true
-                Timber.d("YOLOv8 model loaded from assets")
-                return true
+                var assetSize = 0L
+                try {
+                    val afd = context.assets.openFd(modelPath)
+                    assetSize = afd.length
+                    afd.close()
+                } catch (_: Exception) {
+                    Timber.d("Asset file descriptor access failed, trying direct load")
+                }
+
+                if (assetSize >= minValidModelSize || assetSize == 0L) {
+                    // 文件存在且正常，或无法获取大小时直接尝试加载
+                    val assetBuffer = FileUtil.loadMappedFile(context, modelPath)
+                    if (assetBuffer.capacity() >= minValidModelSize) {
+                        interpreter = Interpreter(assetBuffer.asReadOnlyBuffer(), options)
+                        isLoaded = true
+                        Timber.d("YOLOv8 model loaded from assets")
+                        return true
+                    } else {
+                        Timber.w("Model in assets is too small (${assetBuffer.capacity()} bytes), likely LFS placeholder")
+                    }
+                } else {
+                    Timber.w("Model in assets is too small ($assetSize bytes), likely LFS placeholder")
+                }
             } catch (e: Exception) {
-                Timber.w("Model not found in assets, will try to download: ${e.message}")
+                Timber.w("Failed to load model from assets: ${e.message}")
             }
 
-            // 3. 自动从网络下载
-            Timber.d("Downloading model from: $modelUrl")
-            val downloadedFile = downloadModel()
-            
-            if (downloadedFile != null && downloadedFile.exists()) {
-                interpreter = Interpreter(downloadedFile, options)
-                isLoaded = true
-                Timber.d("YOLOv8 model downloaded and loaded successfully")
-                return true
+            // 3. 自动从网络下载（尝试多个镜像）
+            for ((index, url) in modelUrls.withIndex()) {
+                Timber.d("Downloading model from mirror #${index + 1}: $url")
+                val downloadedFile = downloadModel(url)
+                
+                if (downloadedFile != null && downloadedFile.exists() && downloadedFile.length() >= minValidModelSize) {
+                    interpreter = Interpreter(downloadedFile, options)
+                    isLoaded = true
+                    Timber.d("YOLOv8 model downloaded from mirror #${index + 1} and loaded successfully")
+                    return true
+                }
+                Timber.w("Mirror #${index + 1} download failed or file invalid")
             }
 
-            // 4. 所有方法都失败，使用模拟模式
-            Timber.w("AI模型文件无法加载，使用模拟模式")
-            isLoaded = true
-            return true
+            // 4. 所有方法都失败
+            Timber.w("AI模型文件无法加载，所有下载源均失败")
+            isLoaded = false
+            return false
             
         } catch (e: Exception) {
-            Timber.e(e, "Failed to load AI model, using simulation mode")
-            isLoaded = true
-            return true
+            Timber.e(e, "Failed to load AI model")
+            isLoaded = false
+            return false
         }
     }
 
@@ -237,19 +262,19 @@ class AIDetector @Inject constructor(
     /**
      * 从网络下载模型文件
      */
-    private suspend fun downloadModel(): File? {
+    private suspend fun downloadModel(url: String): File? {
         return withContext(Dispatchers.IO) {
             var outputFile: File? = null
             try {
-                Timber.d("Starting model download from: $modelUrl")
+                Timber.d("Starting model download from: $url")
 
                 val client = OkHttpClient.Builder()
                     .connectTimeout(60, TimeUnit.SECONDS)
-                    .readTimeout(60, TimeUnit.SECONDS)
+                    .readTimeout(120, TimeUnit.SECONDS)
                     .build()
 
                 val request = Request.Builder()
-                    .url(modelUrl)
+                    .url(url)
                     .build()
 
                 val response = client.newCall(request).execute()
@@ -535,5 +560,5 @@ class AIDetector @Inject constructor(
     /**
      * 检查模型是否已加载
      */
-    fun isModelLoaded(): Boolean = isLoaded
+    fun isModelLoaded(): Boolean = isLoaded && interpreter != null
 }
