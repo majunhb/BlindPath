@@ -10,6 +10,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.*
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,6 +52,7 @@ import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.ObstacleState
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.NavigationState
+import com.blindpath.module_navigation.domain.model.LocationInfo
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
 import com.blindpath.module_trip_assist.ui.TripAssistScreen
@@ -227,15 +229,8 @@ fun MainScreen(
                 onSosClick = onSosClick,
                 onSettingsClick = { showSettings = true },
                 onLocationClick = { showLocation = true },
-                // [Feature 4] 周边POI播报：点击"周边"时根据GPS位置播报附近POI
-                onExploreClick = {
-                    if (navState.isLocationAvailable && navState.currentLocation != null) {
-                        val announcement = NearbyPoiService.generateAnnouncement(navState.currentLocation!!)
-                        viewModel.speak(announcement)
-                    } else {
-                        viewModel.speak("无法获取当前位置，请稍后再试")
-                    }
-                },
+                // [Feature 4] 周边POI播报（由SmartDashboard内部根据navState处理）
+                onExploreClick = {},
                 isListening = uiState.isListening,
                 onStartListening = { viewModel.startListening() },
                 onStopListening = { viewModel.stopListening() },
@@ -579,6 +574,18 @@ private fun SafetyGlowRing(
         label = "safetyAlpha"
     )
 
+        // [Feature 1增强] DANGER 状态下额外的闪烁警示边框（在Canvas外声明动画）
+        val showDangerFlash = (alertLevel == AlertLevel.DANGER)
+        val dangerAlpha by infiniteTransition.animateFloat(
+            initialValue = 0.1f,
+            targetValue = if (showDangerFlash) 0.5f else 0.1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(300),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "dangerFlash"
+        )
+
     Canvas(modifier = modifier) {
         val ringWidth = 6.dp.toPx()
         val cornerRadius = 20.dp.toPx()
@@ -595,17 +602,8 @@ private fun SafetyGlowRing(
             style = Stroke(width = ringWidth * 0.7f)
         )
 
-        // [Feature 1增强] DANGER 状态下绘制额外的闪烁警示边框
-        if (alertLevel == AlertLevel.DANGER) {
-            val dangerAlpha by infiniteTransition.animateFloat(
-                initialValue = 0.1f,
-                targetValue = 0.5f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(300),
-                    repeatMode = RepeatMode.Reverse
-                ),
-                label = "dangerFlash"
-            )
+        // DANGER 闪烁警示边框
+        if (showDangerFlash) {
             drawRoundRect(
                 color = Color(0xFFFF0000).copy(alpha = dangerAlpha),
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius + 2.dp.toPx()),
