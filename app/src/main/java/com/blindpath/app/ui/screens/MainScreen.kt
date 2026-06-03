@@ -68,7 +68,6 @@ import java.net.URLEncoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import timber.log.Timber
 import kotlin.math.abs
 
 /**
@@ -1584,7 +1583,7 @@ object NearbyPoiService {
                 append("，${poi.name}在${poi.direction}")
             }
 
-        append(".需要更多详情请说"小智小智"查询")
+        append(".需要更多详情请说'小智小智'查询")
     }
 
     // ========================================================================
