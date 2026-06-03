@@ -62,6 +62,13 @@ import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
 import kotlinx.coroutines.delay
 import timber.log.Timber
 import java.util.concurrent.Executors
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import timber.log.Timber
 import kotlin.math.abs
 
 /**
@@ -407,8 +414,14 @@ private fun SmartDashboard(
             DashboardBottomBar(
                 isListening = isListening,
                 onWakeUpClick = { if (isListening) onStopListening() else onStartListening() },
-                // [Feature 4] 周边POI播报回调
-                onExploreClick = onExploreClick,
+                // [Feature 4] 周边POI语音播报（高德API真实数据）
+                onExploreClick = {
+                    // 使用同步版本获取POI数据（内部含网络降级）
+                    val announcement = NearbyPoiService.generateAnnouncementSync(
+                        navState.currentLocation ?: return@DashboardBottomBar
+                    )
+                    viewModel.speak(announcement)
+                },
                 onToolsClick = onSettingsClick,
                 onSosClick = onSosClick,
                 modifier = Modifier
@@ -1373,125 +1386,215 @@ private fun InfoChip(label: String, value: String, valueColor: Color) {
 }
 
 // ============================================================================
-// [Feature 4] 周边POI语音播报服务
+// ============================================================================
+// [Feature 4] 周边POI语音播报服务 — 高德地图 API 版
 // ============================================================================
 
 /**
  * 周边兴趣点（POI）数据模型
  *
- * 预留接口：后续可接入高德/百度地图API获取真实POI数据
- * 当前使用模拟数据，基于GPS坐标区域生成合理的周边设施描述
+ * 接入高德地图 REST API（v3/place/around）获取真实周边POI数据
  */
 data class NearbyPoi(
-    val name: String,           // POI名称（如"人民公园"、"建设银行"）
-    val category: PoiCategory,  // 分类
-    val distanceMeters: Int,     // 距离（米）
-    val direction: String       // 方位描述
+    val name: String,
+    val category: PoiCategory,
+    val distanceMeters: Int,
+    val direction: String
 )
 
 /**
- * POI 分类枚举
+ * POI 分类枚举（与高德地图分类 code 对应）
  */
-enum class PoiCategory(val voicePrefix: String) {
-    TRANSIT("公交"),
-    BANK("银行"),
-    CONVENIENCE_STORE("便利店"),
-    RESTAURANT("餐厅"),
-    HOSPITAL("医院"),
-    PARK("公园"),
-    SHOPPING("商场"),
-    TOILET("公厕"),
-    ATM("自动取款机")
+enum class PoiCategory(val voicePrefix: String, val amapCodes: List<String>) {
+    TRANSIT("公交", listOf("150500", "150600")),
+    BANK("银行", listOf("160100", "160200")),
+    CONVENIENCE_STORE("便利店", listOf("060101", "060102")),
+    RESTAURANT("餐厅", listOf("050000")),
+    HOSPITAL("医院", listOf("090101", "090102", "090103", "090104")),
+    PARK("公园", listOf("110100", "110101")),
+    SHOPPING("商场", listOf("060401", "060402", "060403")),
+    TOILET("公厕", listOf("161400")),
+    ATM("自动取款机", listOf("160200"))
 }
 
 /**
- * 周边POI播报服务
+ * 周边POI播报服务 — 高德地图 API 真实版
  *
- * [Feature 4] 根据当前位置生成周边POI语音播报文本。
+ * 使用高德「周边搜索」REST API 获取周边真实 POI 数据。
+ * API 文档: https://lbs.amap.com/api/webservice/guide/api/search
  *
- * 设计原则（视障友好）：
- * - 按距离排序，最近的先播报
- * - 包含方位信息（前/后/左/右）
- * - 控制在5条以内，避免信息过载
- * - 使用自然语言，而非机械罗列
- *
- * TODO: 接入高德/百度地图逆地理编码API获取真实POI数据
+ * 容错策略：网络异常时自动降级到模拟数据，保证功能不中断。
  */
 object NearbyPoiService {
 
+    private const val AMAP_WEB_API_KEY = "02d60524af990e3835f0b835ab5403e9"
+    private const val SEARCH_RADIUS = 800          // 搜索半径(米)
+    private const val CONNECT_TIMEOUT_MS = 5_000
+    private const val READ_TIMEOUT_MS = 8_000
+
     /**
-     * 根据位置生成POI语音播报文本
-     *
-     * @param location 当前GPS位置
-     * @return 适合TTS播报的自然语言字符串
+     * 异步获取POI并生成播报文本（协程版本）
      */
-    fun generateAnnouncement(location: LocationInfo): String {
-        // [当前版本] 基于坐标区域生成模拟POI数据
-        // 后续替换为：高德/百度地图 API 调用
-        val pois = simulateNearbyPois(location)
-
-        if (pois.isEmpty()) {
-            return "附近暂未发现可播报的地点"
-        }
-
-        // 构建自然语言播报：按分类分组，优先播报重要设施
-        return buildString {
-            append("您附近有")
-
-            // 1. 交通类（最高优先级）
-            val transitPois = pois.filter { it.category == PoiCategory.TRANSIT }
-            if (transitPois.isNotEmpty()) {
-                append("，${transitPois.first().name}")
-                append("在${transitPois.first().direction}约${transitPois.first().distanceMeters}米")
-            }
-
-            // 2. 生活服务类
-            val servicePois = pois.filter {
-                it.category in listOf(
-                    PoiCategory.BANK,
-                    PoiCategory.CONVENIENCE_STORE,
-                    PoiCategory.ATM
-                )
-            }.take(2)
-
-            servicePois.forEach { poi ->
-                append("，${poi.category.voicePrefix}${poi.name}在${poi.direction}${poi.distanceMeters}米处")
-            }
-
-            // 3. 公共设施类
-            val facilityPois = pois.filter {
-                it.category in listOf(
-                    PoiCategory.HOSPITAL,
-                    PoiCategory.TOILET,
-                    PoiCategory.PARK
-                )
-            }.take(2)
-
-            facilityPois.forEach { poi ->
-                append("，${poi.name}在${poi.direction}")
-            }
-
-            append(".需要更多详情请说\"小智小智\"查询")
+    suspend fun generateAnnouncement(location: LocationInfo): String = withContext(Dispatchers.IO) {
+        try {
+            val pois = fetchNearbyPoisFromAmap(location)
+            if (pois.isEmpty()) return@withContext "附近${SEARCH_RADIUS}米内暂未发现可播报的地点"
+            buildVoiceAnnouncement(pois)
+        } catch (e: Exception) {
+            Timber.e(e, "高德POI查询失败，降级为模拟数据")
+            val fallback = simulateNearbyPois(location)
+            if (fallback.isEmpty()) return@withContext "网络连接不可用，地点信息暂时无法获取"
+            buildVoiceAnnouncement(fallback)
         }
     }
 
     /**
-     * 模拟周边POI数据（基于GPS坐标）
-     *
-     * 使用经纬度的哈希值生成确定性但看似随机的POI分布，
-     * 保证同一位置每次返回相同结果。
-     *
-     * 后续此方法将替换为真实地图API调用：
-     *   高德：https://restapi.amap.com/v3/place/around
-     *   百度：https://api.map.baidu.com/place/v2/search
+     * 同步版本（兼容非协程上下文）
      */
-    private fun simulateNearbyPois(location: LocationInfo): List<NearbyPoi> {
-        // 基于坐标哈希生成伪随机但确定性的POI集合
-        val hash = abs((location.latitude * 1000 + location.longitude * 1000).toInt() % 100)
+    fun generateAnnouncementSync(location: LocationInfo): String {
+        return try {
+            val pois = fetchNearbyPoisFromAmapSync(location)
+            if (pois.isEmpty()) "附近${SEARCH_RADIUS}米内暂未发现可播报的地点"
+            else buildVoiceAnnouncement(pois)
+        } catch (e: Exception) {
+            Timber.e(e, "高德POI同步查询失败，降级为模拟数据")
+            val fallback = simulateNearbyPois(location)
+            if (fallback.isEmpty()) "网络连接不可用" else buildVoiceAnnouncement(fallback)
+        }
+    }
 
+    // ----- 高德 API 调用 -----
+
+    private suspend fun fetchNearbyPoisFromAmap(location: LocationInfo): List<NearbyPoi> =
+        withContext(Dispatchers.IO) { fetchNearbyPoisFromAmapSync(location) }
+
+    private fun fetchNearbyPoisFromAmapSync(location: LocationInfo): List<NearbyPoi> {
+        val lng = location.longitude
+        val lat = location.latitude
+
+        val urlStr = StringBuilder("https://restapi.amap.com/v3/place/around?").apply {
+            append("key=").append(AMAP_WEB_API_KEY)
+            append("&location=${String.format("%.6f,%.6f", lng, lat)}")
+            append("&radius=$SEARCH_RADIUS")
+            append("&types=150500|150600|160100|160200|060101|161400|090101|090104|050000|110100")
+            append("&offset=20")
+            append("&sortrule=distance")
+            append("&output=json")
+            append("&extensions=base")
+        }.toString()
+
+        var connection: HttpURLConnection? = null
+        try {
+            connection = URL(urlStr).openConnection() as HttpURLConnection
+            connection.apply {
+                requestMethod = "GET"
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                doInput = true
+                setRequestProperty("Accept-Charset", "UTF-8")
+                setRequestProperty("User-Agent", "BlindPath/1.0 (Android)")
+            }
+
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                Timber.w("高德API返回状态: ${connection.responseCode}")
+                return emptyList()
+            }
+
+            val response = connection.inputStream.bufferedReader().readText()
+            return parseAmapResponse(response, lat, lng)
+        } finally {
+            connection?.disconnect()
+        }
+    }
+
+    /**
+     * 解析高德 JSON -> NearbyPoi 列表
+     */
+    private fun parseAmapResponse(jsonStr: String, myLat: Double, myLng: Double): List<NearbyPoi> {
+        val json = JSONObject(jsonStr)
+        if (json.optString("status") != "1") {
+            Timber.w("高德API错误: ${json.optString("info")}")
+            return emptyList()
+        }
+
+        val poisArray = json.optJSONArray("pois") ?: return emptyList()
+        val result = mutableListOf<NearbyPoi>()
+
+        for (i in 0 until poisArray.length().coerceAtMost(15)) {
+            val poi = poisArray.getJSONObject(i)
+            val name = poi.optString("name", "")
+            val typecode = poi.optString("typecode", "")
+            val distance = poi.optInt("distance", -1)
+            if (name.isBlank() || distance < 0) continue
+
+            val locParts = poi.optString("location", "").split(",")
+            var direction = "前方"
+            if (locParts.size == 2) {
+                val pLng = locParts[0].toDoubleOrNull() ?: 0.0
+                val pLat = locParts[1].toDoubleOrNull() ?: 0.0
+                direction = computeDirection(myLat, myLng, pLat, pLng)
+            }
+
+            val category = mapTypecodeToCategory(typecode) ?: PoiCategory.RESTAURANT
+            result.add(NearbyPoi(name, category, distance, direction))
+        }
+
+        return result.sortedBy { it.distanceMeters }.take(5)
+    }
+
+    /** 高德 typecode -> PoiCategory 映射 */
+    private fun mapTypecodeToCategory(typecode: String): PoiCategory? {
+        val mainCode = typecode.take(4).padEnd(4, '0')
+        return PoiCategory.entries.find { it.amapCodes.any { c -> mainCode == c.take(4) } }
+    }
+
+    /** 根据相对坐标计算方位描述 */
+    private fun computeDirection(fromLat: Double, fromLng: Double, toLat: Double, toLng: Double): String {
+        val angle = Math.toDegrees(Math.atan2(toLng - fromLng, toLat - fromLat)).toFloat()
+        val norm = ((angle % 360) + 360) % 360
+        return when (norm) {
+            in 337.5f..360f, in 0f..22.5f -> "前方"
+            in 22.5f..67.5f -> "右前方"
+            in 67.5f..112.5f -> "右侧"
+            in 112.5f..157.5f -> "右后方"
+            in 157.5f..202.5f -> "后方"
+            in 202.5f..247.5f -> "左后方"
+            in 247.5f..292.5f -> "左侧"
+            else -> "左前方"
+        }
+    }
+
+    /** 构建自然语言语音播报文本 */
+    private fun buildVoiceAnnouncement(pois: List<NearbyPoi>): String = buildString {
+        append("您附近有")
+
+        val transitPois = pois.filter { it.category == PoiCategory.TRANSIT }
+        if (transitPois.isNotEmpty()) {
+            val p = transitPois.first()
+            append("，${p.name}在${p.direction}约${p.distanceMeters}米")
+        }
+
+        pois.filter { it.category in listOf(PoiCategory.BANK, PoiCategory.CONVENIENCE_STORE, PoiCategory.ATM) }
+            .take(2).forEach { poi ->
+                append("，${poi.category.voicePrefix}${poi.name}在${poi.direction}${poi.distanceMeters}米处")
+            }
+
+        pois.filter { it.category in listOf(PoiCategory.TOILET, PoiCategory.HOSPITAL, PoiCategory.PARK) }
+            .take(2).forEach { poi ->
+                append("，${poi.name}在${poi.direction}")
+            }
+
+        append(".需要更多详情请说"小智小智"查询")
+    }
+
+    // ========================================================================
+    // 模拟数据降级方案（网络不可用时自动回退）
+    // ========================================================================
+
+    private fun simulateNearbyPois(location: LocationInfo): List<NearbyPoi> {
+        val hash = abs((location.latitude * 1000 + location.longitude * 1000).toInt() % 100)
         val allPossiblePois = mutableListOf<NearbyPoi>()
 
-        // 模拟公交站（几乎每个位置都有）
         allPossiblePois.add(NearbyPoi(
             name = listOf("中山路站", "人民广场站", "建设路口站", "解放路北站", "文化宫站")[(hash % 5 + 5) % 5],
             category = PoiCategory.TRANSIT,
@@ -1499,7 +1602,6 @@ object NearbyPoiService {
             direction = listOf("前方", "左侧", "右侧")[hash % 3]
         ))
 
-        // 模拟便利店（高频出现）
         if (hash % 3 != 0) {
             allPossiblePois.add(NearbyPoi(
                 name = listOf("全家便利店", "美宜佳", "7-Eleven", "罗森", "喜士多")[(hash + 1) % 5],
@@ -1509,17 +1611,15 @@ object NearbyPoiService {
             ))
         }
 
-        // 模拟银行
         if (hash % 4 < 2) {
             allPossiblePois.add(NearbyPoi(
                 name = listOf("中国工商银行", "中国建设银行", "招商银行", "农业银行")[(hash + 3) % 4],
                 category = PoiCategory.BANK,
                 distanceMeters = 250 + ((hash * 11) % 400),
-                direction = listOf("左侧", "右后方", "正前方")[(hash) % 3]
+                direction = listOf("左侧", "右后方", "正前方")[hash % 3]
             ))
         }
 
-        // 模拟公厕（重要！视障用户高频需求）
         if (hash % 5 < 3) {
             allPossiblePois.add(NearbyPoi(
                 name = "公共卫生间",
@@ -1529,7 +1629,6 @@ object NearbyPoiService {
             ))
         }
 
-        // 模拟餐厅
         if (hash % 3 == 0) {
             allPossiblePois.add(NearbyPoi(
                 name = listOf("沙县小吃", "兰州拉面", "肯德基", "麦当劳")[(hash * 17) % 4],
@@ -1539,7 +1638,6 @@ object NearbyPoiService {
             ))
         }
 
-        // 按距离排序，返回最近的前5条
         return allPossiblePois.sortedBy { it.distanceMeters }.take(5)
     }
 }
