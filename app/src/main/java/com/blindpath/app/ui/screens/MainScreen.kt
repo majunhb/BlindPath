@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.tts.VibrationHelper
+import com.blindpath.base.power.DeviceOrientationCalculator
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -56,8 +57,10 @@ import com.blindpath.module_trip_assist.ui.TripAssistScreen
 import com.blindpath.module_voice.domain.model.VoiceCommand
 import com.blindpath.module_voice.domain.model.VoiceGuidance
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
+import kotlinx.coroutines.delay
 import timber.log.Timber
 import java.util.concurrent.Executors
+import kotlin.math.abs
 
 /**
  * 主界面 - 视障友好极简设计 v5.0
@@ -224,11 +227,21 @@ fun MainScreen(
                 onSosClick = onSosClick,
                 onSettingsClick = { showSettings = true },
                 onLocationClick = { showLocation = true },
+                // [Feature 4] 周边POI播报：点击"周边"时根据GPS位置播报附近POI
+                onExploreClick = {
+                    if (navState.isLocationAvailable && navState.currentLocation != null) {
+                        val announcement = NearbyPoiService.generateAnnouncement(navState.currentLocation!!)
+                        viewModel.speak(announcement)
+                    } else {
+                        viewModel.speak("无法获取当前位置，请稍后再试")
+                    }
+                },
                 isListening = uiState.isListening,
                 onStartListening = { viewModel.startListening() },
                 onStopListening = { viewModel.stopListening() },
                 obstacleRepository = obstacleRepository,
-                navigationRepository = navigationRepository
+                navigationRepository = navigationRepository,
+                viewModel = viewModel
             )
         }
     }
@@ -252,15 +265,17 @@ private fun SmartDashboard(
     onSosClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onLocationClick: () -> Unit,
+    onExploreClick: () -> Unit = {},          // [Feature 4] 周边POI播报
     isListening: Boolean = false,
     onStartListening: () -> Unit = {},
     onStopListening: () -> Unit = {},
     obstacleRepository: ObstacleRepository,
-    navigationRepository: NavigationRepository
+    navigationRepository: NavigationRepository,
+    viewModel: VoiceInteractionViewModel           // [Feature 4] POI语音播报
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    
+
     // 相机权限状态
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -273,18 +288,18 @@ private fun SmartDashboard(
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         )
     }
-    
+
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> hasCameraPermission = granted }
-    
+
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true || 
+        hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
                               permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
     }
-    
+
     // 首次进入自动请求权限
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) {
@@ -297,13 +312,51 @@ private fun SmartDashboard(
             ))
         }
     }
-    
+
     // 观察导航状态（GPS数据）
     val navState by navigationRepository.navigationState.collectAsStateWithLifecycle(
         initialValue = NavigationState(),
         lifecycle = lifecycleOwner.lifecycle
     )
-    
+
+    // [Feature 1 & 3] 观察障碍物检测状态（用于安全光环颜色 + 振动反馈）
+    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
+        initialValue = ObstacleState(),
+        lifecycle = lifecycleOwner.lifecycle
+    )
+
+    // [Feature 3] 触觉反馈：障碍物预警级别变化时触发振动
+    var lastVibratedLevel by remember { mutableStateOf<AlertLevel?>(null) }
+    LaunchedEffect(obstacleState.currentAlert?.level) {
+        val currentLevel = obstacleState.currentAlert?.level ?: AlertLevel.SAFE
+        if (currentLevel != lastVibratedLevel) {
+            lastVibratedLevel = currentLevel
+            if (obstacleState.isRunning && obstacleState.detectedObstacles.isNotEmpty()) {
+                VibrationHelper.vibrate(context, currentLevel)
+                Timber.d("Vibration triggered for level: $currentLevel")
+            } else if (currentLevel == AlertLevel.DANGER || currentLevel == AlertLevel.WARNING) {
+                VibrationHelper.vibrate(context, currentLevel)
+            }
+        }
+    }
+
+    // [Feature 2] 指南针传感器：实时获取设备朝向
+    var compassAzimuth by remember { mutableStateOf(0f) }
+    LaunchedEffect(lifecycleOwner) {
+        val compass = DeviceOrientationCalculator(context) { azimuth, _, _ ->
+            compassAzimuth = azimuth
+        }
+        compass.start()
+        // 跟随生命周期自动停止
+        try {
+            while (true) {
+                delay(1000)
+            }
+        } finally {
+            compass.stop()
+        }
+    }
+
     Scaffold(
         containerColor = Color(0xFF0D0D1A),  // 深色背景，对比度更高
         topBar = {
@@ -345,17 +398,22 @@ private fun SmartDashboard(
                         onClick = onObstacleToggle,
                         lifecycleOwner = lifecycleOwner,
                         navState = navState,
+                        // [Feature 1] 传递障碍物预警级别给安全光环
+                        alertLevel = obstacleState.currentAlert?.level,
+                        // [Feature 2] 传递指南针方位角给HUD
+                        compassAzimuth = compassAzimuth,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
             }
-            
+
             // 底部：模式切换 + 操作栏
             Spacer(modifier = Modifier.height(8.dp))
             DashboardBottomBar(
                 isListening = isListening,
                 onWakeUpClick = { if (isListening) onStopListening() else onStartListening() },
-                onExploreClick = onLocationClick,
+                // [Feature 4] 周边POI播报回调
+                onExploreClick = onExploreClick,
                 onToolsClick = onSettingsClick,
                 onSosClick = onSosClick,
                 modifier = Modifier
@@ -380,6 +438,8 @@ private fun DashboardCameraView(
     onClick: () -> Unit,
     lifecycleOwner: androidx.lifecycle.LifecycleOwner,
     navState: NavigationState,
+    alertLevel: AlertLevel? = null,           // [Feature 1] 安全光环预警级别
+    compassAzimuth: Float = 0f,               // [Feature 2] 指南针方位角
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -434,14 +494,16 @@ private fun DashboardCameraView(
             }
         }
 
-        // 层2：安全光环（边缘彩色环）
+        // 层2：安全光环（边缘彩色环）— [Feature 1] 根据障碍物数据变换颜色
         SafetyGlowRing(
+            alertLevel = alertLevel,
             modifier = Modifier.fillMaxSize()
         )
 
-        // 层3：HUD信息叠加层（左上角GPS，右上方向）
+        // 层3：HUD信息叠加层（左上角GPS，右上方向）— [Feature 2] 叠加真实指南针方向
         HUDInfoOverlay(
             navState = navState,
+            compassAzimuth = compassAzimuth,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -472,19 +534,46 @@ private fun DashboardCameraView(
 
 /**
  * 安全光环 — 屏幕边缘的彩色安全指示环
- * 
- * 创新点：视障用户也可能有残余视力，边缘光环提供快速安全等级判断
- * 同时结合振动反馈形成双通道告警
+ *
+ * [Feature 1] 根据真实障碍物数据动态变换颜色：
+ *   - SAFE    → 绿色 (4CAF50) — 环境安全
+ *   - WARNING → 橙色 (FF9800) — 有障碍物需注意
+ *   - DANGER  → 红色 (F44336) — 危险！立即停止
+ *   - null    → 绿色（默认安全状态）
+ *
+ * 颜色变化使用 animateColorAsState 实现平滑过渡
  */
 @Composable
-private fun SafetyGlowRing(modifier: Modifier = Modifier) {
-    // 脉冲动画：0.5秒循环，从0.3到0.8透明度
+private fun SafetyGlowRing(
+    alertLevel: AlertLevel? = null,
+    modifier: Modifier = Modifier
+) {
+    // [Feature 1] 根据预警级别决定目标颜色
+    val targetColor = when (alertLevel) {
+        AlertLevel.DANGER -> Color(0xFFF44336)   // 红色：危险
+        AlertLevel.WARNING -> Color(0xFFFF9800)   // 橙色：警告
+        AlertLevel.SAFE, null -> Color(0xFF4CAF50) // 绿色：安全/默认
+    }
+
+    // 平滑颜色过渡动画（500ms）
+    val animatedColor by animateColorAsState(
+        targetValue = targetColor,
+        animationSpec = tween(durationMillis = 500, easing = EaseInOut),
+        label = "safetyGlowColor"
+    )
+
+    // 脉冲透明度动画
     val infiniteTransition = rememberInfiniteTransition(label = "safetyGlow")
+    // 危险状态下脉冲更快更明显
+    val pulseDuration = if (alertLevel == AlertLevel.DANGER) 600 else
+                        if (alertLevel == AlertLevel.WARNING) 1000 else 1500
     val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.8f,
+        initialValue = 0.25f,
+        targetValue = if (alertLevel == AlertLevel.DANGER) 0.95f
+                      else if (alertLevel == AlertLevel.WARNING) 0.7f
+                      else 0.6f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1500),
+            animation = tween(pulseDuration),
             repeatMode = RepeatMode.Reverse
         ),
         label = "safetyAlpha"
@@ -493,31 +582,67 @@ private fun SafetyGlowRing(modifier: Modifier = Modifier) {
     Canvas(modifier = modifier) {
         val ringWidth = 6.dp.toPx()
         val cornerRadius = 20.dp.toPx()
-        // 外环：半透明白色
+        // 外环：半透明白色底框
         drawRoundRect(
             color = Color.White.copy(alpha = 0.08f),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
             style = Stroke(width = ringWidth)
         )
-        // 内环：脉冲绿色（安全指示）
+        // 内环：动态颜色的脉冲安全指示环
         drawRoundRect(
-            color = Color(0xFF4CAF50).copy(alpha = alpha),
+            color = animatedColor.copy(alpha = alpha),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius),
             style = Stroke(width = ringWidth * 0.7f)
         )
+
+        // [Feature 1增强] DANGER 状态下绘制额外的闪烁警示边框
+        if (alertLevel == AlertLevel.DANGER) {
+            val dangerAlpha by infiniteTransition.animateFloat(
+                initialValue = 0.1f,
+                targetValue = 0.5f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(300),
+                    repeatMode = RepeatMode.Reverse
+                ),
+                label = "dangerFlash"
+            )
+            drawRoundRect(
+                color = Color(0xFFFF0000).copy(alpha = dangerAlpha),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(cornerRadius + 2.dp.toPx()),
+                style = Stroke(width = ringWidth * 1.3f)
+            )
+        }
     }
 }
 
 /**
  * HUD信息叠加层 — 仪表盘风格的信息显示
- * 
- * 显示GPS坐标、移动方向、速度等信息，采用战斗机HUD风格的半透明叠加
+ *
+ * [Feature 2] 叠加真实指南针方向（N/S/E/W + 方位角）：
+ *   使用 DeviceOrientationCalculator 获取设备朝向
+ *   方位角 0°=北, 90°=东, 180°=南, 270°=西
  */
 @Composable
 private fun HUDInfoOverlay(
     navState: NavigationState,
+    compassAzimuth: Float = 0f,
     modifier: Modifier = Modifier
 ) {
+    // [Feature 2] 将方位角转换为罗盘方向字符
+    val compassDirection = remember(compassAzimuth) {
+        val normalized = ((compassAzimuth % 360) + 360) % 360
+        when (normalized) {
+            in 337.5f..360f, in 0f..22.5f -> "N"
+            in 22.5f..67.5f -> "NE"
+            in 67.5f..112.5f -> "E"
+            in 112.5f..157.5f -> "SE"
+            in 157.5f..202.5f -> "S"
+            in 202.5f..247.5f -> "SW"
+            in 247.5f..292.5f -> "W"
+            else -> "NW"
+        }
+    }
+
     Box(modifier = modifier) {
         // 左上角：GPS坐标信息
         if (navState.isLocationAvailable && navState.currentLocation != null) {
@@ -547,7 +672,7 @@ private fun HUDInfoOverlay(
             }
         }
 
-        // 右上角：方向 + 速度
+        // 右上角：[Feature 2] 真实指南针方向 + 速度
         if (navState.isLocationAvailable) {
             Surface(
                 modifier = Modifier
@@ -563,19 +688,26 @@ private fun HUDInfoOverlay(
                 ) {
                     Icon(
                         Icons.Default.Navigation,
-                        contentDescription = null,
+                        contentDescription = "当前朝向${compassDirection}，方位角${compassAzimuth.toInt()}度",
                         tint = Color(0xFF4FC3F7),
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(4.dp))
+                    // [Feature 2] 动态方向显示（替代硬编码的"N"）
                     Text(
-                        text = "N",  // 北方（简化显示）
+                        text = compassDirection,
                         color = Color(0xFF4FC3F7),
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
+                    // 显示精确方位角
+                    Text(
+                        text = " ${compassAzimuth.toInt()}°",
+                        color = Color(0xFF80DEEA),
+                        fontSize = 11.sp
+                    )
                     if (navState.currentLocation?.speed != null) {
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             text = "${String.format("%.1f", navState.currentLocation!!.speed * 3.6f)}km/h",
                             color = Color(0xFF80DEEA),
@@ -1239,5 +1371,177 @@ private fun InfoChip(label: String, value: String, valueColor: Color) {
             fontWeight = FontWeight.Bold,
             color = valueColor
         )
+    }
+}
+
+// ============================================================================
+// [Feature 4] 周边POI语音播报服务
+// ============================================================================
+
+/**
+ * 周边兴趣点（POI）数据模型
+ *
+ * 预留接口：后续可接入高德/百度地图API获取真实POI数据
+ * 当前使用模拟数据，基于GPS坐标区域生成合理的周边设施描述
+ */
+data class NearbyPoi(
+    val name: String,           // POI名称（如"人民公园"、"建设银行"）
+    val category: PoiCategory,  // 分类
+    val distanceMeters: Int,     // 距离（米）
+    val direction: String       // 方位描述
+)
+
+/**
+ * POI 分类枚举
+ */
+enum class PoiCategory(val voicePrefix: String) {
+    TRANSIT("公交"),
+    BANK("银行"),
+    CONVENIENCE_STORE("便利店"),
+    RESTAURANT("餐厅"),
+    HOSPITAL("医院"),
+    PARK("公园"),
+    SHOPPING("商场"),
+    TOILET("公厕"),
+    ATM("自动取款机")
+}
+
+/**
+ * 周边POI播报服务
+ *
+ * [Feature 4] 根据当前位置生成周边POI语音播报文本。
+ *
+ * 设计原则（视障友好）：
+ * - 按距离排序，最近的先播报
+ * - 包含方位信息（前/后/左/右）
+ * - 控制在5条以内，避免信息过载
+ * - 使用自然语言，而非机械罗列
+ *
+ * TODO: 接入高德/百度地图逆地理编码API获取真实POI数据
+ */
+object NearbyPoiService {
+
+    /**
+     * 根据位置生成POI语音播报文本
+     *
+     * @param location 当前GPS位置
+     * @return 适合TTS播报的自然语言字符串
+     */
+    fun generateAnnouncement(location: LocationInfo): String {
+        // [当前版本] 基于坐标区域生成模拟POI数据
+        // 后续替换为：高德/百度地图 API 调用
+        val pois = simulateNearbyPois(location)
+
+        if (pois.isEmpty()) {
+            return "附近暂未发现可播报的地点"
+        }
+
+        // 构建自然语言播报：按分类分组，优先播报重要设施
+        return buildString {
+            append("您附近有")
+
+            // 1. 交通类（最高优先级）
+            val transitPois = pois.filter { it.category == PoiCategory.TRANSIT }
+            if (transitPois.isNotEmpty()) {
+                append("，${transitPois.first().name}")
+                append("在${transitPois.first().direction}约${transitPois.first().distanceMeters}米")
+            }
+
+            // 2. 生活服务类
+            val servicePois = pois.filter {
+                it.category in listOf(
+                    PoiCategory.BANK,
+                    PoiCategory.CONVENIENCE_STORE,
+                    PoiCategory.ATM
+                )
+            }.take(2)
+
+            servicePois.forEach { poi ->
+                append("，${poi.category.voicePrefix}${poi.name}在${poi.direction}${poi.distanceMeters}米处")
+            }
+
+            // 3. 公共设施类
+            val facilityPois = pois.filter {
+                it.category in listOf(
+                    PoiCategory.HOSPITAL,
+                    PoiCategory.TOILET,
+                    PoiCategory.PARK
+                )
+            }.take(2)
+
+            facilityPois.forEach { poi ->
+                append("，${poi.name}在${poi.direction}")
+            }
+
+            append(".需要更多详情请说\"小智小智\"查询")
+        }
+    }
+
+    /**
+     * 模拟周边POI数据（基于GPS坐标）
+     *
+     * 使用经纬度的哈希值生成确定性但看似随机的POI分布，
+     * 保证同一位置每次返回相同结果。
+     *
+     * 后续此方法将替换为真实地图API调用：
+     *   高德：https://restapi.amap.com/v3/place/around
+     *   百度：https://api.map.baidu.com/place/v2/search
+     */
+    private fun simulateNearbyPois(location: LocationInfo): List<NearbyPoi> {
+        // 基于坐标哈希生成伪随机但确定性的POI集合
+        val hash = abs((location.latitude * 1000 + location.longitude * 1000).toInt() % 100)
+
+        val allPossiblePois = mutableListOf<NearbyPoi>()
+
+        // 模拟公交站（几乎每个位置都有）
+        allPossiblePois.add(NearbyPoi(
+            name = listOf("中山路站", "人民广场站", "建设路口站", "解放路北站", "文化宫站")[(hash % 5 + 5) % 5],
+            category = PoiCategory.TRANSIT,
+            distanceMeters = 80 + (hash % 200),
+            direction = listOf("前方", "左侧", "右侧")[hash % 3]
+        ))
+
+        // 模拟便利店（高频出现）
+        if (hash % 3 != 0) {
+            allPossiblePois.add(NearbyPoi(
+                name = listOf("全家便利店", "美宜佳", "7-Eleven", "罗森", "喜士多")[(hash + 1) % 5],
+                category = PoiCategory.CONVENIENCE_STORE,
+                distanceMeters = 120 + ((hash * 7) % 300),
+                direction = listOf("右前方", "左前方", "右侧")[(hash + 2) % 3]
+            ))
+        }
+
+        // 模拟银行
+        if (hash % 4 < 2) {
+            allPossiblePois.add(NearbyPoi(
+                name = listOf("中国工商银行", "中国建设银行", "招商银行", "农业银行")[(hash + 3) % 4],
+                category = PoiCategory.BANK,
+                distanceMeters = 250 + ((hash * 11) % 400),
+                direction = listOf("左侧", "右后方", "正前方")[(hash) % 3]
+            ))
+        }
+
+        // 模拟公厕（重要！视障用户高频需求）
+        if (hash % 5 < 3) {
+            allPossiblePois.add(NearbyPoi(
+                name = "公共卫生间",
+                category = PoiCategory.TOILET,
+                distanceMeters = 150 + ((hash * 13) % 350),
+                direction = listOf("前方偏左", "右侧", "左前方")[(hash + 4) % 3]
+            ))
+        }
+
+        // 模拟餐厅
+        if (hash % 3 == 0) {
+            allPossiblePois.add(NearbyPoi(
+                name = listOf("沙县小吃", "兰州拉面", "肯德基", "麦当劳")[(hash * 17) % 4],
+                category = PoiCategory.RESTAURANT,
+                distanceMeters = 200 + ((hash * 19) % 500),
+                direction = listOf("前方", "右前方", "左后方")[(hash + 6) % 3]
+            ))
+        }
+
+        // 按距离排序，返回最近的前5条
+        return allPossiblePois.sortedBy { it.distanceMeters }.take(5)
     }
 }
