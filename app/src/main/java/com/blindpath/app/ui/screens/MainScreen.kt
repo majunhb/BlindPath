@@ -37,7 +37,9 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.module_obstacle.domain.ObstacleRepository
+import com.blindpath.module_obstacle.domain.model.ObstacleState
 import com.blindpath.module_navigation.domain.NavigationRepository
+import com.blindpath.module_navigation.domain.model.NavigationState
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
 import com.blindpath.module_trip_assist.ui.TripAssistScreen
@@ -504,7 +506,10 @@ private fun MapPreviewCard(
     navigationRepository: NavigationRepository,
     modifier: Modifier = Modifier
 ) {
-    val navState by navigationRepository.navigationState.collectAsStateWithLifecycle()
+    val navState by navigationRepository.navigationState.collectAsStateWithLifecycle(
+        initialValue = NavigationState(),
+        lifecycle = LocalLifecycleOwner.current.lifecycle
+    )
     
     Box(
         modifier = modifier
@@ -917,7 +922,10 @@ private fun ObstacleDetectionContent(
     modifier: Modifier = Modifier
 ) {
     // 观察真实的障碍物检测状态
-    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle()
+    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
+        initialValue = ObstacleState(),
+        lifecycle = lifecycleOwner.lifecycle
+    )
     var isDetecting by remember { mutableStateOf(true) }
     
     // 从真实状态中读取数据
