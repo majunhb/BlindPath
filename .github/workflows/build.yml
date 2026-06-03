@@ -64,6 +64,25 @@ jobs:
           echo "Credentials injected"
 
           echo "Credentials injected into ~/.gradle/gradle.properties"
+         
+      - name: Download AI model (yolov8n.tflite)
+        run: |
+          MODEL_FILE="module_obstacle/src/main/assets/yolov8n.tflite"
+          FILE_SIZE=0
+          if [ -f "$MODEL_FILE" ]; then
+            FILE_SIZE=$(wc -c < "$MODEL_FILE")
+          fi
+          echo "Current model file size: $FILE_SIZE bytes"
+          if [ ! -f "$MODEL_FILE" ] || [ "$FILE_SIZE" -lt 1024 ]; then
+            mkdir -p "$(dirname "$MODEL_FILE")"
+            echo "Downloading yolov8n.tflite from mirror 1..."
+            curl -L -o "$MODEL_FILE" "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite" && \
+            echo "Downloaded from ultralytics" || \
+            (echo "Mirror 1 failed, trying mirror 2..." && \
+             curl -L -o "$MODEL_FILE" "https://github.com/majunhb/BlindPath/releases/download/models/yolov8n.tflite" && \
+             echo "Downloaded from repo release")
+          fi
+          ls -lh "$MODEL_FILE"
 
 
       - name: Build Debug APK
