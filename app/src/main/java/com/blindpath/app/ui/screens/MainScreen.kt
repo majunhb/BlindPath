@@ -557,7 +557,7 @@ private fun DashboardCameraView(
                     tint = Color.White,
                     modifier = Modifier
                         .size(24.dp)
-                        .graphicsLayer { scaleX = entryScale; scaleY = entryScale }
+                        .scale(entryScale)
                 )
                 Spacer(Modifier.width(12.dp))
                 Column {
