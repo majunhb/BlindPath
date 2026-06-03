@@ -541,11 +541,11 @@ private fun DashboardCameraView(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // 脉冲动画提示图标
+                // 脉冲动画提示图标（alpha闪烁吸引注意力）
                 val entryPulse = rememberInfiniteTransition(label = "entryPulse")
-                val entryScale by entryPulse.animateFloat(
-                    initialValue = 0.9f,
-                    targetValue = 1.1f,
+                val entryAlpha by entryPulse.animateFloat(
+                    initialValue = 0.6f,
+                    targetValue = 1f,
                     animationSpec = infiniteRepeatable(
                         animation = tween(1200),
                         repeatMode = RepeatMode.Reverse
@@ -554,10 +554,8 @@ private fun DashboardCameraView(
                 )
                 Icon(
                     Icons.Default.Videocam, null,
-                    tint = Color.White,
-                    modifier = Modifier
-                        .size(24.dp)
-                        .scale(entryScale)
+                    tint = Color.White.copy(alpha = entryAlpha),
+                    modifier = Modifier.size(24.dp)
                 )
                 Spacer(Modifier.width(12.dp))
                 Column {
