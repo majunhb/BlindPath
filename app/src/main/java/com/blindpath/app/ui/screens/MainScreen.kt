@@ -358,10 +358,23 @@ private fun SmartDashboard(
         }
     }
 
+    // [修复] 环境感知自动启停：根据 showObstacleDetection 状态调用 Repository 的 startDetection/stopDetection
+    // 根因：之前只切换了UI显示(showObstacleDetection)，但从未调用obstacleRepository.startDetection()，
+    // 导致AI模型不加载、ImageAnalysis不绑定、障碍物检测完全无法工作
+    LaunchedEffect(showObstacleDetection) {
+        if (showObstacleDetection) {
+            Timber.d("环境感知启动：调用 obstacleRepository.startDetection()")
+            obstacleRepository.startDetection()
+        } else {
+            Timber.d("环境感知停止：调用 obstacleRepository.stopDetection()")
+            obstacleRepository.stopDetection()
+        }
+    }
+
     Scaffold(
         containerColor = Color(0xFF0D0D1A),  // 深色背景，对比度更高
         topBar = {
-            SmartTopBar(onSettingsClick = onSettingsClick)
+            SmartTopBar(onSettingsClick = onSettingsClick, navState = navState)
         }
     ) { padding ->
         Column(
@@ -389,6 +402,7 @@ private fun SmartDashboard(
                         onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
                         lifecycleOwner = lifecycleOwner,
                         obstacleRepository = obstacleRepository,
+                        onClose = onObstacleToggle,   // [布局优化] 关闭=切换回正常模式
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
@@ -514,26 +528,51 @@ private fun DashboardCameraView(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 层4：点击提示（底部居中）
+        // 层4：点击提示（底部居中）— [布局优化] 参照看见世界APP，大触控区域+清晰引导
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(16.dp),
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(16.dp),
             color = Color(0xCC1E90FF),
-            shadowElevation = 4.dp
+            shadowElevation = 8.dp
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                // 脉冲动画提示图标
+                val entryPulse = rememberInfiniteTransition(label = "entryPulse")
+                val entryScale by entryPulse.animateFloat(
+                    initialValue = 0.9f,
+                    targetValue = 1.1f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1200),
+                        repeatMode = RepeatMode.Reverse
+                    ),
+                    label = "entryPulse"
+                )
                 Icon(
                     Icons.Default.Videocam, null,
-                    tint = Color.White, modifier = Modifier.size(20.dp)
+                    tint = Color.White,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .graphicsLayer { scaleX = entryScale; scaleY = entryScale }
                 )
-                Spacer(Modifier.width(8.dp))
-                Text("点击开启环境感知", color = Color.White, fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "开启环境感知",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp
+                    )
+                    Text(
+                        text = "点击进入障碍物检测模式",
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 12.sp
+                    )
+                }
             }
         }
     }
@@ -852,10 +891,13 @@ private fun PulseVoiceStatus(
 }
 
 /**
- * 底部操作栏 — 模式切换 + 核心操作
- * 
- * 采用"功能按钮 + SOS"的极简布局
- * 左侧大按钮（唤醒小智/环境感知），右侧SOS紧急按钮
+ * 底部操作栏 — 参照看见世界APP布局重构
+ *
+ * 设计原则（视障友好）：
+ * 1. 核心功能按钮最大最醒目（环境感知/唤醒小智）
+ * 2. 每个按钮有明确的图标+文字+语义描述
+ * 3. SOS 红色突出，位置固定右侧
+ * 4. 布局从左到右：核心功能 → 辅助功能 → SOS
  */
 @Composable
 private fun DashboardBottomBar(
@@ -870,32 +912,32 @@ private fun DashboardBottomBar(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // 唤醒小智（渐变蓝色，占最大空间）
+        // [核心] 唤醒小智（渐变蓝色，占最大空间）
         PulseWakeButton(
             isListening = isListening,
             onClick = onWakeUpClick,
             modifier = Modifier.weight(1f)
         )
 
-        // 周边探索
+        // [辅助] 周边探索
         QuickActionChip(
             label = "周边",
             icon = Icons.Default.Explore,
             onClick = onExploreClick,
             color = Color(0xFF4CAF50),
-            modifier = Modifier.weight(0.6f)
+            modifier = Modifier.weight(0.55f)
         )
 
-        // 工具/设置
+        // [辅助] 工具/设置
         QuickActionChip(
             label = "工具",
             icon = Icons.Default.Build,
             onClick = onToolsClick,
             color = Color(0xFFFF9800),
-            modifier = Modifier.weight(0.6f)
+            modifier = Modifier.weight(0.55f)
         )
 
-        // SOS紧急求助（红色突出）
+        // [紧急] SOS — 红色圆形突出，视障用户可快速定位到最右侧
         SOSButton(
             onClick = onSosClick,
             modifier = Modifier.weight(0.5f)
@@ -1028,20 +1070,37 @@ private fun SOSButton(
 }
 
 /**
- * 智能顶部栏 — 精简版
+ * 智能顶部栏 — 参照看见世界APP风格重构
+ *
+ * 布局：左侧汉堡菜单 + 中间应用名称 + 右侧GPS/连接状态指示
+ * 高对比度深色背景，蓝色主题
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SmartTopBar(onSettingsClick: () -> Unit) {
+private fun SmartTopBar(
+    onSettingsClick: () -> Unit,
+    navState: NavigationState = NavigationState()   // [布局优化] 传递导航状态显示位置
+) {
     TopAppBar(
         title = {
-            Text(
-                "智行助盲",
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF64B5F6),
-                fontSize = 20.sp,
-                modifier = Modifier.semantics { contentDescription = "智行助盲，视障人士出行辅助应用" }
-            )
+            Column {
+                Text(
+                    "智行助盲",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF64B5F6),
+                    fontSize = 20.sp,
+                    modifier = Modifier.semantics { contentDescription = "智行助盲，视障人士出行辅助应用" }
+                )
+                // [布局优化] 副标题：当前位置简述（参照看见世界的位置信息展示）
+                if (navState.isLocationAvailable && navState.currentLocation != null) {
+                    Text(
+                        text = "GPS已定位",
+                        color = Color(0xFF4CAF50),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
         },
         navigationIcon = {
             IconButton(
@@ -1053,6 +1112,19 @@ private fun SmartTopBar(onSettingsClick: () -> Unit) {
                     contentDescription = null,
                     tint = Color(0xFF90CAF9),
                     modifier = Modifier.size(26.dp)
+                )
+            }
+        },
+        actions = {
+            // [布局优化] GPS状态小图标
+            if (navState.isLocationAvailable) {
+                Icon(
+                    Icons.Default.GpsFixed,
+                    contentDescription = "GPS信号正常",
+                    tint = Color(0xFF4CAF50),
+                    modifier = Modifier
+                        .size(20.dp)
+                        .padding(end = 4.dp)
                 )
             }
         },
@@ -1144,6 +1216,7 @@ private fun ObstacleDetectionContent(
     onRequestPermission: () -> Unit,
     lifecycleOwner: androidx.lifecycle.LifecycleOwner,
     obstacleRepository: ObstacleRepository,
+    onClose: () -> Unit = {},           // [布局优化] 关闭按钮回调
     modifier: Modifier = Modifier
 ) {
     // 观察真实的障碍物检测状态
@@ -1169,7 +1242,7 @@ private fun ObstacleDetectionContent(
             .background(Color(0xFF1A1A2E))
             .padding(16.dp)
     ) {
-        // 顶部状态栏
+        // 顶部状态栏（参照看见世界APP：标题 + 状态指示 + 关闭按钮）
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1193,24 +1266,49 @@ private fun ObstacleDetectionContent(
                     color = Color.White
                 )
             }
-            
-            // 安全状态指示器（基于真实检测结果）
-            Surface(
-                shape = RoundedCornerShape(50),
-                color = when (safetyStatus) {
-                    "危险" -> Color(0xFFFF6B6B)
-                    "警告" -> Color(0xFFFFB347)
-                    "安全" -> Color(0xFF4CAF50)
-                    else -> Color(0xFF666666)
-                }
+
+            // 右侧：关闭按钮 + 状态指示器
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(
-                    text = safetyStatus,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
+                // 安全状态指示器（基于真实检测结果）
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = when (safetyStatus) {
+                        "危险" -> Color(0xFFFF6B6B)
+                        "警告" -> Color(0xFFFFB347)
+                        "安全" -> Color(0xFF4CAF50)
+                        else -> Color(0xFF666666)
+                    }
+                ) {
+                    Text(
+                        text = safetyStatus,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // [布局优化] 关闭按钮 — 大触控目标，方便视障用户退出
+                Surface(
+                    onClick = onClose,
+                    shape = CircleShape,
+                    color = Color(0x44FFFFFF),
+                    modifier = Modifier
+                        .size(40.dp)
+                        .semantics { contentDescription = "关闭环境感知，返回主界面" }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
             }
         }
         
@@ -1334,34 +1432,56 @@ private fun ObstacleDetectionContent(
         
         Spacer(modifier = Modifier.height(16.dp))
         
-        // 底部状态信息栏
+        // 底部状态信息栏 + 操作区（参照看见世界APP：状态+操作一体化）
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(12.dp),
             color = Color(0xFF2A2A3E)
         ) {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                // 检测状态
-                InfoChip(
-                    label = "状态",
-                    value = if (obstacleState.isRunning) "检测中" else "待机",
-                    valueColor = if (obstacleState.isRunning) Color(0xFF4CAF50) else Color(0xFF666666)
-                )
-                // 模型状态
-                InfoChip(
-                    label = "模型",
-                    value = if (obstacleState.isModelLoaded) "已加载" else "未加载",
-                    valueColor = if (obstacleState.isModelLoaded) Color(0xFF4CAF50) else Color(0xFFFF6B6B)
-                )
-                // FPS
-                InfoChip(
-                    label = "FPS",
-                    value = "${obstacleState.fps}",
-                    valueColor = Color(0xFF1E90FF)
-                )
+            Column(modifier = Modifier.padding(12.dp)) {
+                // 状态指标行
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    InfoChip(
+                        label = "状态",
+                        value = if (obstacleState.isRunning) "检测中" else "待机",
+                        valueColor = if (obstacleState.isRunning) Color(0xFF4CAF50) else Color(0xFF666666)
+                    )
+                    InfoChip(
+                        label = "模型",
+                        value = if (obstacleState.isModelLoaded) "已加载" else "加载中...",
+                        valueColor = if (obstacleState.isModelLoaded) Color(0xFF4CAF50) else Color(0xFFFFB347)
+                    )
+                    InfoChip(
+                        label = "障碍物",
+                        value = if (obstacleCount > 0) "$obstacleCount 个" else "无",
+                        valueColor = if (obstacleCount > 0) Color(0xFFFF9800) else Color(0xFF4CAF50)
+                    )
+                    InfoChip(
+                        label = "FPS",
+                        value = "${obstacleState.fps}",
+                        valueColor = Color(0xFF1E90FF)
+                    )
+                }
+
+                // [布局优化] 停止检测按钮 — 大触控目标，方便视障用户操作
+                Spacer(modifier = Modifier.height(10.dp))
+                Button(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .semantics { contentDescription = "停止环境感知，返回主界面" },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935)),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 2.dp)
+                ) {
+                    Icon(Icons.Default.Stop, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("停止环境感知", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                }
             }
         }
     }
