@@ -72,6 +72,32 @@ class SceneAdaptationManager @Inject constructor(
     private var noiseDetector: MediaRecorder? = null
     
     /**
+     * 启动场景监控
+     */
+    fun startMonitoring() {
+        if (monitoringJob?.isActive == true) {
+            Timber.w("Scene monitoring already running")
+            return
+        }
+        
+        monitoringJob = scope.launch {
+            Timber.d("Scene monitoring started")
+            
+            // 注册蓝牙状态监听
+            registerBluetoothReceiver()
+            
+            // 启动环境噪音检测
+            startNoiseDetection()
+            
+            // 定期检查场景变化
+            while (isActive) {
+                checkAndUpdateScene()
+                delay(SCENE_CHECK_INTERVAL_MS)
+            }
+        }
+    }
+    
+    /**
      * 启动环境噪音检测
      */
     private fun startNoiseDetection() {
