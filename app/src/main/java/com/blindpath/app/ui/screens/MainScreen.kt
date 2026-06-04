@@ -206,29 +206,9 @@ fun MainScreen(
 
     when {
         showSettings -> {
-            // [修复] 防御性错误处理：防止SettingsViewModel注入失败导致闪退
-            try {
-                SettingsScreen(onBackClick = { showSettings = false })
-            } catch (e: Exception) {
-                Timber.e(e, "SettingsScreen crashed, showing fallback")
-                // 降级：显示简易设置界面
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color(0xFF0D0D1A))
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text("设置加载失败", color = Color.Red, fontSize = 18.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("请重启应用后重试", color = Color.Gray, fontSize = 14.sp)
-                    Spacer(Modifier.height(16.dp))
-                    Button(onClick = { showSettings = false }) {
-                        Text("返回", color = Color.White)
-                    }
-                }
-            }
+            // Compose 不支持 try-catch 包裹 Composable 调用，直接渲染
+            SettingsScreen(onBackClick = { showSettings = false })
+        }
         }
         showCommunity -> {
             CommunityScreen(onBackClick = { showCommunity = false })
