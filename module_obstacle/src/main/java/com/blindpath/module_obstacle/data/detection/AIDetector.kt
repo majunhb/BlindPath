@@ -47,8 +47,12 @@ class AIDetector @Inject constructor(
     private var inputBuffer: ByteBuffer? = null
     private var scaledBitmap: Bitmap? = null
 
-    // 模型配置
+    // 模型配置 - 支持多个路径（兼容不同模块的assets目录）
     private val modelPath = "yolov8n.tflite"
+    private val modelPaths = listOf(
+        "yolov8n.tflite",                                    // app/src/main/assets/
+        "module_obstacle/yolov8n.tflite",                    // module_obstacle 合并后的路径
+    )
     private val minValidModelSize = 1024 // 有效模型至少1KB
     // 多镜像下载地址（优先国内可访问源）
     private val modelUrls = listOf(
@@ -162,34 +166,38 @@ class AIDetector @Inject constructor(
                 return true
             }
 
-            // 2. 尝试从assets加载（检查是否为LFS占位符）
-            try {
-                var assetSize = 0L
+            // 2. 尝试从assets加载（检查是否为LFS占位符，支持多个路径）
+            var assetLoaded = false
+            for (path in modelPaths) {
                 try {
-                    val afd = context.assets.openFd(modelPath)
-                    assetSize = afd.length
-                    afd.close()
-                } catch (_: Exception) {
-                    Timber.d("Asset file descriptor access failed, trying direct load")
-                }
-
-                if (assetSize >= minValidModelSize || assetSize == 0L) {
-                    // 文件存在且正常，或无法获取大小时直接尝试加载
-                    val assetBuffer = FileUtil.loadMappedFile(context, modelPath)
-                    if (assetBuffer.capacity() >= minValidModelSize) {
-                        interpreter = Interpreter(assetBuffer.asReadOnlyBuffer(), options)
-                        isLoaded = true
-                        Timber.d("YOLOv8 model loaded from assets")
-                        return true
-                    } else {
-                        Timber.w("Model in assets is too small (${assetBuffer.capacity()} bytes), likely LFS placeholder")
+                    var assetSize = 0L
+                    try {
+                        val afd = context.assets.openFd(path)
+                        assetSize = afd.length
+                        afd.close()
+                    } catch (_: Exception) {
+                        continue // 此路径不存在，尝试下一个
                     }
-                } else {
-                    Timber.w("Model in assets is too small ($assetSize bytes), likely LFS placeholder")
+
+                    if (assetSize >= minValidModelSize) {
+                        val assetBuffer = FileUtil.loadMappedFile(context, path)
+                        if (assetBuffer.capacity() >= minValidModelSize) {
+                            interpreter = Interpreter(assetBuffer.asReadOnlyBuffer(), options)
+                            isLoaded = true
+                            Timber.d("YOLOv8 model loaded from assets: $path")
+                            assetLoaded = true
+                            break
+                        } else {
+                            Timber.w("Model at assets/$path is too small (${assetBuffer.capacity()} bytes), likely LFS placeholder")
+                        }
+                    } else {
+                        Timber.w("Model at assets/$path is too small ($assetSize bytes), likely LFS placeholder")
+                    }
+                } catch (e: Exception) {
+                    Timber.d("Failed to load model from assets/$path: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Timber.w("Failed to load model from assets: ${e.message}")
             }
+            if (assetLoaded) return true
 
             // 3. 自动从网络下载（尝试多个镜像）
             for ((index, url) in modelUrls.withIndex()) {
