@@ -75,14 +75,20 @@ jobs:
           echo "Current model file size: $FILE_SIZE bytes"
           if [ ! -f "$MODEL_FILE" ] || [ "$FILE_SIZE" -lt 1024 ]; then
             mkdir -p "$(dirname "$MODEL_FILE")"
-            echo "Downloading yolov8n.tflite from mirror 1..."
-            curl -L -o "$MODEL_FILE" "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite" && \
-            echo "Downloaded from ultralytics" || \
-            (echo "Mirror 1 failed, trying mirror 2..." && \
-             curl -L -o "$MODEL_FILE" "https://github.com/majunhb/BlindPath/releases/download/models/yolov8n.tflite" && \
-             echo "Downloaded from repo release")
+            # 优先从项目自己的 Release 下载（非LFS的真实文件）
+            echo "Downloading yolov8n.tflite from project release..."
+            curl -L --fail -o "$MODEL_FILE" "https://github.com/majunhb/BlindPath/releases/download/models-v1/yolov8n.tflite" && \
+            echo "Downloaded from project release" || \
+            (echo "Project release failed, trying ultralytics..." && \
+             curl -L --fail -o "$MODEL_FILE" "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite" && \
+             echo "Downloaded from ultralytics")
           fi
           ls -lh "$MODEL_FILE"
+          FILE_SIZE=$(wc -c < "$MODEL_FILE")
+          echo "Final model file size: $FILE_SIZE bytes"
+          if [ "$FILE_SIZE" -lt 1024 ]; then
+            echo "::warning::Model file is too small ($FILE_SIZE bytes), obstacle detection will not work. Please upload the real model to the 'models-v1' release."
+          fi
 
 
       - name: Build Debug APK
