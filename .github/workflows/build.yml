@@ -67,28 +67,19 @@ jobs:
 
           echo "Credentials injected into ~/.gradle/gradle.properties"
          
-      - name: Prepare AI model (yolov8n.tflite)
+      - name: Check AI model (yolov8n.tflite)
         run: |
-          export MODEL_FILE="app/src/main/assets/yolov8n.tflite"
-          FILE_SIZE=0
+          MODEL_FILE="app/src/main/assets/yolov8n.tflite"
           if [ -f "$MODEL_FILE" ]; then
             FILE_SIZE=$(wc -c < "$MODEL_FILE")
-          fi
-          echo "Current model file size: $FILE_SIZE bytes"
-          if [ "$FILE_SIZE" -gt 1024 ]; then
-            echo "Model already exists: $FILE_SIZE bytes"
-            ls -lh "$MODEL_FILE"
-            exit 0
-          fi
-          # 使用 Python 导出 TFLite 模型
-          echo "Exporting TFLite model via Python..."
-          pip install ultralytics --quiet
-          python3 scripts/export_model.py
-          ls -lh "$MODEL_FILE"
-          FILE_SIZE=$(wc -c < "$MODEL_FILE")
-          echo "Final model file size: $FILE_SIZE bytes"
-          if [ "$FILE_SIZE" -lt 1024 ]; then
-            echo "::warning::Model file is too small. Obstacle detection may not work."
+            echo "Model file size: $FILE_SIZE bytes"
+            if [ "$FILE_SIZE" -lt 1024 ]; then
+              echo "::warning::Model is a Git LFS placeholder. APP will download it on first run."
+            else
+              echo "Model file is valid."
+            fi
+          else
+            echo "::warning::Model file not found. APP will download it on first run."
           fi
 
 
