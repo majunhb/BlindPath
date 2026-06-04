@@ -85,6 +85,9 @@ jobs:
           ls -lh "$MODEL_FILE"
 
 
+      - name: Clean Gradle Cache
+        run: ./gradlew clean --no-daemon
+
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
