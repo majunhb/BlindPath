@@ -28,9 +28,23 @@
         <uses-permission android:name="android.permission.WAKE_LOCK" />
         <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
         
+        <!-- 后台保活与常驻权限 -->
+        <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+        <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
+        <uses-permission android:name="android.permission.REQUEST_COMPANION_USE_DATA_IN_BACKGROUND" />
+        
+        <!-- 悬浮窗与后台界面权限 -->
+        <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+        <uses-permission android:name="android.permission.DISPLAY_OVER_OTHER_APPS" />
+        
+        <!-- 后台定位权限 -->
+        <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+        
         <!-- 蓝牙权限 -->
         <uses-permission android:name="android.permission.BLUETOOTH" />
         <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+        <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+        <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
@@ -100,6 +114,15 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <!-- 增强版语音唤醒服务（独立进程） -->
+        <service
+            android:name="com.blindpath.module_voice.service.WakeWordServiceEnhanced"
+            android:enabled="true"
+            android:exported="false"
+            android:process=":wakeword"
+            android:foregroundServiceType="microphone" />
+
 
         <!-- 蓝牙音频接收器 -->
         <receiver
