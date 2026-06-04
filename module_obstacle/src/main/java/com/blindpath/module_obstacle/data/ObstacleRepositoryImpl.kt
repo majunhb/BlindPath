@@ -10,6 +10,7 @@ import android.graphics.YuvImage
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import com.blindpath.base.common.AlertLevel
@@ -47,6 +48,10 @@ class ObstacleRepositoryImpl @Inject constructor(
     private var cameraExecutor: ExecutorService? = null
     private var analysisJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
+    // [修复] 预览相关：存储外部传入的SurfaceProvider，与ImageAnalysis统一绑定
+    private var previewProvider: androidx.camera.core.Preview.SurfaceProvider? = null
+    private var previewUseCase: Preview? = null
 
     private var latestObstacles: List<DetectedObstacle> = emptyList()
     private var useFrontCamera = false
@@ -160,8 +165,41 @@ class ObstacleRepositoryImpl @Inject constructor(
     override fun getLatestObstacles(): List<DetectedObstacle> = latestObstacles
 
     override fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider) {
-        // 预览 SurfaceProvider 留待 CameraX Preview 用例集成时使用
-        Timber.d("Preview surface provider set")
+        // [修复] 存储SurfaceProvider，在startCameraSync中与ImageAnalysis统一绑定
+        previewProvider = provider
+        Timber.d("Preview surface provider stored for unified camera binding")
+        // 如果摄像头已经在运行，需要重新绑定以加入Preview
+        if (isCameraStarted && provider != null) {
+            scope.launch(Dispatchers.Main) { rebindCameraWithPreview() }
+        }
+    }
+
+    /**
+     * [修复] 重新绑定摄像头，将Preview和ImageAnalysis一起绑定
+     * 解决ObstacleDetectionContent独立绑定Preview导致的竞争条件
+     */
+    private suspend fun rebindCameraWithPreview() {
+        if (cameraProvider == null || previewProvider == null) return
+        try {
+            val preview = Preview.Builder().build()
+            preview.setSurfaceProvider(previewProvider!!)
+            previewUseCase = preview
+            // 获取当前绑定的UseCase列表
+            val currentUseCases = cameraProvider?.boundUseCases?.toMutableList() ?: mutableListOf()
+            // 如果还没有Preview，添加进去
+            if (currentUseCases.none { it is Preview }) {
+                currentUseCases.add(preview)
+                cameraProvider?.unbindAll()
+                cameraProvider?.bindToLifecycle(
+                    androidx.lifecycle.ProcessLifecycleOwner.get(),
+                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    *currentUseCases.toTypedArray()
+                )
+                Timber.d("Camera rebounded with Preview + ImageAnalysis together")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to rebind camera with preview")
+        }
     }
 
     override fun getAlertLevel(distance: Float): AlertLevel {
@@ -286,15 +324,35 @@ class ObstacleRepositoryImpl @Inject constructor(
                     }
                 }
 
+                // [修复] 创建Preview用例（如果有SurfaceProvider的话）
+                val preview = if (previewProvider != null) {
+                    Preview.Builder().build().also {
+                        it.setSurfaceProvider(previewProvider!!)
+                        previewUseCase = it
+                        Timber.d("Preview use case created with SurfaceProvider")
+                    }
+                } else {
+                    null
+                }
+
                 // 使用 ProcessLifecycleOwner 绑定生命周期
                 try {
                     // 先解绑所有之前的绑定
                     cameraProvider?.unbindAll()
-                    
+
+                    // [修复] 将 Preview 和 ImageAnalysis 绑定到同一生命周期
+                    // 解决：之前只绑 ImageAnalysis，而 ObstacleDetectionContent 单独绑 Preview
+                    // 导致两者互相 unbindAll() 竞争
+                    val useCases = if (preview != null) {
+                        arrayOf(preview, imageAnalysis)
+                    } else {
+                        arrayOf(imageAnalysis)
+                    }
+
                     cameraProvider?.bindToLifecycle(
                         androidx.lifecycle.ProcessLifecycleOwner.get(),
                         cameraSelector,
-                        imageAnalysis
+                        *useCases
                     )
 
                     isCameraStarted = true

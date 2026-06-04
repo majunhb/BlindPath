@@ -366,6 +366,13 @@ fun LocationScreen(
         }
     }
 
+    // [改进] 进入页面时自动开始定位，无需手动点击
+    LaunchedEffect(Unit) {
+        if (hasLocationPermission) {
+            startRealLocation()
+        }
+    }
+
     // 离开页面时停止定位
     DisposableEffect(Unit) {
         onDispose {
@@ -490,11 +497,12 @@ fun LocationScreen(
                             }
                             Spacer(modifier = Modifier.height(16.dp))
                             LocationRow("所在道路", info.road)
-                            LocationRow("行进方位", info.direction)
                             LocationRow("详细地址", info.address)
-                            LocationRow("当前坐标", info.coordinates)
-                            LocationRow("定位精度", info.accuracy)
+                            LocationRow("行进方位", info.direction)
                             LocationRow("周边地标", info.landmarks)
+                            LocationRow("定位精度", info.accuracy)
+                            // 坐标放最后（盲人不常用）
+                            LocationRow("技术坐标", info.coordinates)
                         }
                     }
 
@@ -562,15 +570,20 @@ fun LocationScreen(
 }
 
 @Composable
-private fun LocationRow(label: String, value: String) {
+private fun LocationRow(label: String, value: String, isPrimary: Boolean = false) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(
             text = "$label：",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = if (isPrimary) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+            color = if (isPrimary) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(100.dp)
         )
-        Text(text = value, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+        Text(
+            text = value,
+            style = if (isPrimary) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,
+            fontWeight = if (isPrimary) FontWeight.Bold else FontWeight.Medium,
+            color = if (isPrimary) MaterialTheme.colorScheme.primary else Color.Unspecified
+        )
     }
 }
 

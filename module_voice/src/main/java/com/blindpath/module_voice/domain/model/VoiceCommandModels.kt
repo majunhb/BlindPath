@@ -113,8 +113,8 @@ data class VoiceInteractionState(
  * 语音引导内容
  */
 object VoiceGuidance {
-    const val WELCOME_MESSAGE = "欢迎使用智行视障导航系统，全程支持语音指令操作，无需触屏点击"
-    const val WAKE_WORD_PROMPT = "请说${WakeWordConfig.DEFAULT_WAKE_WORD}唤醒语音助手，或者说帮助查看可用指令"
+    const val WELCOME_MESSAGE = "欢迎来到智行AI导航，我是小智，我可以为您提供出行导航和环境感知障碍物识别。你呼唤小智小智语音唤醒我"
+    const val WAKE_WORD_PROMPT = "请说\"小智小智\"唤醒语音助手，或者说帮助查看可用指令"
     
     val HELP_MESSAGE = """
         可用语音指令：

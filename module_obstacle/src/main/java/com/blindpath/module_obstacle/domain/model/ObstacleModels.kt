@@ -251,6 +251,7 @@ enum class SceneType(
     val chineseName: String,
     val description: String
 ) {
+    // ===== 室外场景 =====
     SIDEWALK("人行道", "人行道区域"),
     CROSSWALK("斑马线", "前方有斑马线"),
     STAIR_ENTRANCE("楼梯口", "楼梯入口区域"),
@@ -258,6 +259,28 @@ enum class SceneType(
     ROAD("普通道路", "普通道路区域"),
     BUILDING_ENTRANCE("建筑物入口", "建筑物入口区域"),
     PARK("公园/绿地", "公园或绿化区域"),
+
+    // ===== 新增：室外精细场景 =====
+    TRAFFIC_SIGNAL_AREA("信号灯区域", "前方有红绿灯，请注意信号"),
+    CURB("道牙", "前方有道牙/路沿，注意脚下"),
+    PUDDLE("积水", "前方路面有积水，请绕行"),
+    MANHOLE_COVER("井盖", "注意脚下井盖"),
+
+    // ===== 新增：室内场景 =====
+    INDOOR_CORRIDOR("走廊", "室内走廊通道"),
+    INDOOR_STAIRS("楼梯间", "室内楼梯间，注意台阶"),
+    INDOOR_DOORWAY("门口/门槛", "前方门口或门槛，注意高度差"),
+    INDOOR_RESTROOM("厕所", "卫生间区域"),
+    INDOOR_ELEVATOR("电梯口", "电梯入口区域"),
+    INDOOR_HALL("大厅", "建筑大厅区域"),
+
+    // ===== 新增：公共场所场景（基于障碍物推断）=====
+    HOSPITAL_AREA("医院区域", "医院就诊区域，可能有人流和病床"),
+    BANK_AREA("银行区域", "银行营业厅区域"),
+    SCHOOL_AREA("学校区域", "校园教学区域"),
+    SHOPPING_MALL("商城购物区", "商场购物中心区域"),
+    RESTAURANT("餐饮区", "餐厅食堂区域"),
+
     UNKNOWN("未知", "未识别场景");
 
     /**
@@ -272,6 +295,21 @@ enum class SceneType(
             BUILDING_ENTRANCE -> "建筑物入口，请注意"
             PARK -> "进入公园区域"
             ROAD -> ""
+            TRAFFIC_SIGNAL_AREA -> "前方有红绿灯，请按信号通行"
+            CURB -> "前方有道牙或路沿，小心绊倒"
+            PUDDLE -> "前方有积水，请绕行"
+            MANHOLE_COVER -> "注意脚下井盖"
+            INDOOR_CORRIDOR -> "进入走廊通道"
+            INDOOR_STAIRS -> "室内楼梯间，注意台阶高度"
+            INDOOR_DOORWAY -> "前方门口或门槛，注意高度差"
+            INDOOR_RESTROOM -> "附近有卫生间"
+            INDOOR_ELEVATOR -> "电梯入口在前方"
+            INDOOR_HALL -> "进入建筑大厅"
+            HOSPITAL_AREA -> "进入医院区域，注意病床推车和人流"
+            BANK_AREA -> "进入银行营业厅区域"
+            SCHOOL_AREA -> "进入校园区域，注意学生人流"
+            SHOPPING_MALL -> "进入商场购物区"
+            RESTAURANT -> "进入餐饮区域，注意餐桌椅"
             UNKNOWN -> ""
         }
     }

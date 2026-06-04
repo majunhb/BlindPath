@@ -206,7 +206,29 @@ fun MainScreen(
 
     when {
         showSettings -> {
-            SettingsScreen(onBackClick = { showSettings = false })
+            // [修复] 防御性错误处理：防止SettingsViewModel注入失败导致闪退
+            try {
+                SettingsScreen(onBackClick = { showSettings = false })
+            } catch (e: Exception) {
+                Timber.e(e, "SettingsScreen crashed, showing fallback")
+                // 降级：显示简易设置界面
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF0D0D1A))
+                        .padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Text("设置加载失败", color = Color.Red, fontSize = 18.sp)
+                    Spacer(Modifier.height(8.dp))
+                    Text("请重启应用后重试", color = Color.Gray, fontSize = 14.sp)
+                    Spacer(Modifier.height(16.dp))
+                    Button(onClick = { showSettings = false }) {
+                        Text("返回", color = Color.White)
+                    }
+                }
+            }
         }
         showCommunity -> {
             CommunityScreen(onBackClick = { showCommunity = false })
@@ -1321,7 +1343,10 @@ private fun ObstacleDetectionContent(
                 .background(Color.Black)
         ) {
             if (hasPermission) {
-                // 显示摄像头预览
+                // [修复] 摄像头预览：通过 Repository 统一绑定，不再独立绑定
+                // 之前这里独立调用 ProcessCameraProvider.bindToLifecycle(Preview)
+                // 与 ObstacleRepositoryImpl 中的 bindToLifecycle(ImageAnalysis) 产生竞争
+                // 现在统一由 Repository 同时绑定 Preview + ImageAnalysis
                 AndroidView(
                     factory = { ctx ->
                         PreviewView(ctx).apply {
@@ -1331,20 +1356,9 @@ private fun ObstacleDetectionContent(
                     },
                     modifier = Modifier.fillMaxSize(),
                     update = { previewView ->
-                        val cameraProviderFuture = ProcessCameraProvider.getInstance(previewView.context)
-                        cameraProviderFuture.addListener({
-                            try {
-                                val cameraProvider = cameraProviderFuture.get()
-                                val preview = Preview.Builder().build().also {
-                                    it.setSurfaceProvider(previewView.surfaceProvider)
-                                }
-                                val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                                cameraProvider.unbindAll()
-                                cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
-                            } catch (e: Exception) {
-                                Timber.e(e, "ObstacleDetectionContent: Camera preview failed")
-                            }
-                        }, ContextCompat.getMainExecutor(previewView.context))
+                        // 将 SurfaceProvider 传给 Repository，由它统一绑定摄像头
+                        obstacleRepository.setPreviewSurfaceProvider(previewView.surfaceProvider)
+                        Timber.d("ObstacleDetectionContent: SurfaceProvider passed to repository")
                     }
                 )
                 

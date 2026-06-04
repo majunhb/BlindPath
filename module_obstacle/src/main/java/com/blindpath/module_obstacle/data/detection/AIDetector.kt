@@ -53,7 +53,9 @@ class AIDetector @Inject constructor(
     // 多镜像下载地址（优先国内可访问源）
     private val modelUrls = listOf(
         "https://github.com/majunhb/BlindPath/releases/download/models/yolov8n.tflite", // 项目自有 release
-        "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite",  // 官方 release
+        "https://ghfast.top/https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite", // 国内加速镜像
+        "https://mirror.ghproxy.com/https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite",  // ghproxy镜像
+        "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite",  // 官方 release（兜底）
     )
     private val inputSize = AppConfig.AIDetection.INPUT_SIZE
     private val numThreads = AppConfig.AIDetection.NUM_THREADS

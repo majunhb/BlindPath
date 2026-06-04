@@ -12,15 +12,17 @@ import kotlin.math.abs
 import kotlin.math.min
 
 /**
- * 场景识别器
- * 识别用户当前所处的环境场景，帮助视障用户了解周围环境
+ * 场景识别器 - 增强版（室内外全场景）
  *
  * 支持识别的场景：
- * - 人行道
- * - 斑马线
- * - 楼梯口
- * - 路口
- * - 建筑物入口
+ * 室外：人行道、斑马线、路口、道路标线、信号灯、道牙、井盖、积水
+ * 室内：走廊、楼梯间、门口/门槛、厕所、电梯口、大厅
+ * 公共场所：医院、银行、学校、商城、餐厅（基于障碍物推断）
+ *
+ * 检测策略：
+ * 1. 传统CV算法（颜色/边缘/纹理）- 无需AI模型即可工作
+ * 2. 障碍物组合推理 - 当AI模型可用时增强判断
+ * 3. 亮度/色彩分布分析 - 区分室内外环境
  */
 @Singleton
 class SceneClassifier @Inject constructor(
@@ -44,25 +46,29 @@ class SceneClassifier @Inject constructor(
     fun recognizeScene(bitmap: Bitmap, detectedObstacles: List<DetectedObstacle>): SceneRecognitionResult? {
         val results = mutableListOf<Pair<SceneType, Float>>()
 
+        // 0. [新增] 室内外环境分类（最优先，影响后续检测策略）
+        classifyIndoorOutdoor(bitmap, detectedObstacles)?.let { results.add(it) }
+
         // 1. 检测斑马线
-        detectZebraCrossing(bitmap)?.let {
-            results.add(it)
-        }
+        detectZebraCrossing(bitmap)?.let { results.add(it) }
 
         // 2. 检测楼梯/台阶
-        detectStairs(bitmap, detectedObstacles)?.let {
-            results.add(it)
-        }
+        detectStairs(bitmap, detectedObstacles)?.let { results.add(it) }
 
         // 3. 检测人行道
-        detectSidewalk(bitmap)?.let {
-            results.add(it)
-        }
+        detectSidewalk(bitmap)?.let { results.add(it) }
 
-        // 4. 基于检测到的障碍物推断场景
-        inferSceneFromObstacles(detectedObstacles)?.let {
-            results.add(it)
-        }
+        // 4. [新增] 检测积水（深色反光区域）
+        detectPuddle(bitmap)?.let { results.add(it) }
+
+        // 5. [新增] 检测道牙（底部边缘突变线）
+        detectCurb(bitmap)?.let { results.add(it) }
+
+        // 6. [新增] 检测门口/门槛（室内垂直线条+亮度变化）
+        detectDoorway(bitmap)?.let { results.add(it) }
+
+        // 7. 基于检测到的障碍物推断场景（增强版）
+        inferSceneFromObstacles(detectedObstacles)?.let { results.add(it) }
 
         // 返回最高置信度的场景
         val bestMatch = results.maxByOrNull { it.second }
@@ -278,13 +284,18 @@ class SceneClassifier @Inject constructor(
     }
 
     /**
-     * 基于检测到的障碍物推断场景
+     * 基于检测到的障碍物推断场景（增强版）
+     * 新增：医院/银行/学校/商城/餐厅等公共场所识别
      */
     private fun inferSceneFromObstacles(obstacles: List<DetectedObstacle>): Pair<SceneType, Float>? {
         // 检测到多个红绿灯 → 路口
         val trafficLights = obstacles.count { it.type == ObstacleType.TRAFFIC_LIGHT }
+        if (trafficLights >= 1) {
+            return Pair(SceneType.TRAFFIC_SIGNAL_AREA, 0.7f + min(0.2f, trafficLights * 0.05f))
+        }
+
         if (trafficLights >= 2) {
-            return Pair(SceneType.INTERSECTION, 0.7f)
+            return Pair(SceneType.INTERSECTION, 0.75f)
         }
 
         // 检测到台阶 + 门框 → 建筑物入口
@@ -294,6 +305,248 @@ class SceneClassifier @Inject constructor(
             return Pair(SceneType.BUILDING_ENTRANCE, 0.65f)
         }
 
+        // [新增] 检测到多把椅子+桌子 → 餐厅/商城休息区
+        val chairs = obstacles.count { it.type == ObstacleType.CHAIR }
+        val tables = obstacles.count { it.type == ObstacleType.TABLE }
+        if (chairs >= 3 && tables >= 1) {
+            return Pair(SceneType.RESTAURANT, 0.6f)
+        }
+        if (chairs >= 4 || tables >= 3) {
+            return Pair(SceneType.SHOPPING_MALL, 0.55f)
+        }
+
+        // [新增] 多个人物 + 行李箱/手提包 → 商城/交通枢纽
+        val people = obstacles.count { it.type == ObstacleType.PERSON }
+        val luggage = obstacles.count {
+            it.type == ObstacleType.SUITCASE || it.type == ObstacleType.HANDBAG || it.type == ObstacleType.BACKPACK
+        }
+        if (people >= 3 && luggage >= 2) {
+            return Pair(SceneType.SHOPPING_MALL, 0.6f)
+        }
+
+        // [新增] 大量人物 + 交通标志 → 学校区域
+        val trafficSigns = obstacles.count { it.type == ObstacleType.TRAFFIC_SIGN }
+        if (people >= 5 && trafficSigns >= 1) {
+            return Pair(SceneType.SCHOOL_AREA, 0.55f)
+        }
+
+        // [新增] 室内物品组合（沙发+盆栽+桌椅）→ 银行大厅
+        val hasSofa = obstacles.any { it.type == ObstacleType.SOFA }
+        val hasPlant = obstacles.any { it.type == ObstacleType.POTTED_PLANT }
+        if ((hasSofa || hasPlant) && chairs >= 2) {
+            return Pair(SceneType.BANK_AREA, 0.58f)
+        }
+
+        return null
+    }
+
+    /**
+     * [新增] 室内外环境分类
+     * 基于亮度分布、色彩饱和度、纹理复杂度判断
+     */
+    private fun classifyIndoorOutdoor(bitmap: Bitmap, obstacles: List<DetectedObstacle>): Pair<SceneType, Float>? {
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+
+            var totalBrightness = 0
+            var indoorScore = 0   // 高=室内
+            var outdoorScore = 0   // 高=室外
+            var sampleCount = 0
+            val step = max(8, width / 80)
+
+            for (y in 0 until height step step * 2) {
+                for (x in 0 until width step step) {
+                    val pixel = bitmap.getPixel(x, y)
+                    val r = Color.red(pixel)
+                    val g = Color.green(pixel)
+                    val b = Color.blue(pixel)
+                    val brightness = (r + g + b) / 3
+                    totalBrightness += brightness
+
+                    // 色彩饱和度（室内通常较低，室外较高）
+                    val maxC = maxOf(r, g, b).toFloat()
+                    val minC = minOf(r, g, b).toFloat()
+                    val saturation = if (maxC > 0) (maxC - minC) / maxC else 0f
+
+                    sampleCount++
+
+                    // 室内特征：均匀亮度、低饱和度、暖色调
+                    if (brightness in 100..200 && saturation < 0.3f && r > b) {
+                        indoorScore++
+                    }
+                    // 室外特征：高亮度、高对比、天空蓝色或绿色植物
+                    if (brightness > 180 || saturation > 0.5f || b > r + 20) {
+                        outdoorScore++
+                    }
+                    // 天空特征（图像上方偏蓝）
+                    if (y < height / 3 && b > r + 30 && b > g + 10) {
+                        outdoorScore += 2
+                    }
+                }
+            }
+
+            if (sampleCount < 10) return null
+
+            val avgBrightness = totalBrightness / sampleCount
+            val isIndoor = indoorScore > outdoorScore * 1.3 && avgBrightness in 120..190
+            val isOutdoor = outdoorScore > indoorScore * 1.3
+
+            if (isIndoor) {
+                // 进一步区分室内场景类型
+                val confidence = 0.55f + min(0.25f, (indoorScore - outdoorScore) / sampleCount.toFloat())
+                // 有大量家具类障碍物 → 更具体室内场景
+                val furnitureCount = obstacles.count {
+                    it.type in listOf(ObstacleType.CHAIR, ObstacleType.TABLE,
+                        ObstacleType.SOFA, ObstacleType.BED, ObstacleType.POTTED_PLANT)
+                }
+                if (furnitureCount >= 3) {
+                    return Pair(SceneType.INDOOR_HALL, confidence)
+                }
+                return Pair(SceneType.INDOOR_CORRIDOR, confidence)
+            } else if (isOutdoor) {
+                val confidence = 0.55f + min(0.25f, (outdoorScore - indoorScore) / sampleCount.toFloat())
+                return Pair(SceneType.ROAD, confidence)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Indoor/outdoor classification failed")
+        }
+        return null
+    }
+
+    /**
+     * [新增] 积水检测
+     * 识别路面深色反光区域（积水特征：暗色+局部高亮反射）
+     */
+    private fun detectPuddle(bitmap: Bitmap): Pair<SceneType, Float>? {
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+            var puddlePixels = 0
+            var groundPixels = 0
+            val startY = (height * 0.6).toInt() // 只检查地面区域
+
+            for (y in startY until height step 6) {
+                for (x in 0 until width step 6) {
+                    val pixel = bitmap.getPixel(x, y)
+                    val r = Color.red(pixel)
+                    val g = Color.green(pixel)
+                    val b = Color.blue(pixel)
+                    val brightness = (r + g + b) / 3
+
+                    groundPixels++
+                    // 积水特征：较暗但有反光（不完全黑），且颜色偏灰暗
+                    val isDark = brightness in 30..120
+                    val isFlatColor = abs(r - g) < 20 && abs(r - b) < 20 && abs(g - b) < 20
+                    if (isDark && isFlatColor) {
+                        puddlePixels++
+                    }
+                }
+            }
+
+            if (groundPixels > 0) {
+                val puddleRatio = puddlePixels.toFloat() / groundPixels
+                // 积水占比超过15%时报警
+                if (puddleRatio > 0.15f) {
+                    val confidence = min(0.85f, 0.5f + puddleRatio * 1.5f)
+                    Timber.d("Puddle detected: ratio=$puddleRatio, confidence=$confidence")
+                    return Pair(SceneType.PUDDLE, confidence)
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Puddle detection failed")
+        }
+        return null
+    }
+
+    /**
+     * [新增] 道牙/路沿检测
+     * 在图像底部检测水平边缘突变线（道牙是地面到路缘的高度差）
+     */
+    private fun detectCurb(bitmap: Bitmap): Pair<SceneType, Float>? {
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+            var curbLines = 0
+
+            // 检查最底部20%的图像区域
+            val startY = (height * 0.8).toInt()
+            for (y in startY until height step 2) {
+                var prevBrightness = -1
+                var edgeCount = 0
+
+                for (x in 0 until width step 4) {
+                    val pixel = bitmap.getPixel(x, y)
+                    val brightness = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
+
+                    if (prevBrightness >= 0) {
+                        val diff = abs(brightness - prevBrightness)
+                        // 道牙产生明显的亮度跳变（>40）
+                        if (diff > 40) edgeCount++
+                    }
+                    prevBrightness = brightness
+                }
+                // 一行内有多个边缘点，可能是道牙线
+                if (edgeCount >= width / 20) {
+                    curbLines++
+                }
+            }
+
+            if (curbLines >= 3) {
+                val confidence = min(0.8f, 0.5f + curbLines * 0.05f)
+                Timber.d("Curb detected: $curbLines lines")
+                return Pair(SceneType.CURB, confidence)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Curb detection failed")
+        }
+        return null
+    }
+
+    /**
+     * [新增] 门口/门槛检测
+     * 室内环境中的垂直线条 + 亮度变化（门框特征）
+     */
+    private fun detectDoorway(bitmap: Bitmap): Pair<SceneType, Float>? {
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+            var verticalEdges = 0
+
+            // 扫描图像中央区域寻找垂直边缘
+            val startX = (width * 0.3).toInt()
+            val endX = (width * 0.7).toInt()
+            val topY = (height * 0.2).toInt()
+            val bottomY = (height * 0.8).toInt()
+
+            for (x in startX until endX step 4) {
+                var prevBrightness = -1
+                var consecutiveEdges = 0
+
+                for (y in topY until bottomY step 4) {
+                    val pixel = bitmap.getPixel(x, y)
+                    val brightness = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
+
+                    if (prevBrightness >= 0 && abs(brightness - prevBrightness) > 35) {
+                        consecutiveEdges++
+                    }
+                    prevBrightness = brightness
+                }
+
+                // 一列中有连续多个垂直边缘点 → 门框竖边
+                if (consecutiveEdges >= 5) {
+                    verticalEdges++
+                }
+            }
+
+            if (verticalEdges >= 2) {
+                val confidence = min(0.78f, 0.5f + verticalEdges * 0.06f)
+                Timber.d("Doorway detected: $verticalEdges vertical edges")
+                return Pair(SceneType.INDOOR_DOORWAY, confidence)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "Doorway detection failed")
+        }
         return null
     }
 

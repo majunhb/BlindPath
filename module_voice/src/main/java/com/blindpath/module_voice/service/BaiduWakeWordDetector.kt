@@ -221,9 +221,15 @@ class BaiduWakeWordDetector(
             // appid - WakeUpControl.initWp() 需要从 params 中提取
             params.put("appid", appId)
 
-            // 唤醒词文本列表 - WakeUpControl.initWp() 读取 "words" JSONArray
+            // 唤醒词文本列表 - 传入所有别名，让百度引擎匹配多个变体
+            // 注意：百度模型文件内嵌"小智同学"，但我们也传入"小智小智"等别名
+            // 百度SDK会尝试用内嵌模型+文本列表做联合匹配
             val wordsArray = org.json.JSONArray()
-            wordsArray.put(wakeWord)
+            wordsArray.put(wakeWord)  // 主唤醒词 "小智小智"
+            // 添加其他别名（百度模型内嵌"小智同学"也能匹配）
+            for (alias in WakeWordConfig.WAKE_WORD_ALIASES) {
+                if (alias != wakeWord) wordsArray.put(alias)
+            }
             params.put("words", wordsArray)
 
             // 音频音量回调（调试用）
