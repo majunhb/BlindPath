@@ -130,6 +130,31 @@ class SceneAdaptationManager @Inject constructor(
     }
     
     /**
+     * 停止环境噪音检测
+     */
+    private fun stopNoiseDetection() {
+        try {
+            noiseDetector?.apply {
+                stop()
+                release()
+            }
+            noiseDetector = null
+            
+            Timber.d("Noise detection stopped")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to stop noise detection")
+        }
+    }
+    
+    /**
+     * 归一化噪音级别（0-100）
+     */
+    private fun normalizeNoiseLevel(amplitude: Int): Int {
+        // MediaRecorder.getMaxAmplitude() 返回 0-32767
+        return (amplitude * 100 / 32767).coerceIn(0, 100)
+    }
+    
+    /**
      * 设置场景切换监听器
      */
     fun setSceneChangeListener(listener: (SceneType, SceneConfig) -> Unit) {
