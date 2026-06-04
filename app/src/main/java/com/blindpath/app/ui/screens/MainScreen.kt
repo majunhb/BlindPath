@@ -209,7 +209,6 @@ fun MainScreen(
             // Compose 不支持 try-catch 包裹 Composable 调用，直接渲染
             SettingsScreen(onBackClick = { showSettings = false })
         }
-        }
         showCommunity -> {
             CommunityScreen(onBackClick = { showCommunity = false })
         }
