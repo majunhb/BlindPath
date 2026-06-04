@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -75,10 +77,10 @@ jobs:
           echo "Current model file size: $FILE_SIZE bytes"
           if [ ! -f "$MODEL_FILE" ] || [ "$FILE_SIZE" -lt 1024 ]; then
             mkdir -p "$(dirname "$MODEL_FILE")"
-            # 方法1: 使用 git-lfs 拉取真实模型（GitHub runner 支持 LFS）
+            # 方法1: 使用 git-lfs 拉取真实模型
             echo "Trying git-lfs to fetch real model..."
-            git lfs install
-            git lfs pull --include="*.tflite" 2>/dev/null
+            git lfs fetch --include="*.tflite"
+            git lfs checkout
             if [ -f "$MODEL_FILE" ]; then
               FILE_SIZE=$(wc -c < "$MODEL_FILE")
               if [ "$FILE_SIZE" -gt 1024 ]; then
@@ -87,14 +89,11 @@ jobs:
                 exit 0
               fi
             fi
-            # 方法2: 从项目 Release 下载
-            echo "LFS failed, trying project release..."
-            curl -L --fail --max-time 120 -o "$MODEL_FILE" "https://github.com/majunhb/BlindPath/releases/download/models-v1/yolov8n.tflite" 2>/dev/null && \
-            echo "Downloaded from project release" || \
-            # 方法3: 从 ultralytics 下载（GitHub runner 可直接访问）
-            (echo "Project release failed, trying ultralytics..." && \
-             curl -L --fail --max-time 120 -o "$MODEL_FILE" "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite" && \
-             echo "Downloaded from ultralytics")
+            # 方法2: 从 ultralytics 下载（GitHub runner 可直接访问）
+            echo "LFS failed, trying ultralytics release..."
+            curl -L --fail --max-time 120 -o "$MODEL_FILE" "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite" && \
+            echo "Downloaded from ultralytics" || \
+            echo "All download methods failed"
           fi
           ls -lh "$MODEL_FILE"
           FILE_SIZE=$(wc -c < "$MODEL_FILE")
