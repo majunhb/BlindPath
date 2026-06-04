@@ -67,7 +67,7 @@ jobs:
 
           echo "Credentials injected into ~/.gradle/gradle.properties"
          
-      - name: Download AI model (yolov8n.tflite)
+      - name: Prepare AI model (yolov8n.tflite)
         run: |
           MODEL_FILE="app/src/main/assets/yolov8n.tflite"
           FILE_SIZE=0
@@ -75,26 +75,42 @@ jobs:
             FILE_SIZE=$(wc -c < "$MODEL_FILE")
           fi
           echo "Current model file size: $FILE_SIZE bytes"
-          if [ ! -f "$MODEL_FILE" ] || [ "$FILE_SIZE" -lt 1024 ]; then
-            mkdir -p "$(dirname "$MODEL_FILE")"
-            # 方法1: 使用 git-lfs 拉取真实模型
-            echo "Trying git-lfs to fetch real model..."
-            git lfs fetch --include="*.tflite"
-            git lfs checkout
-            if [ -f "$MODEL_FILE" ]; then
-              FILE_SIZE=$(wc -c < "$MODEL_FILE")
-              if [ "$FILE_SIZE" -gt 1024 ]; then
-                echo "✅ Model fetched via git-lfs: $FILE_SIZE bytes"
-                ls -lh "$MODEL_FILE"
-                exit 0
-              fi
-            fi
-            # 方法2: 从 ultralytics 下载（GitHub runner 可直接访问）
-            echo "LFS failed, trying ultralytics release..."
-            curl -L --fail --max-time 120 -o "$MODEL_FILE" "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite" && \
-            echo "Downloaded from ultralytics" || \
-            echo "All download methods failed"
+          if [ "$FILE_SIZE" -gt 1024 ]; then
+            echo "✅ Model already exists: $FILE_SIZE bytes"
+            ls -lh "$MODEL_FILE"
+            exit 0
           fi
+          mkdir -p "$(dirname "$MODEL_FILE")"
+          # 方法1: 使用 git-lfs 拉取
+          echo "Trying git-lfs..."
+          git lfs fetch --include="*.tflite" 2>/dev/null && git lfs checkout 2>/dev/null
+          if [ -f "$MODEL_FILE" ]; then
+            FILE_SIZE=$(wc -c < "$MODEL_FILE")
+            if [ "$FILE_SIZE" -gt 1024 ]; then
+              echo "✅ Model fetched via git-lfs: $FILE_SIZE bytes"
+              ls -lh "$MODEL_FILE"
+              exit 0
+            fi
+          fi
+          # 方法2: 使用 Python + ultralytics 导出 TFLite 模型
+          echo "LFS failed, exporting TFLite model via Python..."
+          pip install ultralytics --quiet
+          python3 -c "
+from ultralytics import YOLO
+import os
+model = YOLO('yolov8n')
+model.export(format='tflite', imgsz=320)
+# 找到导出的文件并复制
+import glob
+files = glob.glob('yolov8n*.tflite')
+if files:
+    import shutil
+    shutil.copy(files[0], '$MODEL_FILE')
+    print(f'Exported {files[0]} to $MODEL_FILE')
+else:
+    print('Export failed')
+    exit(1)
+"
           ls -lh "$MODEL_FILE"
           FILE_SIZE=$(wc -c < "$MODEL_FILE")
           echo "Final model file size: $FILE_SIZE bytes"
