@@ -69,7 +69,7 @@ jobs:
          
       - name: Prepare AI model (yolov8n.tflite)
         run: |
-          MODEL_FILE="app/src/main/assets/yolov8n.tflite"
+          export MODEL_FILE="app/src/main/assets/yolov8n.tflite"
           FILE_SIZE=0
           if [ -f "$MODEL_FILE" ]; then
             FILE_SIZE=$(wc -c < "$MODEL_FILE")
@@ -80,21 +80,16 @@ jobs:
             ls -lh "$MODEL_FILE"
             exit 0
           fi
-          mkdir -p "$(dirname "$MODEL_FILE")"
-          # 使用 git-lfs 拉取真实模型
-          echo "Fetching model via git-lfs..."
-          git lfs fetch --include="*.tflite"
-          git lfs checkout
-          if [ -f "$MODEL_FILE" ]; then
-            FILE_SIZE=$(wc -c < "$MODEL_FILE")
-            if [ "$FILE_SIZE" -gt 1024 ]; then
-              echo "Model fetched via git-lfs: $FILE_SIZE bytes"
-              ls -lh "$MODEL_FILE"
-              exit 0
-            fi
+          # 使用 Python 导出 TFLite 模型
+          echo "Exporting TFLite model via Python..."
+          pip install ultralytics --quiet
+          python3 scripts/export_model.py
+          ls -lh "$MODEL_FILE"
+          FILE_SIZE=$(wc -c < "$MODEL_FILE")
+          echo "Final model file size: $FILE_SIZE bytes"
+          if [ "$FILE_SIZE" -lt 1024 ]; then
+            echo "::warning::Model file is too small. Obstacle detection may not work."
           fi
-          echo "::warning::Model file is too small or missing. Obstacle detection may not work."
-          ls -lh "$MODEL_FILE" || true
 
 
       - name: Build Debug APK
