@@ -367,8 +367,8 @@ class SceneClassifier @Inject constructor(
                     totalBrightness += brightness
 
                     // 色彩饱和度（室内通常较低，室外较高）
-                    val maxC = maxOf(r, g, b).toFloat()
-                    val minC = kotlin.math.minOf(r, g, b).toFloat()
+                    val maxC = kotlin.math.max(kotlin.math.max(r, g), b).toFloat()
+                    val minC = kotlin.math.min(kotlin.math.min(r, g), b).toFloat()
                     val saturation = if (maxC > 0) (maxC - minC) / maxC else 0f
 
                     sampleCount++
