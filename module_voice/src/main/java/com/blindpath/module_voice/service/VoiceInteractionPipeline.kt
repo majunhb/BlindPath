@@ -9,6 +9,7 @@ import com.blindpath.module_voice.domain.VoiceCommandRepository
 import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.domain.model.VoiceCommand
 import com.blindpath.module_voice.domain.model.VoiceType
+import com.blindpath.module_voice.domain.model.RecognitionState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -135,36 +136,37 @@ class VoiceInteractionPipeline @Inject constructor(
                 // 2. 启动 ASR 监听
                 _sessionState.value = SessionState.Listening
                 
-                val startResult = commandRepository.startListening()
-                if (startResult !is com.blindpath.base.Result.Success) {
+                commandRepository.startListening()
+                
+                // 检查是否成功启动
+                val isListening = commandRepository.isListeningFlow.value
+                if (!isListening) {
                     Timber.e("VoiceInteractionPipeline: Failed to start listening")
                     _sessionState.value = SessionState.Error("无法启动语音识别")
-                    speakWithResourceManagement("语音识别启动失败，请重试", VoiceType.ERROR)
+                    speakWithResourceManagement("语音识别启动失败，请重试", VoiceType.SYSTEM_STATUS)
                     return@launch
                 }
                 
                 // 3. 等待识别结果
+                // 等待识别结果或超时
+                var commandReceived = false
                 withTimeoutOrNull(SessionConfig().maxListeningDuration) {
-                    commandRepository.interactionState
-                        .first { state ->
-                            state.lastCommand != null || state.recognitionState == com.blindpath.module_voice.domain.model.RecognitionState.ERROR
-                        }
-                }?.let { state ->
-                    state.lastCommand?.let { result ->
-                        if (result.isSuccess && result.command != null) {
-                            // 4. 处理指令
-                            processCommand(result.command!!)
-                        } else {
-                            Timber.w("VoiceInteractionPipeline: Recognition failed - ${result.failureReason}")
-                            _sessionState.value = SessionState.Error(result.failureReason ?: "识别失败")
-                            speakWithResourceManagement("未识别的指令，请重新说", VoiceType.ERROR)
-                        }
+                    commandRepository.commandFlow.first { command ->
+                        command != VoiceCommand.UNKNOWN
                     }
-                } ?: run {
+                }?.let { command ->
+                    commandReceived = true
+                    if (command != VoiceCommand.UNKNOWN) {
+                        // 4. 处理指令
+                        processCommand(command)
+                    }
+                }
+                
+                if (!commandReceived) {
                     // 超时
                     Timber.w("VoiceInteractionPipeline: Listening timeout")
                     _sessionState.value = SessionState.Error("监听超时")
-                    speakWithResourceManagement("未检测到语音，请重试", VoiceType.ERROR)
+                    speakWithResourceManagement("未检测到语音，请重试", VoiceType.SYSTEM_STATUS)
                 }
                 
             } catch (e: CancellationException) {
@@ -172,7 +174,7 @@ class VoiceInteractionPipeline @Inject constructor(
             } catch (e: Exception) {
                 Timber.e(e, "VoiceInteractionPipeline: Session error")
                 _sessionState.value = SessionState.Error(e.message ?: "未知错误")
-                speakWithResourceManagement("语音交互出错，请重试", VoiceType.ERROR)
+                speakWithResourceManagement("语音交互出错，请重试", VoiceType.SYSTEM_STATUS)
             } finally {
                 // 停止监听
                 commandRepository.stopListening()
@@ -199,7 +201,7 @@ class VoiceInteractionPipeline @Inject constructor(
         if (success) {
             speakWithResourceManagement("指令执行成功", VoiceType.SYSTEM_STATUS)
         } else {
-            speakWithResourceManagement("指令执行失败", VoiceType.ERROR)
+            speakWithResourceManagement("指令执行失败", VoiceType.SYSTEM_STATUS)
         }
     }
     

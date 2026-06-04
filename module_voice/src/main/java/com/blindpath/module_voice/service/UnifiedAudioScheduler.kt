@@ -379,14 +379,14 @@ class UnifiedAudioScheduler @Inject constructor(
         
         // 请求音频焦点但使用 DUCK 模式
         // 这样不会打断其他音频输入
-        val request = android.media.AudioFocusRequest.Builder(android.media.AudioFocusRequest.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
+        val request = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
-            .setOnAudioFocusChangeListener { focusChange ->
+            .setOnAudioFocusChangeListener { focusChange: Int ->
                 when (focusChange) {
                     AudioManager.AUDIOFOCUS_LOSS -> {
                         Timber.d("UnifiedAudioScheduler: TTS lost audio focus")
@@ -468,8 +468,9 @@ class UnifiedAudioScheduler @Inject constructor(
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            talkBackListener?.let {
-                accessibilityManager.removeTouchExplorationStateChangeListener(it)
+            val listener = talkBackListener
+            if (listener != null) {
+                accessibilityManager.removeTouchExplorationStateChangeListener(listener)
             }
         }
         
