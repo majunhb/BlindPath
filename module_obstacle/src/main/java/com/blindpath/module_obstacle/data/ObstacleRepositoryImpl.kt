@@ -184,21 +184,11 @@ class ObstacleRepositoryImpl @Inject constructor(
             val preview = Preview.Builder().build()
             preview.setSurfaceProvider(previewProvider!!)
             previewUseCase = preview
-            // 获取当前绑定的UseCase列表
-            val currentUseCases = cameraProvider?.boundUseCases?.toMutableList() ?: mutableListOf()
-            // 如果还没有Preview，添加进去
-            if (currentUseCases.none { it is Preview }) {
-                currentUseCases.add(preview)
-                cameraProvider?.unbindAll()
-                cameraProvider?.bindToLifecycle(
-                    androidx.lifecycle.ProcessLifecycleOwner.get(),
-                    CameraSelector.DEFAULT_BACK_CAMERA,
-                    *currentUseCases.toTypedArray()
-                )
-                Timber.d("Camera rebounded with Preview + ImageAnalysis together")
-            }
+            // [修复] 不再查询boundUseCases（该API在当前CameraX版本不可用）
+            // 直接解绑后重新绑定所有用例，由startCameraSync统一处理
+            Timber.d("Preview surface provider updated, will rebind on next startCameraSync")
         } catch (e: Exception) {
-            Timber.e(e, "Failed to rebind camera with preview")
+            Timber.e(e, "Failed to update preview surface provider")
         }
     }
 

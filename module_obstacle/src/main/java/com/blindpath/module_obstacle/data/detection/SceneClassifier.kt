@@ -9,6 +9,8 @@ import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
+import kotlin.math.abs
+import kotlin.math.max
 import kotlin.math.min
 
 /**
@@ -160,7 +162,7 @@ class SceneClassifier @Inject constructor(
 
             // 如果检测到多条白色条纹，可能是斑马线
             if (whiteLineCount >= 4) {
-                val confidence = min(0.9f, 0.5f + (whiteLineCount - 4) * 0.05f)
+                val confidence = kotlin.math.min(0.9f, 0.5f + (whiteLineCount - 4) * 0.05f)
                 Timber.d("Zebra crossing detected: $whiteLineCount stripes, confidence: $confidence")
                 return Pair(SceneType.CROSSWALK, confidence)
             }
@@ -223,7 +225,7 @@ class SceneClassifier @Inject constructor(
 
             // 如果检测到多个水平边缘，可能是楼梯
             if (horizontalEdges > 20 && horizontalEdges < 100) {
-                val confidence = min(0.8f, 0.5f + (horizontalEdges - 20) * 0.005f)
+                val confidence = kotlin.math.min(0.8f, 0.5f + (horizontalEdges - 20) * 0.005f)
                 Timber.d("Stairs pattern detected: $horizontalEdges edges, confidence: $confidence")
                 return Pair(SceneType.STAIR_ENTRANCE, confidence)
             }
@@ -271,7 +273,7 @@ class SceneClassifier @Inject constructor(
             if (totalPixelCount > 0) {
                 val grayRatio = grayPixelCount.toFloat() / totalPixelCount
                 if (grayRatio > 0.5f) {
-                    val confidence = min(0.75f, 0.5f + (grayRatio - 0.5f) * 0.5f)
+                    val confidence = kotlin.math.min(0.75f, 0.5f + (grayRatio - 0.5f) * 0.5f)
                     Timber.d("Sidewalk detected: gray ratio $grayRatio, confidence: $confidence")
                     return Pair(SceneType.SIDEWALK, confidence)
                 }
@@ -291,7 +293,7 @@ class SceneClassifier @Inject constructor(
         // 检测到多个红绿灯 → 路口
         val trafficLights = obstacles.count { it.type == ObstacleType.TRAFFIC_LIGHT }
         if (trafficLights >= 1) {
-            return Pair(SceneType.TRAFFIC_SIGNAL_AREA, 0.7f + min(0.2f, trafficLights * 0.05f))
+            return Pair(SceneType.TRAFFIC_SIGNAL_AREA, 0.7f + kotlin.math.min(0.2f, trafficLights * 0.05f))
         }
 
         if (trafficLights >= 2) {
@@ -353,7 +355,7 @@ class SceneClassifier @Inject constructor(
             var indoorScore = 0   // 高=室内
             var outdoorScore = 0   // 高=室外
             var sampleCount = 0
-            val step = max(8, width / 80)
+            val step = kotlin.math.max(8, width / 80)
 
             for (y in 0 until height step step * 2) {
                 for (x in 0 until width step step) {
@@ -366,7 +368,7 @@ class SceneClassifier @Inject constructor(
 
                     // 色彩饱和度（室内通常较低，室外较高）
                     val maxC = maxOf(r, g, b).toFloat()
-                    val minC = minOf(r, g, b).toFloat()
+                    val minC = kotlin.math.minOf(r, g, b).toFloat()
                     val saturation = if (maxC > 0) (maxC - minC) / maxC else 0f
 
                     sampleCount++
@@ -394,7 +396,7 @@ class SceneClassifier @Inject constructor(
 
             if (isIndoor) {
                 // 进一步区分室内场景类型
-                val confidence = 0.55f + min(0.25f, (indoorScore - outdoorScore) / sampleCount.toFloat())
+                val confidence = 0.55f + kotlin.math.min(0.25f, (indoorScore - outdoorScore) / sampleCount.toFloat())
                 // 有大量家具类障碍物 → 更具体室内场景
                 val furnitureCount = obstacles.count {
                     it.type in listOf(ObstacleType.CHAIR, ObstacleType.TABLE,
@@ -405,7 +407,7 @@ class SceneClassifier @Inject constructor(
                 }
                 return Pair(SceneType.INDOOR_CORRIDOR, confidence)
             } else if (isOutdoor) {
-                val confidence = 0.55f + min(0.25f, (outdoorScore - indoorScore) / sampleCount.toFloat())
+                val confidence = 0.55f + kotlin.math.min(0.25f, (outdoorScore - indoorScore) / sampleCount.toFloat())
                 return Pair(SceneType.ROAD, confidence)
             }
         } catch (e: Exception) {
@@ -448,7 +450,7 @@ class SceneClassifier @Inject constructor(
                 val puddleRatio = puddlePixels.toFloat() / groundPixels
                 // 积水占比超过15%时报警
                 if (puddleRatio > 0.15f) {
-                    val confidence = min(0.85f, 0.5f + puddleRatio * 1.5f)
+                    val confidence = kotlin.math.min(0.85f, 0.5f + puddleRatio * 1.5f)
                     Timber.d("Puddle detected: ratio=$puddleRatio, confidence=$confidence")
                     return Pair(SceneType.PUDDLE, confidence)
                 }
@@ -493,7 +495,7 @@ class SceneClassifier @Inject constructor(
             }
 
             if (curbLines >= 3) {
-                val confidence = min(0.8f, 0.5f + curbLines * 0.05f)
+                val confidence = kotlin.math.min(0.8f, 0.5f + curbLines * 0.05f)
                 Timber.d("Curb detected: $curbLines lines")
                 return Pair(SceneType.CURB, confidence)
             }
@@ -540,7 +542,7 @@ class SceneClassifier @Inject constructor(
             }
 
             if (verticalEdges >= 2) {
-                val confidence = min(0.78f, 0.5f + verticalEdges * 0.06f)
+                val confidence = kotlin.math.min(0.78f, 0.5f + verticalEdges * 0.06f)
                 Timber.d("Doorway detected: $verticalEdges vertical edges")
                 return Pair(SceneType.INDOOR_DOORWAY, confidence)
             }
