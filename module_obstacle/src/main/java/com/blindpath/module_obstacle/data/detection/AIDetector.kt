@@ -206,7 +206,14 @@ class AIDetector @Inject constructor(
             }
 
             // 4. 所有方法都失败
-            Timber.w("AI模型文件无法加载，所有下载源均失败")
+            Timber.e("AI模型加载失败！可能原因：")
+            Timber.e("1. 模型文件是Git LFS占位符（仅9字节），需要下载真实模型")
+            Timber.e("2. 网络连接失败，无法从镜像下载模型")
+            Timber.e("3. 模型文件路径错误")
+            Timber.e("解决方案：")
+            Timber.e("- 开发环境：手动下载 yolov8n.tflite 到 app/src/main/assets/")
+            Timber.e("- 下载地址：https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite")
+            Timber.e("- CI环境：已自动配置下载步骤")
             isLoaded = false
             return false
             
