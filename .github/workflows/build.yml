@@ -95,22 +95,26 @@ jobs:
           # 方法2: 使用 Python + ultralytics 导出 TFLite 模型
           echo "LFS failed, exporting TFLite model via Python..."
           pip install ultralytics --quiet
-          python3 -c "
+          python3 << 'PYEOF'
 from ultralytics import YOLO
 import os
+import glob
+import shutil
+
 model = YOLO('yolov8n')
 model.export(format='tflite', imgsz=320)
+
 # 找到导出的文件并复制
-import glob
 files = glob.glob('yolov8n*.tflite')
 if files:
-    import shutil
-    shutil.copy(files[0], '$MODEL_FILE')
-    print(f'Exported {files[0]} to $MODEL_FILE')
+    target = os.environ.get('MODEL_FILE', 'app/src/main/assets/yolov8n.tflite')
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    shutil.copy(files[0], target)
+    print(f'Exported {files[0]} to {target}')
 else:
     print('Export failed')
     exit(1)
-"
+PYEOF
           ls -lh "$MODEL_FILE"
           FILE_SIZE=$(wc -c < "$MODEL_FILE")
           echo "Final model file size: $FILE_SIZE bytes"
