@@ -67,7 +67,7 @@ jobs:
          
       - name: Download AI model (yolov8n.tflite)
         run: |
-          MODEL_FILE="module_obstacle/src/main/assets/yolov8n.tflite"
+          MODEL_FILE="app/src/main/assets/yolov8n.tflite"
           FILE_SIZE=0
           if [ -f "$MODEL_FILE" ]; then
             FILE_SIZE=$(wc -c < "$MODEL_FILE")
@@ -75,19 +75,33 @@ jobs:
           echo "Current model file size: $FILE_SIZE bytes"
           if [ ! -f "$MODEL_FILE" ] || [ "$FILE_SIZE" -lt 1024 ]; then
             mkdir -p "$(dirname "$MODEL_FILE")"
-            # 优先从项目自己的 Release 下载（非LFS的真实文件）
-            echo "Downloading yolov8n.tflite from project release..."
-            curl -L --fail -o "$MODEL_FILE" "https://github.com/majunhb/BlindPath/releases/download/models-v1/yolov8n.tflite" && \
+            # 方法1: 使用 git-lfs 拉取真实模型（GitHub runner 支持 LFS）
+            echo "Trying git-lfs to fetch real model..."
+            git lfs install
+            git lfs pull --include="*.tflite" 2>/dev/null
+            if [ -f "$MODEL_FILE" ]; then
+              FILE_SIZE=$(wc -c < "$MODEL_FILE")
+              if [ "$FILE_SIZE" -gt 1024 ]; then
+                echo "✅ Model fetched via git-lfs: $FILE_SIZE bytes"
+                ls -lh "$MODEL_FILE"
+                exit 0
+              fi
+            fi
+            # 方法2: 从项目 Release 下载
+            echo "LFS failed, trying project release..."
+            curl -L --fail --max-time 120 -o "$MODEL_FILE" "https://github.com/majunhb/BlindPath/releases/download/models-v1/yolov8n.tflite" 2>/dev/null && \
             echo "Downloaded from project release" || \
+            # 方法3: 从 ultralytics 下载（GitHub runner 可直接访问）
             (echo "Project release failed, trying ultralytics..." && \
-             curl -L --fail -o "$MODEL_FILE" "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite" && \
+             curl -L --fail --max-time 120 -o "$MODEL_FILE" "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite" && \
              echo "Downloaded from ultralytics")
           fi
           ls -lh "$MODEL_FILE"
           FILE_SIZE=$(wc -c < "$MODEL_FILE")
           echo "Final model file size: $FILE_SIZE bytes"
           if [ "$FILE_SIZE" -lt 1024 ]; then
-            echo "::warning::Model file is too small ($FILE_SIZE bytes), obstacle detection will not work. Please upload the real model to the 'models-v1' release."
+            echo "::error::Model file is too small ($FILE_SIZE bytes). Obstacle detection will NOT work!"
+            exit 1
           fi
 
 
