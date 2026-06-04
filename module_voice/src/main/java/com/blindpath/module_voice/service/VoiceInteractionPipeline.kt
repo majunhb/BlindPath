@@ -9,7 +9,6 @@ import com.blindpath.module_voice.domain.VoiceCommandRepository
 import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.domain.model.VoiceCommand
 import com.blindpath.module_voice.domain.model.VoiceType
-import com.blindpath.module_voice.domain.model.RecognitionState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -136,33 +135,37 @@ class VoiceInteractionPipeline @Inject constructor(
                 // 2. 启动 ASR 监听
                 _sessionState.value = SessionState.Listening
                 
-                commandRepository.startListening()
+                // 3. 等待识别结果
+                val startResult = commandRepository.startListening()
                 
-                // 检查是否成功启动
-                val isListening = commandRepository.isListeningFlow.value
-                if (!isListening) {
+                if (startResult !is com.blindpath.base.common.Result.Success || !startResult.data) {
                     Timber.e("VoiceInteractionPipeline: Failed to start listening")
                     _sessionState.value = SessionState.Error("无法启动语音识别")
                     speakWithResourceManagement("语音识别启动失败，请重试", VoiceType.SYSTEM_STATUS)
                     return@launch
                 }
                 
-                // 3. 等待识别结果
-                // 等待识别结果或超时
-                var commandReceived = false
+                // 4. 等待识别结果或超时
+                var commandProcessed = false
                 withTimeoutOrNull(SessionConfig().maxListeningDuration) {
-                    commandRepository.commandFlow.first { command ->
-                        command != VoiceCommand.UNKNOWN
+                    // 监听 interactionState 变化
+                    commandRepository.interactionState.first { state ->
+                        state.lastCommand != null
                     }
-                }?.let { command ->
-                    commandReceived = true
-                    if (command != VoiceCommand.UNKNOWN) {
-                        // 4. 处理指令
-                        processCommand(command)
+                }?.let { state ->
+                    commandProcessed = true
+                    state.lastCommand?.let { result ->
+                        if (result.isSuccess && result.command != null) {
+                            processCommand(result.command)
+                        } else {
+                            Timber.w("VoiceInteractionPipeline: Recognition failed - ${result.failureReason}")
+                            _sessionState.value = SessionState.Error(result.failureReason ?: "识别失败")
+                            speakWithResourceManagement("未识别的指令，请重新说", VoiceType.SYSTEM_STATUS)
+                        }
                     }
                 }
                 
-                if (!commandReceived) {
+                if (!commandProcessed) {
                     // 超时
                     Timber.w("VoiceInteractionPipeline: Listening timeout")
                     _sessionState.value = SessionState.Error("监听超时")

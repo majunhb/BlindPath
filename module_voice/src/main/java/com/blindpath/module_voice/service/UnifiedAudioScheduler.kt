@@ -240,7 +240,10 @@ class UnifiedAudioScheduler @Inject constructor(
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            accessibilityManager.addTouchExplorationStateChangeListener(talkBackListener)
+            val listener = talkBackListener
+            if (listener != null) {
+                accessibilityManager.addTouchExplorationStateChangeListener(listener)
+            }
         }
     }
     
