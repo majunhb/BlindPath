@@ -176,15 +176,18 @@ class BluetoothDeviceMonitor @Inject constructor(
                         onHeadsetConnectionStateChanged(state)
                     }
                     
-                    BluetoothDevice.ACTION_BATTERY_LEVEL_CHANGED -> {
-                        val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
-                        } else {
-                            @Suppress("DEPRECATION")
-                            intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    // 电池电量变化 - 只在 Android P+ 处理
+                    "android.bluetooth.device.action.BATTERY_LEVEL_CHANGED" -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                            val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                intent?.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                            } else {
+                                @Suppress("DEPRECATION")
+                                intent?.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                            }
+                            val level = intent?.getIntExtra("android.bluetooth.device.extra.BATTERY_LEVEL", -1) ?: -1
+                            device?.let { onBatteryLevelChanged(it, level) }
                         }
-                        val level = intent.getIntExtra(BluetoothDevice.EXTRA_BATTERY_LEVEL, -1)
-                        device?.let { onBatteryLevelChanged(it, level) }
                     }
                 }
             }
@@ -195,7 +198,7 @@ class BluetoothDeviceMonitor @Inject constructor(
             addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
             addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                addAction(BluetoothDevice.ACTION_BATTERY_LEVEL_CHANGED)
+                addAction("android.bluetooth.device.action.BATTERY_LEVEL_CHANGED")
             }
         }
         
@@ -241,7 +244,7 @@ class BluetoothDeviceMonitor @Inject constructor(
             _bluetoothState.update { state ->
                 state.copy(
                     isConnected = true,
-                    deviceName = device.productName,
+                    deviceName = device.productName?.toString() ?: "未知设备",
                     deviceType = deviceType,
                     supportsSco = true
                 )
@@ -280,7 +283,7 @@ class BluetoothDeviceMonitor @Inject constructor(
      * 检测设备类型
      */
     private fun detectDeviceType(device: AudioDeviceInfo): DeviceType {
-        val productName = device.productName.lowercase()
+        val productName = device.productName?.toString()?.lowercase() ?: ""
         
         return when {
             productName.contains("bone") || productName.contains("骨传导") -> {

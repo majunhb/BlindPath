@@ -89,7 +89,7 @@ class UnifiedAudioScheduler @Inject constructor(
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     
     // 读屏服务监听
-    private var talkBackListener: AccessibilityManager.AccessibilityStateChangeListener? = null
+    private var talkBackListener: AccessibilityManager.TouchExplorationStateChangeListener? = null
     
     data class ModuleRequest(
         val module: AudioModule,
@@ -220,8 +220,8 @@ class UnifiedAudioScheduler @Inject constructor(
         _audioState.update { it.copy(isTalkBackActive = isTalkBackActive) }
         
         // 监听读屏服务状态变化
-        talkBackListener = AccessibilityManager.AccessibilityStateChangeListener { enabled ->
-            val isActive = accessibilityManager.isTouchExplorationEnabled
+        talkBackListener = AccessibilityManager.TouchExplorationStateChangeListener { enabled ->
+            val isActive = enabled
             
             _audioState.update { it.copy(isTalkBackActive = isActive) }
             
@@ -240,7 +240,7 @@ class UnifiedAudioScheduler @Inject constructor(
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            accessibilityManager.addAccessibilityStateChangeListener(talkBackListener)
+            accessibilityManager.addTouchExplorationStateChangeListener(talkBackListener)
         }
     }
     
@@ -469,7 +469,7 @@ class UnifiedAudioScheduler @Inject constructor(
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             talkBackListener?.let {
-                accessibilityManager.removeAccessibilityStateChangeListener(it)
+                accessibilityManager.removeTouchExplorationStateChangeListener(it)
             }
         }
         

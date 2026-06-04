@@ -136,7 +136,7 @@ class VoiceInteractionPipeline @Inject constructor(
                 _sessionState.value = SessionState.Listening
                 
                 val startResult = commandRepository.startListening()
-                if (startResult !is com.blindpath.base.common.Result.Success) {
+                if (startResult !is com.blindpath.base.Result.Success) {
                     Timber.e("VoiceInteractionPipeline: Failed to start listening")
                     _sessionState.value = SessionState.Error("无法启动语音识别")
                     speakWithResourceManagement("语音识别启动失败，请重试", VoiceType.ERROR)
