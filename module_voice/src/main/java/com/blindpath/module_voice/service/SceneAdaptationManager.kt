@@ -72,13 +72,49 @@ class SceneAdaptationManager @Inject constructor(
     private var noiseDetector: MediaRecorder? = null
     
     /**
-     * 启动场景监控
+     * 启动环境噪音检测
      */
-    fun startMonitoring() {
-        if (monitoringJob?.isActive == true) {
-            Timber.w("Scene monitoring already running")
+    private fun startNoiseDetection() {
+        if (noiseDetector != null) {
+            Timber.w("Noise detection already running")
             return
         }
+        
+        try {
+            // 检查录音权限
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) 
+                != PackageManager.PERMISSION_GRANTED) {
+                Timber.w("RECORD_AUDIO permission not granted, skip noise detection")
+                return
+            }
+            
+            noiseDetector = MediaRecorder().apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                setOutputFile("${context.cacheDir.absolutePath}/noise_detect.tmp")
+                
+                prepare()
+                start()
+            }
+            
+            // 启动噪音检测协程
+            scope.launch {
+                while (isActive && noiseDetector != null) {
+                    val amplitude = noiseDetector?.maxAmplitude ?: 0
+                    val normalizedNoise = normalizeNoiseLevel(amplitude)
+                    noiseLevel.set(normalizedNoise)
+                    
+                    delay(NOISE_DETECTION_INTERVAL_MS)
+                }
+            }
+            
+            Timber.d("Noise detection started")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to start noise detection, disable noise-based scene adaptation")
+            noiseDetector = null
+        }
+    }
         
         monitoringJob = scope.launch {
             Timber.d("Scene monitoring started")

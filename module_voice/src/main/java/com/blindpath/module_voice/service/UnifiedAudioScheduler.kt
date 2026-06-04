@@ -186,12 +186,12 @@ class UnifiedAudioScheduler @Inject constructor(
         
         // 检查是否需要切换持有者
         val currentHolder = _audioState.value.currentHolder
-        if (currentHolder != highestPriorityRequest.module && currentHolder != AudioModule.TALKBACK) {
+        if (currentHolder != null && currentHolder != highestPriorityRequest.module && currentHolder != AudioModule.TALKBACK) {
             // 通知旧持有者失去资源
             activeHolders[currentHolder]?.onRequestLost?.invoke()
             activeHolders.remove(currentHolder)
             
-            Timber.i("UnifiedAudioScheduler: Switching from ${currentHolder?.description} to ${highestPriorityRequest.module.description}")
+            Timber.i("UnifiedAudioScheduler: Switching from ${currentHolder.description} to ${highestPriorityRequest.module.description}")
         }
         
         // 授予新持有者资源
