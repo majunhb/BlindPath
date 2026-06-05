@@ -39,38 +39,35 @@ jobs:
           ls "$ANDROID_SDK_ROOT/platforms/" 2>/dev/null || true
           ls "$ANDROID_SDK_ROOT/build-tools/" 2>/dev/null || true
 
-      - name: Configure mirrors
+      - name: Configure Gradle
         run: |
-          # [镜像] Gradle 依赖下载加速 - 使用阿里云镜像（不通过代理）
+          # GitHub Actions 运行在国外，使用官方仓库更稳定
+          # 国内用户本地构建时可自行配置 ~/.gradle/init.gradle
           mkdir -p ~/.gradle
           cat > ~/.gradle/init.gradle << 'GRADLE_EOF'
           allprojects {
               buildscript {
                   repositories {
-                      maven { url 'https://maven.aliyun.com/repository/public' }
-                      maven { url 'https://maven.aliyun.com/repository/google' }
-                      maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
                       google()
                       mavenCentral()
+                      maven { url 'https://plugins.gradle.org/m2/' }
                   }
               }
               repositories {
-                  maven { url 'https://maven.aliyun.com/repository/public' }
-                  maven { url 'https://maven.aliyun.com/repository/google' }
-                  maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
                   google()
                   mavenCentral()
+                  maven { url 'https://jitpack.io' }
               }
           }
           GRADLE_EOF
-          echo "Gradle init script configured with Aliyun mirrors"
+          echo "Gradle init script configured with official repositories"
 
           # Git LFS 并发传输
           git config --global lfs.concurrenttransfers 8
 
           # 环境变量
           echo "GRADLE_OPTS=-Dorg.gradle.daemon=false -Dorg.gradle.internal.network.timeout=300000" >> $GITHUB_ENV
-          echo "Configured mirrors for faster downloads"
+          echo "Configured Gradle with official repositories"
 
 
       - name: Cache Gradle packages
