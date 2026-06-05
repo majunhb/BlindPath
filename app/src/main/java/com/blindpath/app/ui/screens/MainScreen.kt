@@ -438,6 +438,9 @@ private fun SmartDashboard(
                 },
                 onToolsClick = onSettingsClick,
                 onSosClick = onSosClick,
+                // [v3 修复] 环境感知按钮：底部栏直接切换，视障用户无需找摄像头点击区域
+                isObstacleActive = showObstacleDetection,
+                onObstacleToggle = onObstacleToggle,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
@@ -905,6 +908,9 @@ private fun DashboardBottomBar(
     onExploreClick: () -> Unit,
     onToolsClick: () -> Unit,
     onSosClick: () -> Unit,
+    // [v3 修复] 环境感知按钮参数
+    isObstacleActive: Boolean = false,
+    onObstacleToggle: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -916,6 +922,15 @@ private fun DashboardBottomBar(
             isListening = isListening,
             onClick = onWakeUpClick,
             modifier = Modifier.weight(1f)
+        )
+
+        // [v3 修复] 环境感知 — 视障用户可直接点击，无需找摄像头区域
+        QuickActionChip(
+            label = if (isObstacleActive) "感知中" else "感知",
+            icon = Icons.Default.Visibility,
+            onClick = onObstacleToggle,
+            color = if (isObstacleActive) Color(0xFF00BCD4) else Color(0xFF607D8B),
+            modifier = Modifier.weight(0.55f)
         )
 
         // [辅助] 周边探索
