@@ -1350,9 +1350,11 @@ private fun ObstacleDetectionContent(
                     },
                     modifier = Modifier.fillMaxSize(),
                     update = { previewView ->
-                        // 将 SurfaceProvider 传给 Repository，由它统一绑定摄像头
+                        // [修复] 将 SurfaceProvider 和 LifecycleOwner 传给 Repository
+                        // 确保 Preview 和 ImageAnalysis 绑定到同一个生命周期，避免竞争
+                        obstacleRepository.setLifecycleOwner(lifecycleOwner)
                         obstacleRepository.setPreviewSurfaceProvider(previewView.surfaceProvider)
-                        Timber.d("ObstacleDetectionContent: SurfaceProvider passed to repository")
+                        Timber.d("ObstacleDetectionContent: SurfaceProvider + LifecycleOwner passed to repository")
                     }
                 )
                 

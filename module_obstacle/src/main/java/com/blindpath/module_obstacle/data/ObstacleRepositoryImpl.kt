@@ -67,6 +67,10 @@ class ObstacleRepositoryImpl @Inject constructor(
 
     private var isCameraStarting = false
     private var isCameraStarted = false
+    
+    // [修复] 使用外部传入的生命周期，而不是 ProcessLifecycleOwner
+    // 这样 Preview 和 ImageAnalysis 绑定到同一个生命周期，避免竞争
+    private var lifecycleOwner: androidx.lifecycle.LifecycleOwner? = null
 
     override suspend fun initialize(): Result<Boolean> {
         return try {
@@ -163,6 +167,14 @@ class ObstacleRepositoryImpl @Inject constructor(
     }
 
     override fun getLatestObstacles(): List<DetectedObstacle> = latestObstacles
+
+    /**
+     * [修复] 设置生命周期所有者，确保 Preview 和 ImageAnalysis 绑定到同一个生命周期
+     */
+    fun setLifecycleOwner(owner: androidx.lifecycle.LifecycleOwner) {
+        lifecycleOwner = owner
+        Timber.d("LifecycleOwner set to: $owner")
+    }
 
     override fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider) {
         // [修复] 存储SurfaceProvider，在startCameraSync中与ImageAnalysis统一绑定
@@ -339,8 +351,10 @@ class ObstacleRepositoryImpl @Inject constructor(
                         arrayOf(imageAnalysis)
                     }
 
+                    // [修复] 使用外部传入的生命周期，确保 Preview 和 ImageAnalysis 绑定一致
+                    val targetLifecycle = lifecycleOwner ?: androidx.lifecycle.ProcessLifecycleOwner.get()
                     cameraProvider?.bindToLifecycle(
-                        androidx.lifecycle.ProcessLifecycleOwner.get(),
+                        targetLifecycle,
                         cameraSelector,
                         *useCases
                     )
