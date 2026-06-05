@@ -89,7 +89,7 @@ class WakeWordBridgeService : Service() {
             setShowBadge(false)
         }
 
-        val notificationManager = getSystemService(android.app.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val notificationManager = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         notificationManager.createNotificationChannel(channel)
     }
 }
