@@ -167,6 +167,47 @@ class ObstacleRepositoryImpl @Inject constructor(
     }
 
     override fun getLatestObstacles(): List<DetectedObstacle> = latestObstacles
+    
+    /**
+     * [增强] 场景识别 - 基于检测到的物体组合和图像特征推断场景
+     */
+    private fun recognizeScene(bitmap: Bitmap, obstacles: List<DetectedObstacle>): SceneType {
+        // 基于检测到的物体类型推断场景
+        val types = obstacles.map { it.type }.toSet()
+        
+        return when {
+            // 医院场景：病床 + 轮椅 + 白大褂人员
+            types.contains(ObstacleType.BED) && types.contains(ObstacleType.PERSON) -> SceneType.HOSPITAL_AREA
+            
+            // 银行场景：柜台 + 座椅 + 人员
+            types.contains(ObstacleType.CHAIR) && types.contains(ObstacleType.TABLE) && 
+            obstacles.count { it.type == ObstacleType.PERSON } > 3 -> SceneType.BANK_AREA
+            
+            // 学校场景：多人 + 桌椅
+            obstacles.count { it.type == ObstacleType.PERSON } > 5 -> SceneType.SCHOOL_AREA
+            
+            // 商场场景：多人 + 商品/设施
+            types.contains(ObstacleType.POTTED_PLANT) && obstacles.count { it.type == ObstacleType.PERSON } > 3 -> SceneType.SHOPPING_MALL
+            
+            // 餐厅场景：桌椅 + 少量人员
+            types.contains(ObstacleType.CHAIR) && types.contains(ObstacleType.TABLE) -> SceneType.RESTAURANT
+            
+            // 楼梯间
+            types.contains(ObstacleType.STAIRS) || types.contains(ObstacleType.STEP_UP) -> SceneType.INDOOR_STAIRS
+            
+            // 路口：红绿灯 + 斑马线
+            types.contains(ObstacleType.TRAFFIC_LIGHT) && types.contains(ObstacleType.ZEBRA_CROSSING) -> SceneType.INTERSECTION
+            
+            // 斑马线区域
+            types.contains(ObstacleType.ZEBRA_CROSSING) -> SceneType.CROSSWALK
+            
+            // 人行道：路沿 + 行人
+            types.contains(ObstacleType.CURB) && types.contains(ObstacleType.PERSON) -> SceneType.SIDEWALK
+            
+            // 默认
+            else -> SceneType.UNKNOWN
+        }
+    }
 
     /**
      * [修复] 设置生命周期所有者，确保 Preview 和 ImageAnalysis 绑定到同一个生命周期

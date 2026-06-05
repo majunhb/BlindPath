@@ -46,6 +46,12 @@ class AIDetector @Inject constructor(
     // 复用缓冲区，避免逐帧分配 GC 抖动
     private var inputBuffer: ByteBuffer? = null
     private var scaledBitmap: Bitmap? = null
+    
+    // [增强] 辅助检测模式 - 模型未加载时使用
+    private var useAssistedDetection = false
+    private var lastFrame: Bitmap? = null
+    private var frameCounter = 0
+    private val ASSIST_FRAME_SKIP = 3  // 每3帧处理1帧
 
     // 模型配置 - 支持多个路径（兼容不同模块的assets目录）
     private val modelPath = "yolov8n.tflite"
@@ -213,16 +219,15 @@ class AIDetector @Inject constructor(
                 Timber.w("Mirror #${index + 1} download failed or file invalid")
             }
 
-            // 4. 所有方法都失败
-            Timber.e("AI模型加载失败！可能原因：")
-            Timber.e("1. 模型文件是Git LFS占位符（仅9字节），需要下载真实模型")
-            Timber.e("2. 网络连接失败，无法从镜像下载模型")
-            Timber.e("3. 模型文件路径错误")
-            Timber.e("解决方案：")
-            Timber.e("- 开发环境：手动下载 yolov8n.tflite 到 app/src/main/assets/")
-            Timber.e("- 下载地址：https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.tflite")
-            Timber.e("- CI环境：已自动配置下载步骤")
+            // 4. 所有方法都失败 - 启用辅助检测模式
+            Timber.w("AI模型加载失败，启用辅助检测模式")
+            Timber.w("可能原因：")
+            Timber.w("1. 模型文件是Git LFS占位符（仅9字节），需要下载真实模型")
+            Timber.w("2. 网络连接失败，无法从镜像下载模型")
+            Timber.w("3. 模型文件路径错误")
+            Timber.w("辅助检测模式将使用运动检测和边缘检测提供基础障碍物提示")
             isLoaded = false
+            useAssistedDetection = true
             return false
             
         } catch (e: Exception) {
@@ -349,13 +354,20 @@ class AIDetector @Inject constructor(
      * 检测障碍物
      */
     suspend fun detect(bitmap: Bitmap): List<DetectedObstacle> {
-        if (!isLoaded) {
-            return emptyList()
+        frameCounter++
+        
+        // [增强] 跳帧处理 - 每3帧处理1帧，提高FPS
+        if (frameCounter % ASSIST_FRAME_SKIP != 0 && isLoaded) {
+            return emptyList()  // 跳过此帧，降低CPU负载
         }
-
-        if (interpreter == null) {
-            // 模拟模式：返回空列表（摄像头正常工作，但不检测）
-            return emptyList()
+        
+        if (!isLoaded || interpreter == null) {
+            // [增强] 模型未加载时使用辅助检测
+            return if (useAssistedDetection) {
+                assistedDetect(bitmap)
+            } else {
+                emptyList()
+            }
         }
 
         return try {
@@ -377,6 +389,136 @@ class AIDetector @Inject constructor(
             Timber.e(e, "Detection failed")
             emptyList()
         }
+    }
+    
+    /**
+     * [增强] 辅助检测模式 - 模型未加载时使用图像处理技术
+     * 检测：大物体、运动物体、明显边缘
+     */
+    private fun assistedDetect(bitmap: Bitmap): List<DetectedObstacle> {
+        val results = mutableListOf<DetectedObstacle>()
+        
+        try {
+            // 1. 运动检测 - 对比前后帧
+            lastFrame?.let { last ->
+                if (last.width == bitmap.width && last.height == bitmap.height) {
+                    val motionRegions = detectMotion(last, bitmap)
+                    results.addAll(motionRegions)
+                }
+            }
+            
+            // 2. 边缘检测 - 检测明显障碍物轮廓
+            val edgeRegions = detectEdges(bitmap)
+            results.addAll(edgeRegions)
+            
+            // 保存当前帧用于下次运动检测
+            lastFrame = bitmap.copy(Bitmap.Config.ARGB_8888, false)
+            
+        } catch (e: Exception) {
+            Timber.w(e, "Assisted detection failed")
+        }
+        
+        return results
+    }
+    
+    /**
+     * 运动检测 - 检测画面中的运动物体
+     */
+    private fun detectMotion(prev: Bitmap, curr: Bitmap): List<DetectedObstacle> {
+        val results = mutableListOf<DetectedObstacle>()
+        val width = curr.width
+        val height = curr.height
+        
+        // 采样检测（降低分辨率加速）
+        val sampleStep = 10
+        var diffPixels = 0
+        val motionRegions = mutableListOf<Pair<Float, Float>>()
+        
+        for (y in 0 until height step sampleStep) {
+            for (x in 0 until width step sampleStep) {
+                val prevPixel = prev.getPixel(x, y)
+                val currPixel = curr.getPixel(x, y)
+                
+                val diff = kotlin.math.abs((prevPixel and 0xFF) - (currPixel and 0xFF)) +
+                          kotlin.math.abs(((prevPixel shr 8) and 0xFF) - ((currPixel shr 8) and 0xFF)) +
+                          kotlin.math.abs(((prevPixel shr 16) and 0xFF) - ((currPixel shr 16) and 0xFF))
+                
+                if (diff > 50) {
+                    diffPixels++
+                    motionRegions.add(x.toFloat() / width to y.toFloat() / height)
+                }
+            }
+        }
+        
+        // 如果运动像素足够多，生成一个运动障碍物提示
+        val motionRatio = diffPixels.toFloat() / ((width / sampleStep) * (height / sampleStep))
+        if (motionRatio > 0.1f && motionRegions.isNotEmpty()) {
+            val avgX = motionRegions.map { it.first }.average().toFloat()
+            val avgY = motionRegions.map { it.second }.average().toFloat()
+            
+            val direction = when {
+                avgX < 0.33f -> Direction.LEFT
+                avgX > 0.66f -> Direction.RIGHT
+                else -> Direction.CENTER
+            }
+            
+            results.add(DetectedObstacle(
+                type = ObstacleType.PERSON,  // 假设运动物体可能是人
+                confidence = 0.3f,
+                distance = 3f,
+                direction = direction,
+                boundingBox = BoundingBox(
+                    (avgX - 0.1f).coerceAtLeast(0f),
+                    (avgY - 0.1f).coerceAtLeast(0f),
+                    (avgX + 0.1f).coerceAtMost(1f),
+                    (avgY + 0.1f).coerceAtMost(1f)
+                )
+            ))
+        }
+        
+        return results
+    }
+    
+    /**
+     * 边缘检测 - 检测画面中的明显边缘（路沿、台阶等）
+     */
+    private fun detectEdges(bitmap: Bitmap): List<DetectedObstacle> {
+        val results = mutableListOf<DetectedObstacle>()
+        val width = bitmap.width
+        val height = bitmap.height
+        
+        // 检测水平边缘（可能是路沿、台阶）
+        val sampleY = height * 2 / 3  // 检测画面下方1/3区域
+        var edgeCount = 0
+        var edgeX = 0f
+        
+        for (x in 1 until width - 1) {
+            val topPixel = bitmap.getPixel(x, sampleY - 5)
+            val bottomPixel = bitmap.getPixel(x, sampleY + 5)
+            
+            val diff = kotlin.math.abs((topPixel and 0xFF) - (bottomPixel and 0xFF)) +
+                      kotlin.math.abs(((topPixel shr 8) and 0xFF) - ((bottomPixel shr 8) and 0xFF)) +
+                      kotlin.math.abs(((topPixel shr 16) and 0xFF) - ((bottomPixel shr 16) and 0xFF))
+            
+            if (diff > 80) {
+                edgeCount++
+                edgeX += x
+            }
+        }
+        
+        // 如果检测到连续边缘，可能是路沿
+        if (edgeCount > width / 4) {
+            val avgX = edgeX / edgeCount / width
+            results.add(DetectedObstacle(
+                type = ObstacleType.CURB,
+                confidence = 0.25f,
+                distance = 2f,
+                direction = if (avgX < 0.5f) Direction.LEFT else Direction.RIGHT,
+                boundingBox = BoundingBox(0f, 0.6f, 1f, 0.8f)
+            ))
+        }
+        
+        return results
     }
 
     /**
