@@ -196,11 +196,43 @@ class ObstacleRepositoryImpl @Inject constructor(
             val preview = Preview.Builder().build()
             preview.setSurfaceProvider(previewProvider!!)
             previewUseCase = preview
-            // [修复] 不再查询boundUseCases（该API在当前CameraX版本不可用）
-            // 直接解绑后重新绑定所有用例，由startCameraSync统一处理
-            Timber.d("Preview surface provider updated, will rebind on next startCameraSync")
+            
+            // [关键修复] 真正重新绑定 Preview + ImageAnalysis
+            cameraProvider?.unbindAll()
+            
+            val targetLifecycle = lifecycleOwner ?: androidx.lifecycle.ProcessLifecycleOwner.get()
+            val cameraSelector = if (useFrontCamera) {
+                CameraSelector.DEFAULT_FRONT_CAMERA
+            } else {
+                CameraSelector.DEFAULT_BACK_CAMERA
+            }
+            
+            // 重新创建 ImageAnalysis（因为之前的已经被 unbind）
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                .build()
+            
+            val executor = cameraExecutor ?: Executors.newSingleThreadExecutor().also { cameraExecutor = it }
+            imageAnalysis.setAnalyzer(executor) { imageProxy ->
+                try {
+                    processImage(imageProxy)
+                } catch (e: Exception) {
+                    Timber.e(e, "Image analysis error")
+                    imageProxy.close()
+                }
+            }
+            
+            cameraProvider?.bindToLifecycle(
+                targetLifecycle,
+                cameraSelector,
+                preview,
+                imageAnalysis
+            )
+            
+            Timber.d("Preview + ImageAnalysis rebound successfully")
         } catch (e: Exception) {
-            Timber.e(e, "Failed to update preview surface provider")
+            Timber.e(e, "Failed to rebind camera with preview")
         }
     }
 
