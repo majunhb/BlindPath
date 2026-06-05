@@ -21,6 +21,8 @@ import com.blindpath.module_obstacle.data.detection.AIDetector
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.*
+import com.blindpath.module_voice.domain.VoiceRepository
+import com.blindpath.module_voice.domain.model.VoiceType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,7 +40,8 @@ import javax.inject.Singleton
 class ObstacleRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val aiDetector: AIDetector,
-    private val sceneClassifier: SceneClassifier
+    private val sceneClassifier: SceneClassifier,
+    private val voiceRepository: VoiceRepository
 ) : ObstacleRepository {
 
     private val _state = MutableStateFlow(ObstacleState())
@@ -523,6 +526,17 @@ class ObstacleRepositoryImpl @Inject constructor(
 
                     // 处理场景变化
                     processSceneChange(sceneResult)
+                    
+                    // [增强] 如果检测到障碍物，也进行语音播报
+                    if (obstacles.isNotEmpty()) {
+                        val closest = obstacles.minByOrNull { it.distance }
+                        closest?.let {
+                            if (it.distance < 2f) {
+                                val msg = "前方${it.distance.toInt()}米有${it.type.chineseName}"
+                                voiceRepository.announce(msg, VoiceType.OBSTACLE_NORMAL)
+                            }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Image processing failed")
@@ -577,6 +591,14 @@ class ObstacleRepositoryImpl @Inject constructor(
             _state.update { it.copy(currentAlert = uiAlert) }
             lastAlertTime = currentTime
 
+            // [关键修复] 语音播报 - 让视障用户听到预警
+            val voiceType = when (alertLevel) {
+                AlertLevel.DANGER -> VoiceType.OBSTACLE_DANGER
+                AlertLevel.WARNING -> VoiceType.OBSTACLE_NORMAL
+                AlertLevel.SAFE -> VoiceType.NAVIGATION_TURN
+            }
+            voiceRepository.announce(message, voiceType)
+
             Timber.d("Alert: ${alertLevel.name} - $message (${obstacle.distance}m)")
         }
 
@@ -587,6 +609,8 @@ class ObstacleRepositoryImpl @Inject constructor(
             if (uniqueTypes.size > 1) {
                 // 有多种类型的近距离障碍物，生成综合播报
                 val multiAlertMessage = generateMultiObstacleMessage(nearObstacles)
+                // [关键修复] 语音播报多障碍物提示
+                voiceRepository.announce(multiAlertMessage, VoiceType.OBSTACLE_NORMAL)
                 Timber.d("Multi-obstacle alert: $multiAlertMessage")
                 lastMultiObstacleAnnouncement = currentTime
             }
