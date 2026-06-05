@@ -6,7 +6,7 @@ import android.os.Build
 import com.blindpath.base.common.Result
 import com.blindpath.module_voice.domain.*
 import com.blindpath.module_voice.domain.model.*
-import com.blindpath.module_voice.service.WakeWordService
+import com.blindpath.module_voice.service.WakeWordServiceEnhanced
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -257,10 +257,34 @@ class VoiceInteractionManagerImpl @Inject constructor(
      * WakeWordService 包含百度/讯飞唤醒引擎，是低功耗、高可靠性的唤醒词检测方案。
      * 不启动此服务 = 唤醒词功能缺失 50%+ 的检测能力。
      */
+    /**
+     * 启动增强版唯醒服务（如果已由 BlindPathApp 启动则跳过）
+     *
+     * ★★★ 核心修复：
+     * - 原代码 VoiceInteractionManagerImpl 启动旧版 WakeWordService
+     * - BlindPathApp.onCreate() 已经启动了 WakeWordServiceEnhanced
+     * - 两个服务同时使用 foregroundServiceType="microphone" → 麦克风资源锁死
+     *
+     * 新策略：不再重复启动，统一通过 WakeWordServiceEnhanced 处理唐醒词检测
+     * VoiceInteractionManagerImpl 只负责 SpeechRecognizer（ASR 指令识别），不再管理唤醒服务生命周期
+     */
     private fun startWakeWordService() {
         try {
-            val intent = Intent(context, WakeWordService::class.java).apply {
-                action = WakeWordService.ACTION_START
+            // 检查 WakeWordServiceEnhanced 是否已由 BlindPathApp 启动（避免重复启动争麦克风）
+            val activityManager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE)
+                as android.app.ActivityManager
+            val enhancedServiceRunning = activityManager.getRunningServices(Int.MAX_VALUE)?.any {
+                it.service.className == WakeWordServiceEnhanced::class.java.name
+            } ?: false
+
+            if (enhancedServiceRunning) {
+                Timber.i("VoiceInteraction: WakeWordServiceEnhanced already running (started by BlindPathApp), skip duplicate start")
+                return
+            }
+
+            // BlindPathApp 未启动（比如单元测试环境），这里启动增强版作为备用
+            val intent = Intent(context, WakeWordServiceEnhanced::class.java).apply {
+                action = WakeWordServiceEnhanced.ACTION_START
                 setPackage(context.packageName)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -268,9 +292,9 @@ class VoiceInteractionManagerImpl @Inject constructor(
             } else {
                 context.startService(intent)
             }
-            Timber.i("VoiceInteraction: ★★★ WakeWordService started - external wake word engine now active")
+            Timber.i("VoiceInteraction: WakeWordServiceEnhanced started as fallback")
         } catch (e: Exception) {
-            Timber.e(e, "VoiceInteraction: Failed to start WakeWordService, built-in SpeechRecognizer will handle wake word detection")
+            Timber.e(e, "VoiceInteraction: Failed to start WakeWordServiceEnhanced, SpeechRecognizer handles wake word detection")
         }
     }
 

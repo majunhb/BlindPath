@@ -14,7 +14,6 @@ import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
-import dagger.hilt.android.AndroidEntryPoint
 import com.blindpath.module_voice.BuildConfig
 import com.blindpath.module_voice.domain.model.WakeWordConfig
 import kotlinx.coroutines.*
@@ -43,14 +42,20 @@ import android.app.PendingIntent.FLAG_UPDATE_CURRENT
  * - 蓝牙耳机/骨传导耳机
  * - 户外嘈杂环境
  */
-@AndroidEntryPoint
+/**
+ * ★★★ 多进程安全：移除 @AndroidEntryPoint
+ *
+ * WakeWordServiceEnhanced 运行在 :wakeword 独立进程。
+ * Hilt 的 @AndroidEntryPoint 在子进程中会导致 “HiltComponentManager not found” 崩溃。
+ * 解决：移除 @AndroidEntryPoint，改为在 onCreate() 中手动构建依赖。
+ * 由于 UnifiedAudioScheduler 和 AudioFocusManager 只需要 applicationContext，
+ * 可以直接手动 new ，不依赖 Hilt。
+ */
 class WakeWordServiceEnhanced : Service() {
 
-    @Inject
-    lateinit var unifiedAudioScheduler: UnifiedAudioScheduler
-    
-    @Inject
-    lateinit var audioFocusManager: AudioFocusManager
+    // 移除 @Inject，改为延迟初始化（在 onCreate 时构建）
+    private lateinit var unifiedAudioScheduler: UnifiedAudioScheduler
+    private lateinit var audioFocusManager: AudioFocusManager
 
     // 独立协程作用域
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -115,6 +120,9 @@ class WakeWordServiceEnhanced : Service() {
     }
     
     override fun onCreate() {
+        // ★★★ 多进程安全：手动构建依赖（不依赖 Hilt）
+        unifiedAudioScheduler = UnifiedAudioScheduler(applicationContext)
+        audioFocusManager = AudioFocusManager(applicationContext)
         super.onCreate()
         Timber.i("WakeWordServiceEnhanced: onCreate (Enhanced Version)")
         
