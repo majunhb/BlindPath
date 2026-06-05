@@ -70,12 +70,12 @@ class EnergyWakeWordDetector(
     /**
      * 获取帧长度（能量检测对帧长度没有严格要求，返回一个常用值）
      */
-    fun getFrameLength(): Int = 512
+    override fun getFrameLength(): Int = 512
 
     /**
      * 获取采样率
      */
-    fun getSampleRate(): Int = 16000
+    override fun getSampleRate(): Int = 16000
 
     override fun release() {
         isInitialized = false

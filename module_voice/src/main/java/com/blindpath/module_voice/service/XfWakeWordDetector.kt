@@ -285,8 +285,8 @@ class XfWakeWordDetector(
         return false
     }
 
-    fun getFrameLength(): Int = 512
-    fun getSampleRate(): Int = 16000
+    override fun getFrameLength(): Int = 512
+    override fun getSampleRate(): Int = 16000
     fun isListening(): Boolean = isListening
 
     override fun release() {

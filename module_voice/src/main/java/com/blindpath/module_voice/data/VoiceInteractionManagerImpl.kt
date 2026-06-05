@@ -98,7 +98,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "VoiceInteraction: Initialization failed")
-            stateMachine.transition(VoiceStateMachine.VoiceState.ERROR, mapOf("error" to e.message))
+            stateMachine.transition(VoiceStateMachine.VoiceState.ERROR, mapOf("error" to (e.message ?: "Unknown error")))
             Result.Error(message = "语音交互初始化失败：${e.message}")
         }
     }
@@ -322,7 +322,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
                         } catch (e: Exception) {
                             Timber.e(e, "VoiceInteraction: Wake session TTS error")
                             stateMachine.ttsFinished()
-                            stateMachine.transition(VoiceStateMachine.VoiceState.ERROR, mapOf("error" to e.message))
+                            stateMachine.transition(VoiceStateMachine.VoiceState.ERROR, mapOf("error" to (e.message ?: "Unknown error")))
                         }
                     }
                 }
@@ -373,7 +373,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
                         } catch (e: Exception) {
                             Timber.e(e, "VoiceInteraction: Command processing error")
                             stateMachine.ttsFinished()
-                            stateMachine.transition(VoiceStateMachine.VoiceState.ERROR, mapOf("error" to e.message))
+                            stateMachine.transition(VoiceStateMachine.VoiceState.ERROR, mapOf("error" to (e.message ?: "Unknown error")))
                         }
                     }
                 }

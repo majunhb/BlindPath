@@ -361,7 +361,7 @@ class WakeWordService : Service() {
         
         // 获取引擎帧长度
         val frameLength = when (engine) {
-            is EnergyWakeWordDetector -> engine.getFrameLength()
+            is WakeWordDetector -> engine.getFrameLength()
             else -> 512
         }
         
