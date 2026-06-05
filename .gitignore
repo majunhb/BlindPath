@@ -54,3 +54,17 @@ lint/tmp/
 
 # Mac
 .DS_Store
+
+# Build artifacts
+*.zip
+build_log*.txt
+build_output*.txt
+build_logs*.zip
+test*.txt
+.trigger_marker
+temp-build.yml
+temp_backup/
+
+# Debug files
+*.log
+*.trace

@@ -13,7 +13,7 @@ import com.blindpath.module_voice.config.VoiceServiceConfig
 import com.blindpath.module_voice.service.BluetoothDeviceMonitor
 import com.blindpath.module_voice.service.PerformanceMonitor
 import com.blindpath.module_voice.service.SceneAdaptationManager
-import com.blindpath.module_voice.service.WakeWordServiceEnhanced
+import com.blindpath.module_voice.service.WakeWordService
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
 import javax.inject.Inject
@@ -100,7 +100,7 @@ class BlindPathApp : Application() {
             // 启动蓝牙设备监听
             bluetoothMonitor.startMonitoring()
             
-            // 启动增强版语音唤醒服务
+            // 启动语音唤醒服务
             startWakeWordService()
             
             Timber.d("Voice service initialized successfully")
@@ -131,11 +131,11 @@ class BlindPathApp : Application() {
     }
     
     /**
-     * 启动增强版语音唤醒服务
+     * 启动语音唤醒服务
      */
     private fun startWakeWordService() {
-        val intent = Intent(this, WakeWordServiceEnhanced::class.java).apply {
-            action = WakeWordServiceEnhanced.ACTION_START
+        val intent = Intent(this, WakeWordService::class.java).apply {
+            action = WakeWordService.ACTION_START
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

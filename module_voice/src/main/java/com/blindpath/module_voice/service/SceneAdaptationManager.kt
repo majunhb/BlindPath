@@ -19,13 +19,8 @@ import com.blindpath.module_voice.config.VoiceServiceConfig
 import com.blindpath.module_voice.config.VoiceServiceConfig.SceneConfig
 import com.blindpath.module_voice.config.VoiceServiceConfig.SceneType
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
@@ -35,19 +30,28 @@ import javax.inject.Singleton
  * 多场景适配策略管理器
  * 
  * 负责根据当前环境自动切换场景配置，包括：
- * - 环境噪音检测
+ * - 环境噪音检测（间歇式：每30秒检测1次，每次2秒）
  * - 电量状态监控
  * - 蓝牙设备状态
  * - 自动场景切换
  * - 动态参数调整
+ * 
+ * 噪音检测策略：
+ * - 每隔 30 秒检测一次
+ * - 每次只录制 2 秒
+ * - 检测前检查麦克风是否被其他组件占用
+ * - 检测完成后立即释放 MediaRecorder
+ * - 避免与唤醒/ASR 音频采集冲突
  */
 @Singleton
 class SceneAdaptationManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val unifiedAudioScheduler: UnifiedAudioScheduler
 ) {
     
     private val scope = CoroutineScope(Dispatchers.Default)
     private var monitoringJob: Job? = null
+    private var noiseDetectionJob: Job? = null
     
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val batteryManager = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
@@ -68,8 +72,9 @@ class SceneAdaptationManager @Inject constructor(
     // 场景切换监听器
     private var sceneChangeListener: ((SceneType, SceneConfig) -> Unit)? = null
     
-    // 音频录制器（用于噪音检测）
-    private var noiseDetector: MediaRecorder? = null
+    // 音频录制器（用于噪音检测，间歇式使用）
+    @Volatile private var noiseDetector: MediaRecorder? = null
+    private val noiseDetectorLock = Any()
     
     /**
      * 启动场景监控
@@ -86,8 +91,8 @@ class SceneAdaptationManager @Inject constructor(
             // 注册蓝牙状态监听
             registerBluetoothReceiver()
             
-            // 启动环境噪音检测
-            startNoiseDetection()
+            // 启动间歇式环境噪音检测
+            startIntermittentNoiseDetection()
             
             // 定期检查场景变化
             while (isActive) {
@@ -98,48 +103,129 @@ class SceneAdaptationManager @Inject constructor(
     }
     
     /**
-     * 启动环境噪音检测
+     * 启动间歇式噪音检测
+     * 
+     * 策略：
+     * - 每隔 30 秒检测一次
+     * - 每次只录制 2 秒
+     * - 检测前检查麦克风是否被其他组件占用
+     * - 检测完成后立即释放 MediaRecorder
      */
-    private fun startNoiseDetection() {
-        if (noiseDetector != null) {
-            Timber.w("Noise detection already running")
+    private fun startIntermittentNoiseDetection() {
+        if (noiseDetectionJob?.isActive == true) {
             return
         }
         
-        try {
-            // 检查录音权限
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) 
-                != PackageManager.PERMISSION_GRANTED) {
-                Timber.w("RECORD_AUDIO permission not granted, skip noise detection")
-                return
-            }
+        noiseDetectionJob = scope.launch {
+            Timber.d("Intermittent noise detection started")
             
-            noiseDetector = MediaRecorder().apply {
-                setAudioSource(MediaRecorder.AudioSource.MIC)
-                setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
-                setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
-                setOutputFile("${context.cacheDir.absolutePath}/noise_detect.tmp")
-                
-                prepare()
-                start()
-            }
-            
-            // 启动噪音检测协程
-            scope.launch {
-                while (isActive && noiseDetector != null) {
-                    val amplitude = noiseDetector?.maxAmplitude ?: 0
-                    val normalizedNoise = normalizeNoiseLevel(amplitude)
-                    noiseLevel.set(normalizedNoise)
-                    
+            while (isActive) {
+                try {
+                    // 等待 30 秒间隔
                     delay(NOISE_DETECTION_INTERVAL_MS)
+                    
+                    // 执行单次噪音检测
+                    performSingleNoiseDetection()
+                    
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.e(e, "Noise detection error")
+                    delay(5000) // 出错后等待 5 秒再重试
                 }
             }
-            
-            Timber.d("Noise detection started")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to start noise detection, disable noise-based scene adaptation")
-            noiseDetector = null
         }
+    }
+    
+    /**
+     * 执行单次噪音检测
+     * 
+     * 检测流程：
+     * 1. 检查麦克风是否被占用
+     * 2. 创建临时 MediaRecorder
+     * 3. 录制 2 秒音频
+     * 4. 计算平均振幅
+     * 5. 立即释放 MediaRecorder
+     */
+    private suspend fun performSingleNoiseDetection() {
+        withContext(Dispatchers.IO) {
+            // 检查麦克风是否被占用
+            if (!isMicrophoneAvailable()) {
+                Timber.d("SceneAdaptation: Microphone in use by another component, skipping noise detection")
+                return@withContext
+            }
+            
+            var recorder: MediaRecorder? = null
+            try {
+                // 创建 MediaRecorder
+                recorder = MediaRecorder().apply {
+                    setAudioSource(MediaRecorder.AudioSource.MIC)
+                    setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+                    setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+                    setOutputFile("${context.cacheDir.absolutePath}/noise_detect.tmp")
+                    prepare()
+                    start()
+                }
+                
+                // 录制 2 秒，采样振幅
+                val samples = mutableListOf<Int>()
+                val sampleCount = 20 // 2秒，每100ms采样一次
+                
+                repeat(sampleCount) {
+                    delay(100)
+                    val amplitude = try {
+                        recorder.maxAmplitude
+                    } catch (e: Exception) {
+                        0
+                    }
+                    if (amplitude > 0) {
+                        samples.add(amplitude)
+                    }
+                }
+                
+                // 计算平均振幅
+                if (samples.isNotEmpty()) {
+                    val avgAmplitude = samples.average().toInt()
+                    val normalizedNoise = normalizeNoiseLevel(avgAmplitude)
+                    noiseLevel.set(normalizedNoise)
+                    Timber.d("SceneAdaptation: Noise level detected: $normalizedNoise (avg amplitude: $avgAmplitude)")
+                } else {
+                    // 如果采样失败，使用默认值
+                    Timber.w("SceneAdaptation: No valid amplitude samples collected")
+                }
+                
+            } catch (e: Exception) {
+                Timber.e(e, "SceneAdaptation: Failed to perform noise detection")
+            } finally {
+                // 立即释放 MediaRecorder
+                try {
+                    recorder?.apply {
+                        stop()
+                        release()
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "SceneAdaptation: Error releasing noise detector")
+                }
+            }
+        }
+    }
+    
+    /**
+     * 检查麦克风是否可用
+     * 
+     * 检查 UnifiedAudioScheduler 中的活跃模块，
+     * 如果 WAKE_WORD 或 ASR 正在使用麦克风，则返回 false
+     */
+    private fun isMicrophoneAvailable(): Boolean {
+        val activeModules = unifiedAudioScheduler.getActiveModules()
+        
+        // 如果唤醒或 ASR 正在使用，返回不可用
+        if (activeModules.contains(UnifiedAudioScheduler.AudioModule.WAKE_WORD) ||
+            activeModules.contains(UnifiedAudioScheduler.AudioModule.ASR)) {
+            return false
+        }
+        
+        return true
     }
     
     /**
@@ -149,26 +235,29 @@ class SceneAdaptationManager @Inject constructor(
         monitoringJob?.cancel()
         monitoringJob = null
         
-        stopNoiseDetection()
+        noiseDetectionJob?.cancel()
+        noiseDetectionJob = null
+        
+        releaseNoiseDetector()
         unregisterBluetoothReceiver()
         
         Timber.d("Scene monitoring stopped")
     }
     
     /**
-     * 停止环境噪音检测
+     * 释放噪音检测器
      */
-    private fun stopNoiseDetection() {
-        try {
-            noiseDetector?.apply {
-                stop()
-                release()
+    private fun releaseNoiseDetector() {
+        synchronized(noiseDetectorLock) {
+            try {
+                noiseDetector?.apply {
+                    stop()
+                    release()
+                }
+                noiseDetector = null
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to release noise detector")
             }
-            noiseDetector = null
-            
-            Timber.d("Noise detection stopped")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to stop noise detection")
         }
     }
     
@@ -213,7 +302,7 @@ class SceneAdaptationManager @Inject constructor(
         val config = VoiceServiceConfig.getSceneConfig(sceneType)
         sceneChangeListener?.invoke(sceneType, config)
         
-        Timber.i("Scene switched: $oldScene -> $sceneType")
+        Timber.i("Scene switched: $oldScene → $sceneType")
     }
     
     /**
@@ -413,7 +502,8 @@ class SceneAdaptationManager @Inject constructor(
     
     companion object {
         private const val SCENE_CHECK_INTERVAL_MS = 5_000L
-        private const val NOISE_DETECTION_INTERVAL_MS = 1_000L
+        // 间歇式噪音检测：每 30 秒检测一次
+        private const val NOISE_DETECTION_INTERVAL_MS = 30_000L
         
         private const val LOW_BATTERY_THRESHOLD = 20  // 20%
         private const val NOISE_LEVEL_LOW = 20

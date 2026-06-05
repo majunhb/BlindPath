@@ -115,14 +115,6 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
-        <!-- 增强版语音唤醒服务（独立进程） -->
-        <service
-            android:name="com.blindpath.module_voice.service.WakeWordServiceEnhanced"
-            android:enabled="true"
-            android:exported="false"
-            android:process=":wakeword"
-            android:foregroundServiceType="microphone" />
-
 
         <!-- 蓝牙音频接收器 -->
         <receiver
