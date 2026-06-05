@@ -107,5 +107,20 @@ class BluetoothAudioReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             Timber.e(e, "BluetoothAudio: Failed to switch audio")
         }
+
+        // [P1 修复] 通知 WakeWordService 重新绑定音频源
+        // 蓝牙切换后 AudioRecord 可能失效，需要重启收音
+        try {
+            val intent = Intent(context, Class.forName("com.blindpath.module_voice.service.WakeWordService"))
+            intent.action = if (useBluetooth) {
+                "com.blindpath.wakeword.BLUETOOTH_CONNECTED"
+            } else {
+                "com.blindpath.wakeword.BLUETOOTH_DISCONNECTED"
+            }
+            context.startService(intent)
+            Timber.i("BluetoothAudio: Notified WakeWordService about audio route change")
+        } catch (e: Exception) {
+            Timber.w(e, "BluetoothAudio: Failed to notify WakeWordService (may be in different process)")
+        }
     }
 }

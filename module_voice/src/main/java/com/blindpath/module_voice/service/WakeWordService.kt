@@ -14,6 +14,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.Process
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -54,6 +55,12 @@ class WakeWordService : Service() {
     private var isRunning = false
     private var isWakeWordDetected = false
 
+    // [P2 异常熔断] 收音断流检测
+    private var consecutiveReadErrors = 0
+    private val MAX_CONSECUTIVE_ERRORS = 10
+    private var restartCount = 0
+    private val MAX_RESTART_COUNT = 5
+
     // 音频参数（16kHz, 16-bit, 单声道）
     private val sampleRate = 16000
     private val channelConfig = AudioFormat.CHANNEL_IN_MONO
@@ -89,6 +96,14 @@ class WakeWordService : Service() {
         when (intent?.action) {
             ACTION_START -> startWakeWordDetection()
             ACTION_STOP -> stopWakeWordDetection()
+            // [P1 修复] 蓝牙设备切换时重新绑定音频源
+            "com.blindpath.wakeword.BLUETOOTH_CONNECTED",
+            "com.blindpath.wakeword.BLUETOOTH_DISCONNECTED" -> {
+                Timber.i("WakeWordService: Bluetooth audio route changed, reinitializing audio source")
+                if (isRunning) {
+                    reinitializeAudioAfterRouteChange()
+                }
+            }
         }
         return START_STICKY
     }
@@ -284,7 +299,10 @@ class WakeWordService : Service() {
         }
 
         // 初始化并启动唤醒词检测
-        serviceScope.launch {
+        serviceScope.launch(Dispatchers.IO) {
+            // [P1 修复] 提升线程优先级到最高音频级别，避免被 UI/导航线程压制
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
+            Timber.i("WakeWordService: Thread priority set to URGENT_AUDIO")
             try {
                 initializeEngineManager()
 
@@ -389,15 +407,105 @@ class WakeWordService : Service() {
                 val readSize = audioRecord?.read(buffer, 0, bufferSize) ?: 0
 
                 if (readSize > 0) {
+                    // [P2 熔断] 成功读取，重置错误计数
+                    consecutiveReadErrors = 0
                     // 处理音频数据
                     processAudioBuffer(buffer, readSize)
+                } else if (readSize == 0) {
+                    // [P2 熔断] 读到 0 字节，可能是音频源失效
+                    consecutiveReadErrors++
+                    Timber.w("WakeWordService: Read 0 bytes (error count: $consecutiveReadErrors/$MAX_CONSECUTIVE_ERRORS)")
+                    if (consecutiveReadErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        triggerCircuitBreaker("consecutive zero reads")
+                        return
+                    }
                 }
 
                 // 短暂休眠以降低CPU占用
                 delay(10)
             } catch (e: Exception) {
-                Timber.e(e, "WakeWordService: Audio processing error")
+                consecutiveReadErrors++
+                Timber.e(e, "WakeWordService: Audio processing error (count: $consecutiveReadErrors/$MAX_CONSECUTIVE_ERRORS)")
+                if (consecutiveReadErrors >= MAX_CONSECUTIVE_ERRORS) {
+                    triggerCircuitBreaker("consecutive exceptions: ${e.message}")
+                    return
+                }
                 delay(100)
+            }
+        }
+    }
+
+    /**
+     * [P2 异常熔断] 音频收音断流时自动重启
+     */
+    private fun triggerCircuitBreaker(reason: String) {
+        Timber.w("WakeWordService: ★ Circuit breaker triggered! Reason: $reason")
+        consecutiveReadErrors = 0
+
+        if (restartCount >= MAX_RESTART_COUNT) {
+            Timber.e("WakeWordService: Max restart count ($MAX_RESTART_COUNT) reached. Stopping service.")
+            stopWakeWordDetection()
+            return
+        }
+
+        restartCount++
+        Timber.i("WakeWordService: Attempting restart $restartCount/$MAX_RESTART_COUNT...")
+
+        serviceScope.launch(Dispatchers.IO) {
+            // 停止当前音频
+            try {
+                audioRecord?.stop()
+                audioRecord?.release()
+                audioRecord = null
+            } catch (e: Exception) {
+                Timber.w(e, "WakeWordService: Error stopping audio during restart")
+            }
+
+            // 等待音频资源释放
+            delay(500)
+
+            // 重新初始化音频
+            try {
+                initAudioRecord()
+                startAudioProcessing()
+                Timber.i("WakeWordService: Restart successful (attempt $restartCount)")
+            } catch (e: Exception) {
+                Timber.e(e, "WakeWordService: Restart failed")
+                if (restartCount >= MAX_RESTART_COUNT) {
+                    stopWakeWordDetection()
+                }
+            }
+        }
+    }
+
+    /**
+     * [P1 修复] 蓝牙音频路由切换后重新初始化音频源
+     */
+    private fun reinitializeAudioAfterRouteChange() {
+        serviceScope.launch(Dispatchers.IO) {
+            Timber.i("WakeWordService: Reinitializing audio after route change...")
+
+            // 停止当前音频
+            try {
+                audioRecord?.stop()
+                audioRecord?.release()
+                audioRecord = null
+            } catch (e: Exception) {
+                Timber.w(e, "WakeWordService: Error stopping audio for route change")
+            }
+
+            // 等待蓝牙 SCO 切换完成
+            delay(1000)
+
+            // 重新初始化
+            try {
+                initAudioRecord()
+                startAudioProcessing()
+                consecutiveReadErrors = 0
+                Timber.i("WakeWordService: Audio reinitialized after route change")
+            } catch (e: Exception) {
+                Timber.e(e, "WakeWordService: Failed to reinitialize audio after route change")
+                triggerCircuitBreaker("route change reinit failed")
             }
         }
     }
