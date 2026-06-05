@@ -308,15 +308,11 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         if (!isInitialized || speechRecognizer == null) {
             return@withContext Result.Error(message = "语音识别未初始化")
         }
-        // TTS 协调：如果 TTS 正在播报，等待
+        // TTS 协调：不再因为 TTS 播报而阻断 startListening
+        // notifyTtsStart 已不再调用 stopListening()，此处守卫也无需阻断
         if (isTtsSpeaking) {
-            Timber.d("VoiceCommand: TTS speaking, waiting before startListening")
-            var waitCount = 0
-            while (isTtsSpeaking && waitCount < 50) { delay(100); waitCount++ }
-            if (isTtsSpeaking) {
-                Timber.w("VoiceCommand: TTS still speaking, aborting startListening")
-                return@withContext Result.Error(message = "TTS 正在播报")
-            }
+            Timber.d("VoiceCommand: TTS speaking, but continuing startListening (non-blocking)")
+            // 不返回 Error，继续执行 startListening，让系统级 AudioFocus 处理内容
         }
         try {
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -410,30 +406,35 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         }
     }
     
-    /** TTS 开始播报时调用 */
+    /** TTS 开始播报时调用
+     *
+     * ★★★ TTS避让修复：
+     * - 原实现：设置 isTtsSpeaking=true 并且调用 stopListening()
+     * - 问题：每次导航播报/欢迎语播报，ASR 完全停止，唤醒词检测归零
+     * - 新实现：只设置标志位，不中断 SpeechRecognizer
+     * - 依据：UnifiedAudioScheduler.enableTtsDucking() 已实现 TTS DUCK 模式，
+     *   TTS 播报与 ASR 监听可以共存，麦克风资源由系统级 AudioFocus 调度
+     */
     override fun notifyTtsStart() {
         isTtsSpeaking = true
         ttsResumeJob?.cancel()
-        Timber.d("VoiceCommand: TTS started, pausing recognition")
-        if (_interactionState.value.isListening) {
-            scope.launch { stopListening() }
-        }
+        Timber.d("VoiceCommand: TTS started (ASR continues, no stopListening)")
+        // 不调用 stopListening()，让 SpeechRecognizer 持续监听
+        // 唤醒词检测在 TTS 播报期间仍工作
     }
     
-    /** TTS 停止播报时调用 */
+    /** TTS 停止播报时调用
+     *
+     * ★★★ TTS避让修复：
+     * - 原实现： TTS 停止后才调用 startListening()，每次播报后有 300ms 空白
+     * - 新实现：只清除标志位。若 ASR 已经在监听，无需重启；
+     *   若 ASR 异常停止了，health check 会在 2s 内重启它
+     */
     override fun notifyTtsStop() {
         isTtsSpeaking = false
-        Timber.d("VoiceCommand: TTS stopped, will resume recognition")
-        ttsResumeJob = scope.launch {
-            // ★ 修复：从 600ms 减少到 300ms，缩短 TTS→ASR 切换空白期
-            delay(300)
-            // 只在持续监听模式且未检测到唤醒词时恢复识别
-            if (isContinuousListeningEnabled && !isTtsSpeaking && !_interactionState.value.isWakeWordDetected) {
-                Timber.i("VoiceCommand: Resuming recognition after TTS")
-                recreateJob?.cancel()
-                startListening()
-            }
-        }
+        Timber.d("VoiceCommand: TTS stopped, ASR was not paused")
+        // 不需要延迟恢复 startListening()，因为 notifyTtsStart 没有停止 ASR
+        // health check 内建守厤中断的 SpeechRecognizer 不需要外部串联触发
     }
     
     private fun startContinuousListening() {
