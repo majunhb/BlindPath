@@ -37,6 +37,7 @@ import javax.inject.Singleton
 class VoiceInteractionManagerImpl @Inject constructor(
     private val voiceRepository: VoiceRepository,
     private val commandRepository: VoiceCommandRepository,
+    private val audioFocusManager: com.blindpath.module_voice.service.AudioFocusManager,
     @ApplicationContext private val context: Context
 ) : VoiceInteractionManager {
     
@@ -211,14 +212,26 @@ class VoiceInteractionManagerImpl @Inject constructor(
     }
     
     override suspend fun speak(text: String, type: VoiceType) {
+        // [P0 修复] 请求音频焦点，避免与 TalkBack/导航播报冲突
+        val focusGranted = audioFocusManager.requestFocus("tts", priority = 5)
+        if (!focusGranted) {
+            Timber.w("VoiceInteraction: TTS failed to get audio focus, speaking anyway")
+        }
+        
         voiceRepository.announce(text, type)
+        
+        // TTS 完成后释放焦点（让唤醒模块继续监听）
+        audioFocusManager.abandonFocus("tts")
     }
     
     override suspend fun startListening(): Result<Boolean> {
+        // [P0 修复] ASR 识别时请求音频焦点（优先级低于唤醒，但高于 TTS）
+        audioFocusManager.requestFocus("asr", priority = 7)
         return commandRepository.startListening()
     }
     
     override suspend fun stopListening(): Result<Boolean> {
+        audioFocusManager.abandonFocus("asr")
         return commandRepository.stopListening()
     }
     

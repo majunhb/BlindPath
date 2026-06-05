@@ -28,6 +28,10 @@
         <uses-permission android:name="android.permission.WAKE_LOCK" />
         <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
         
+        <!-- [P0 修复] 后台持续监听权限 -->
+        <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+        <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+        
         <!-- 后台保活与常驻权限 -->
         <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
         <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
@@ -114,11 +118,12 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
-        <!-- 语音唤醒服务 -->
+        <!-- 语音唤醒服务（独立进程，防止后台被回收） -->
         <service
             android:name="com.blindpath.module_voice.service.WakeWordService"
             android:enabled="true"
             android:exported="false"
+            android:process=":wakeword"
             android:foregroundServiceType="microphone" />
 
         <!-- 增强版语音唤醒服务（独立进程） -->
