@@ -66,17 +66,20 @@ object AppConfig {
     // ============ 导航配置 ============
     
     object Navigation {
-        /** GPS 更新最小间隔（毫秒） */
-        const val LOCATION_UPDATE_INTERVAL_MS = 1000L
+        /** GPS 更新最小间隔（毫秒） - 步行场景5秒足够，减少电量消耗和语音干扰 */
+        const val LOCATION_UPDATE_INTERVAL_MS = 5000L
         
         /** GPS 更新最小距离（米） */
-        const val MIN_UPDATE_DISTANCE_M = 0.5f
+        const val MIN_UPDATE_DISTANCE_M = 2.0f
         
-        /** GPS 精度播报间隔（毫秒） */
-        const val ACCURACY_ANNOUNCE_INTERVAL_MS = 8000L
+        /** GPS 精度播报间隔（毫秒） - 30秒播报一次足够 */
+        const val ACCURACY_ANNOUNCE_INTERVAL_MS = 30000L
+        
+        /** 导航指令最小播报间隔（毫秒） - 避免连续播报 */
+        const val INSTRUCTION_MIN_INTERVAL_MS = 15000L
         
         /** 导航指令距离变化阈值（米） */
-        const val INSTRUCTION_DISTANCE_THRESHOLD = 3
+        const val INSTRUCTION_DISTANCE_THRESHOLD = 5
         
         /** 
          * GPS 质量分级阈值（米）

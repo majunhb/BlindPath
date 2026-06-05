@@ -51,6 +51,10 @@ class NavigationService : LifecycleService() {
     // GPS 精度播报节流（引用 AppConfig 集中管理）
     private var lastAccuracyAnnounceTime = 0L
     private val ACCURACY_ANNOUNCE_INTERVAL_MS = AppConfig.Navigation.ACCURACY_ANNOUNCE_INTERVAL_MS
+    
+    // [修复] 导航指令播报节流
+    private var lastInstructionAnnounceTime = 0L
+    private val INSTRUCTION_MIN_INTERVAL_MS = AppConfig.Navigation.INSTRUCTION_MIN_INTERVAL_MS
 
     companion object {
         const val ACTION_START = "com.blindpath.action.START_NAVIGATION"
@@ -161,6 +165,14 @@ class NavigationService : LifecycleService() {
             voiceRepository.speak("导航已关闭，祝您平安", queueMode = false)
         }
 
+        // [修复] 重置所有播报节流状态
+        lastInstruction = null
+        lastKnownDistance = Int.MAX_VALUE
+        lastGpsQualityAnnouncement = null
+        lastAccuracyAnnounceTime = 0L
+        lastInstructionAnnounceTime = 0L
+        lastWeakSignalAnnounceTime = 0L
+
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -201,29 +213,35 @@ class NavigationService : LifecycleService() {
     }
 
     /**
-     * 信号弱时主动提醒（仅首次检测到弱信号时播报）
+     * [修复] 信号弱时主动提醒（每5分钟最多播报一次）
      */
-    private var hasAnnouncedWeakSignal = false
+    private var lastWeakSignalAnnounceTime = 0L
+    private val WEAK_SIGNAL_INTERVAL_MS = 300000L  // 5分钟
 
     private fun announceWeakSignal() {
-        if (!hasAnnouncedWeakSignal) {
-            hasAnnouncedWeakSignal = true
+        val now = System.currentTimeMillis()
+        if (now - lastWeakSignalAnnounceTime >= WEAK_SIGNAL_INTERVAL_MS) {
+            lastWeakSignalAnnounceTime = now
             lifecycleScope.launch {
-                voiceRepository.speak("警告：GPS信号弱，可能影响定位精度，请在开阔地带重新获取信号", queueMode = false)
+                voiceRepository.speak("GPS信号弱，请在开阔地带使用", queueMode = false)
             }
         }
     }
 
     /**
-     * 播报导航指令（防重复）
-     * 触发条件：指令变化 OR 距离变化 ≥ 3米
+     * [修复] 播报导航指令（防重复 + 时间节流）
+     * 触发条件：(指令变化 OR 距离变化 ≥ 阈值) AND 距离上次播报 ≥ 15秒
      */
     private fun speakNavigation(instruction: String, remainingDistance: Int) {
-        val distanceChanged = kotlin.math.abs(remainingDistance - lastKnownDistance) >= 3
-
-        if (lastInstruction != instruction || distanceChanged) {
+        val now = System.currentTimeMillis()
+        val distanceChanged = kotlin.math.abs(remainingDistance - lastKnownDistance) >= AppConfig.Navigation.INSTRUCTION_DISTANCE_THRESHOLD
+        val timePassed = now - lastInstructionAnnounceTime >= INSTRUCTION_MIN_INTERVAL_MS
+        
+        // [修复] 必须同时满足：内容变化/距离变化 + 时间间隔足够
+        if ((lastInstruction != instruction || distanceChanged) && timePassed) {
             lastInstruction = instruction
             lastKnownDistance = remainingDistance
+            lastInstructionAnnounceTime = now
             lifecycleScope.launch {
                 voiceRepository.speakNavigation(instruction)
             }
