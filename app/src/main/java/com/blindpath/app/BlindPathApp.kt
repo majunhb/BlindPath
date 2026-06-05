@@ -14,6 +14,7 @@ import com.blindpath.module_voice.service.BluetoothDeviceMonitor
 import com.blindpath.module_voice.service.PerformanceMonitor
 import com.blindpath.module_voice.service.SceneAdaptationManager
 import com.blindpath.module_voice.service.WakeWordServiceEnhanced
+import android.app.ActivityManager
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
 import javax.inject.Inject
@@ -32,7 +33,17 @@ class BlindPathApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        
+
+        // ★★★ 多进程安全守卫
+        // WakeWordServiceEnhanced 运行在 :wakeword 独立进程，Application.onCreate() 也会被调用一次
+        // 若在子进程中执行主进程的初始化逻辑，Hilt 注入会崩溃
+        // 解决：检测当前进程名，若不是主进程则跳过测选初始化
+        if (!isMainProcess()) {
+            // 子进程只需要最基础的初始化
+            initTimber()
+            return
+        }
+
         // 初始化 Timber 日志
         initTimber()
         
@@ -147,6 +158,20 @@ class BlindPathApp : Application() {
         Timber.d("Wake word service started")
     }
     
+    /**
+     * 判断当前进程是否为主进程
+     *
+     * ★★★ 多进程安全：WakeWordServiceEnhanced 运行在 :wakeword 独立进程
+     * 主进程名 = packageName，子进程名 = packageName:wakeword
+     */
+    private fun isMainProcess(): Boolean {
+        val pid = android.os.Process.myPid()
+        val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+        return activityManager.runningAppProcesses?.any {
+            it.pid == pid && it.processName == packageName
+        } ?: true  // 无法确认时默认为主进程，避免跳过必要初始化
+    }
+
     override fun onTerminate() {
         super.onTerminate()
         
