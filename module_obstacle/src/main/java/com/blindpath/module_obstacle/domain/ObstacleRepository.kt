@@ -62,6 +62,11 @@ interface ObstacleRepository {
     fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider)
 
     /**
+     * [修复] 设置生命周期所有者，确保 Preview 和 ImageAnalysis 绑定到同一个生命周期
+     */
+    fun setLifecycleOwner(owner: androidx.lifecycle.LifecycleOwner)
+
+    /**
      * 获取预警级别
      */
     fun getAlertLevel(distance: Float): AlertLevel {
