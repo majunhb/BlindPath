@@ -218,12 +218,17 @@ class ObstacleRepositoryImpl @Inject constructor(
     }
 
     override fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider) {
-        // [修复] 存储SurfaceProvider，在startCameraSync中与ImageAnalysis统一绑定
         previewProvider = provider
-        Timber.d("Preview surface provider stored for unified camera binding")
-        // 如果摄像头已经在运行，需要重新绑定以加入Preview
-        if (isCameraStarted && provider != null) {
-            scope.launch(Dispatchers.Main) { rebindCameraWithPreview() }
+        Timber.d("Preview surface provider set (isCameraStarted=$isCameraStarted)")
+        
+        // [关键修复] 如果摄像头已经在运行但没有 Preview，需要重启摄像头
+        // 使用 restartCamera 而不是 rebindCameraWithPreview，避免 unbindAll 中断分析
+        if (isCameraStarted && provider != null && previewUseCase == null) {
+            Timber.d("Camera running without preview, restarting with preview...")
+            scope.launch(Dispatchers.IO) {
+                stopCamera()
+                startCameraSync()
+            }
         }
     }
 
@@ -345,6 +350,21 @@ class ObstacleRepositoryImpl @Inject constructor(
         }
 
         isCameraStarting = true
+
+        // [关键修复] 等待 previewProvider 就绪（最多2秒）
+        // AndroidView 的 update 块会在 Compose 首帧后设置 SurfaceProvider
+        // 如果此时 previewProvider 为 null，先等待一下
+        if (previewProvider == null) {
+            Timber.d("Waiting for previewProvider...")
+            var waited = 0
+            while (previewProvider == null && waited < 2000) {
+                delay(100)
+                waited += 100
+            }
+            if (previewProvider == null) {
+                Timber.w("previewProvider not available after 2s, starting without preview")
+            }
+        }
 
         return withContext(Dispatchers.Main) {
             try {
