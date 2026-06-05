@@ -108,6 +108,12 @@
             android:exported="false"
             android:foregroundServiceType="location" />
 
+        <!-- 唤醒词桥接服务（修复 v2-2：静态 BR 无法 Hilt 注入，用主进程 Service 桥接） -->
+        <service
+            android:name="com.blindpath.module_voice.service.WakeWordBridgeService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
         <!-- 语音唤醒服务 -->
         <service
             android:name="com.blindpath.module_voice.service.WakeWordService"

@@ -62,11 +62,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 初始化语音
-        lifecycleScope.launch {
-            voiceRepository.initialize()
-            voiceRepository.speak("智行助盲应用已启动", queueMode = false)
-        }
+        // ★★★ 修复 v2-1：移除语音初始化抢话
+        // 原代码：lifecycleScope.launch { voiceRepository.initialize(); voiceRepository.speak("智行助盲应用已启动") }
+        // 根因：此处的 speak() 与 ViewModel.speakWelcome() 的 waitForTtsComplete() 产生竞争，
+        //   导致 TTS 状态混乱，setWakeWordEnabled(true) 没执行到 → SpeechRecognizer 从未启动监听
+        // 修复：删除此处所有语音操作，统一交给 ViewModel (VoiceInteractionManager) 管理唤醒链路：
+        //   initialize() → speakWelcome() → setWakeWordEnabled(true) → startContinuousListening()
 
         // 自动启动定位服务（不需要用户点击）
         autoStartLocationIfPermitted()

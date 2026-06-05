@@ -293,9 +293,16 @@ class WakeWordService : Service() {
 
                 val engineType = engineManager.getCurrentEngineType()
                 if (engineType == WakeWordEngineManager.EngineType.ENERGY) {
-                    // 能量检测不可靠，不使用
-                    Timber.w("WakeWordService: Only energy detection available, not reliable. Stopping.")
-                    stopSelf()
+                    // ★★★ 修复 v2-3：能量检测模式不再 stopSelf()
+                    // 原逻辑：检测到 ENERGY 模式 → stopSelf() → 服务直接自杀
+                    // 问题：百度/讯飞凭证都为空时降级到 ENERGY → 服务启动后立即销毁
+                    //       如果后续凭证变为可用（如运行时配置），服务已死无法恢复
+                    // 修复：保持服务存活但不做有意义的唤醒检测（ENERGY 本身就不可靠），
+                    //       真正的唤醒词检测由 VoiceCommandRepositoryImpl 的内置 SpeechRecognizer 接管
+                    Timber.w("WakeWordService: Only energy detection available (no valid Baidu/iFlytek credentials)")
+                    Timber.w("WakeWordService: Service stays alive but wake word detection relies on built-in SpeechRecognizer")
+                    Timber.w("WakeWordService: To enable low-power engine, configure BAIDU_APP_ID in local.properties")
+                    // 不再调用 stopSelf()，让服务以最低资源占用保持存活
                     return@launch
                 }
 
