@@ -171,7 +171,7 @@ class ObstacleRepositoryImpl @Inject constructor(
     /**
      * [修复] 设置生命周期所有者，确保 Preview 和 ImageAnalysis 绑定到同一个生命周期
      */
-    fun setLifecycleOwner(owner: androidx.lifecycle.LifecycleOwner) {
+    override fun setLifecycleOwner(owner: androidx.lifecycle.LifecycleOwner) {
         lifecycleOwner = owner
         Timber.d("LifecycleOwner set to: $owner")
     }
