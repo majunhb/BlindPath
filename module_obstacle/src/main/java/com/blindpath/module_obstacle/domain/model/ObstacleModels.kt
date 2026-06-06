@@ -146,25 +146,25 @@ enum class ObstacleType(
             // 地面障碍物
             CURB -> when {
                 distance < 0.5f -> "小心，路沿就在脚下，注意抬脚"
-                distance < 1f -> "$directionPrefix路沿，注意脚下，小心绊倒"
-                distance < 2f -> "$directionPrefix${distanceInt}米有路沿，请提前注意"
-                else -> "注意，$directionPrefix${distanceInt}米有路沿"
+                distance < 1f -> "${directionPrefix}路沿，注意脚下，小心绊倒"
+                distance < 2f -> "${directionPrefix}${distanceInt}米有路沿，请提前注意"
+                else -> "注意，${directionPrefix}${distanceInt}米有路沿"
             }
-            PUDDLE -> if (distance < 1.5f) "$directionPrefix${distanceInt}米有水坑，请绕行" else "注意，$directionPrefix${distanceInt}米有水坑"
-            MANHOLE -> if (distance < 1.5f) "$directionPrefix${distanceInt}米有井盖" else "注意，$directionPrefix${distanceInt}米有井盖"
-            PIT -> if (distance < 1f) "危险，$directionPrefix有坑洼，请绕行" else "注意，$directionPrefix${distanceInt}米有坑洼"
+            PUDDLE -> if (distance < 1.5f) "${directionPrefix}${distanceInt}米有水坑，请绕行" else "注意，${directionPrefix}${distanceInt}米有水坑"
+            MANHOLE -> if (distance < 1.5f) "${directionPrefix}${distanceInt}米有井盖" else "注意，${directionPrefix}${distanceInt}米有井盖"
+            PIT -> if (distance < 1f) "危险，${directionPrefix}有坑洼，请绕行" else "注意，${directionPrefix}${distanceInt}米有坑洼"
             ZEBRA_CROSSING -> "斑马线"
 
             // 悬空/侧面障碍物
-            PILLAR -> "$directionPrefix${distanceInt}米有石墩，请绕行"
-            ELECTRIC_POLE -> "$directionPrefix${distanceInt}米有电线杆"
+            PILLAR -> "${directionPrefix}${distanceInt}米有石墩，请绕行"
+            ELECTRIC_POLE -> "${directionPrefix}${distanceInt}米有电线杆"
             TRAFFIC_LIGHT -> when {
                 distance < 3f -> "红绿灯，前方${distanceInt}米"
                 else -> "注意，前方有红绿灯"
             }
             TRAFFIC_SIGN -> "注意，前方${distanceInt}米有交通标志"
-            BENCH -> "$directionPrefix${distanceInt}米有长椅"
-            HANDRAIL -> "$directionPrefix${distanceInt}米有扶手"
+            BENCH -> "${directionPrefix}${distanceInt}米有长椅"
+            HANDRAIL -> "${directionPrefix}${distanceInt}米有扶手"
 
             // 交通工具
             VEHICLE -> if (distance < 2f) "注意，前方${distanceInt}米有车辆" else "远处有车辆"
@@ -185,7 +185,7 @@ enum class ObstacleType(
             ANIMAL -> "前方${distanceInt}米有动物，请注意"
 
             // 停车桩
-            PARKING_METER -> "$directionPrefix${distanceInt}米有停车桩，注意脚下"
+            PARKING_METER -> "${directionPrefix}${distanceInt}米有停车桩，注意脚下"
 
             // 路面障碍
             ROAD_HAZARD -> when {
@@ -195,11 +195,11 @@ enum class ObstacleType(
             }
 
             // 家居物品
-            CHAIR -> "$directionPrefix${distanceInt}米有椅子"
-            SOFA -> "$directionPrefix${distanceInt}米有沙发"
-            TABLE -> "$directionPrefix${distanceInt}米有桌子"
-            BED -> "$directionPrefix${distanceInt}米有床"
-            POTTED_PLANT -> "$directionPrefix${distanceInt}米有盆栽"
+            CHAIR -> "${directionPrefix}${distanceInt}米有椅子"
+            SOFA -> "${directionPrefix}${distanceInt}米有沙发"
+            TABLE -> "${directionPrefix}${distanceInt}米有桌子"
+            BED -> "${directionPrefix}${distanceInt}米有床"
+            POTTED_PLANT -> "${directionPrefix}${distanceInt}米有盆栽"
 
             // 个人物品
             BACKPACK -> "注意，前方${distanceInt}米有背包"
@@ -278,7 +278,7 @@ enum class ObstacleType(
      */
     fun getDeduplicationKey(direction: Direction? = null): String {
         val directionKey = direction?.name ?: "NONE"
-        return "${name}_$directionKey"
+        return "${name}_${directionKey}"
     }
 
     /**
