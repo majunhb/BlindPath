@@ -505,13 +505,17 @@ class AIDetector @Inject constructor(
     
     /**
      * [增强] 辅助检测模式 - 模型未加载时使用图像处理技术
-     * 检测：大物体、运动物体、明显边缘
+     * 
+     * [重要修复] 添加帧间确认机制，避免误报：
+     * - 连续3帧检测到同一类型障碍物才确认
+     * - 提高检测阈值，减少环境纹理误检
+     * - 辅助检测仅作为提示，不播报危险级别
      */
     private fun assistedDetect(bitmap: Bitmap): List<DetectedObstacle> {
         val results = mutableListOf<DetectedObstacle>()
         
         try {
-            // 1. 运动检测 - 对比前后帧
+            // 1. 运动检测 - 对比前后帧（仅检测明显运动物体）
             lastFrame?.let { last ->
                 if (last.width == bitmap.width && last.height == bitmap.height) {
                     val motionRegions = detectMotion(last, bitmap)
@@ -519,7 +523,7 @@ class AIDetector @Inject constructor(
                 }
             }
             
-            // 2. 边缘检测 - 检测明显障碍物轮廓
+            // 2. 边缘检测 - 严格条件，避免误报
             val edgeRegions = detectEdges(bitmap)
             results.addAll(edgeRegions)
             
@@ -533,6 +537,26 @@ class AIDetector @Inject constructor(
         return results
     }
     
+    // [新增] 帧间确认缓存
+    private val frameConfirmCache = mutableMapOf<ObstacleType, Int>()
+    private val CONFIRM_FRAMES_REQUIRED = 3  // 需要连续3帧确认
+    private val CONFIRM_DECAY = 0.5f  // 未检测到时的衰减系数
+    
+    /**
+     * [新增] 帧间确认 - 只有连续多帧检测到才确认
+     */
+    private fun confirmDetection(type: ObstacleType): Boolean {
+        val currentCount = frameConfirmCache.getOrDefault(type, 0) + 1
+        frameConfirmCache[type] = currentCount
+        
+        // 衰减其他类型
+        frameConfirmCache.keys.filter { it != type }.forEach { key ->
+            frameConfirmCache[key] = (frameConfirmCache[key]!! * CONFIRM_DECAY).toInt()
+        }
+        
+        return currentCount >= CONFIRM_FRAMES_REQUIRED
+    }
+    
     /**
      * 运动检测 - 检测画面中的运动物体
      */
@@ -541,8 +565,8 @@ class AIDetector @Inject constructor(
         val width = curr.width
         val height = curr.height
         
-        // 采样检测（降低分辨率加速）
-        val sampleStep = 10
+        // [修复] 提高采样步长，减少噪声
+        val sampleStep = 20
         var diffPixels = 0
         val motionRegions = mutableListOf<Pair<Float, Float>>()
         
@@ -555,16 +579,18 @@ class AIDetector @Inject constructor(
                           kotlin.math.abs(((prevPixel shr 8) and 0xFF) - ((currPixel shr 8) and 0xFF)) +
                           kotlin.math.abs(((prevPixel shr 16) and 0xFF) - ((currPixel shr 16) and 0xFF))
                 
-                if (diff > 50) {
+                // [修复] 提高差异阈值（50->120），减少光线变化误报
+                if (diff > 120) {
                     diffPixels++
                     motionRegions.add(x.toFloat() / width to y.toFloat() / height)
                 }
             }
         }
         
-        // 如果运动像素足够多，生成一个运动障碍物提示
-        val motionRatio = diffPixels.toFloat() / ((width / sampleStep) * (height / sampleStep))
-        if (motionRatio > 0.1f && motionRegions.isNotEmpty()) {
+        // [修复] 提高运动比例阈值（0.1->0.3），需要更明显的运动
+        val totalSamples = ((width / sampleStep) * (height / sampleStep)).coerceAtLeast(1)
+        val motionRatio = diffPixels.toFloat() / totalSamples
+        if (motionRatio > 0.3f && motionRegions.isNotEmpty()) {
             val avgX = motionRegions.map { it.first }.average().toFloat()
             val avgY = motionRegions.map { it.second }.average().toFloat()
             
@@ -574,18 +600,21 @@ class AIDetector @Inject constructor(
                 else -> Direction.CENTER
             }
             
-            results.add(DetectedObstacle(
-                type = ObstacleType.PERSON,  // 假设运动物体可能是人
-                confidence = 0.3f,
-                distance = 3f,
-                direction = direction,
-                boundingBox = BoundingBox(
-                    (avgX - 0.1f).coerceAtLeast(0f),
-                    (avgY - 0.1f).coerceAtLeast(0f),
-                    (avgX + 0.1f).coerceAtMost(1f),
-                    (avgY + 0.1f).coerceAtMost(1f)
-                )
-            ))
+            // [修复] 使用帧间确认
+            if (confirmDetection(ObstacleType.PERSON)) {
+                results.add(DetectedObstacle(
+                    type = ObstacleType.PERSON,
+                    confidence = 0.4f,  // [修复] 提高置信度
+                    distance = 3f,
+                    direction = direction,
+                    boundingBox = BoundingBox(
+                        (avgX - 0.1f).coerceAtLeast(0f),
+                        (avgY - 0.1f).coerceAtLeast(0f),
+                        (avgX + 0.1f).coerceAtMost(1f),
+                        (avgY + 0.1f).coerceAtMost(1f)
+                    )
+                ))
+            }
         }
         
         return results
@@ -599,35 +628,63 @@ class AIDetector @Inject constructor(
         val width = bitmap.width
         val height = bitmap.height
         
-        // 检测水平边缘（可能是路沿、台阶）
-        val sampleY = height * 2 / 3  // 检测画面下方1/3区域
-        var edgeCount = 0
-        var edgeX = 0f
+        // [修复] 检测多条水平线，确认是路沿而非纹理
+        val scanLines = listOf(
+            height * 2 / 3,      // 下方1/3
+            height * 3 / 4,      // 下方1/4
+            height * 5 / 6       // 更下方
+        )
         
-        for (x in 1 until width - 1) {
-            val topPixel = bitmap.getPixel(x, sampleY - 5)
-            val bottomPixel = bitmap.getPixel(x, sampleY + 5)
+        var totalEdgeScore = 0
+        var consistentEdges = 0
+        
+        for (sampleY in scanLines) {
+            if (sampleY >= height - 10 || sampleY <= 10) continue
             
-            val diff = kotlin.math.abs((topPixel and 0xFF) - (bottomPixel and 0xFF)) +
-                      kotlin.math.abs(((topPixel shr 8) and 0xFF) - ((bottomPixel shr 8) and 0xFF)) +
-                      kotlin.math.abs(((topPixel shr 16) and 0xFF) - ((bottomPixel shr 16) and 0xFF))
+            var lineEdgeCount = 0
+            var lineEdgeX = 0f
+            var consecutiveEdges = 0
+            var maxConsecutive = 0
             
-            if (diff > 80) {
-                edgeCount++
-                edgeX += x
+            for (x in 1 until width - 1 step 2) {  // [修复] 步长2，减少噪声
+                val topPixel = bitmap.getPixel(x, sampleY - 5)
+                val bottomPixel = bitmap.getPixel(x, sampleY + 5)
+                
+                val diff = kotlin.math.abs((topPixel and 0xFF) - (bottomPixel and 0xFF)) +
+                          kotlin.math.abs(((topPixel shr 8) and 0xFF) - ((bottomPixel shr 8) and 0xFF)) +
+                          kotlin.math.abs(((topPixel shr 16) and 0xFF) - ((bottomPixel shr 16) and 0xFF))
+                
+                // [修复] 大幅提高阈值（80->200），只有明显颜色分界才算边缘
+                if (diff > 200) {
+                    lineEdgeCount++
+                    lineEdgeX += x
+                    consecutiveEdges++
+                    maxConsecutive = kotlin.math.max(maxConsecutive, consecutiveEdges)
+                } else {
+                    consecutiveEdges = 0
+                }
+            }
+            
+            // [修复] 要求边缘连续（路沿是连续直线，纹理是离散的）
+            val lineWidth = width / 2  // 实际检测的像素数
+            if (maxConsecutive > lineWidth * 0.4f) {  // [修复] 要求40%以上连续
+                consistentEdges++
+                totalEdgeScore += lineEdgeCount
             }
         }
         
-        // 如果检测到连续边缘，可能是路沿
-        if (edgeCount > width / 4) {
-            val avgX = edgeX / edgeCount / width
-            results.add(DetectedObstacle(
-                type = ObstacleType.CURB,
-                confidence = 0.25f,
-                distance = 2f,
-                direction = if (avgX < 0.5f) Direction.LEFT else Direction.RIGHT,
-                boundingBox = BoundingBox(0f, 0.6f, 1f, 0.8f)
-            ))
+        // [修复] 要求多条扫描线都检测到连续边缘（确认是水平路沿而非随机纹理）
+        if (consistentEdges >= 2 && totalEdgeScore > width * 0.3f) {
+            // [修复] 使用帧间确认
+            if (confirmDetection(ObstacleType.CURB)) {
+                results.add(DetectedObstacle(
+                    type = ObstacleType.CURB,
+                    confidence = 0.5f,  // [修复] 提高置信度
+                    distance = 2f,
+                    direction = Direction.CENTER,
+                    boundingBox = BoundingBox(0f, 0.6f, 1f, 0.8f)
+                ))
+            }
         }
         
         return results
