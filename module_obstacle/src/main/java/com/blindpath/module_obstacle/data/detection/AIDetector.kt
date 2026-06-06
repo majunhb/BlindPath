@@ -70,47 +70,133 @@ class AIDetector @Inject constructor(
     private val inputSize = AppConfig.AIDetection.INPUT_SIZE
     private val numThreads = AppConfig.AIDetection.NUM_THREADS
 
-    // ============ COCO 80类 到 视障障碍物类型 的映射 ============
-    // COCO类别参考: https://cocodataset.org/#home
-    // 只映射与视障导航相关的类别
+    // ============ COCO 80类 完整映射 到 视障障碍物类型 ============
+    // COCO 80类完整参考: https://cocodataset.org/#home
+    // 所有类别均映射，确保 YOLOv8n 识别出的所有物体都有对应语义
     private val cocoToObstacle = mapOf(
-        // 人物类
-        0 to ObstacleType.PERSON,        // person
+        // ---- 人物 ----
+        0 to ObstacleType.PERSON,           // person
 
-        // 交通工具类（对盲人威胁较大）
-        1 to ObstacleType.BICYCLE,       // bicycle
-        2 to ObstacleType.VEHICLE,       // car
-        3 to ObstacleType.MOTORCYCLE,    // motorcycle
-        5 to ObstacleType.VEHICLE,       // bus
-        7 to ObstacleType.VEHICLE,       // truck
+        // ---- 交通工具 ----
+        1 to ObstacleType.BICYCLE,          // bicycle
+        2 to ObstacleType.VEHICLE,          // car
+        3 to ObstacleType.MOTORCYCLE,       // motorcycle
+        4 to ObstacleType.AIRPLANE,         // airplane
+        5 to ObstacleType.BUS,              // bus
+        6 to ObstacleType.TRAIN,            // train
+        7 to ObstacleType.TRUCK,            // truck
+        8 to ObstacleType.BOAT,             // boat
 
-        // 【重要】COCO class 9 是 traffic light，映射到红绿灯
-        9 to ObstacleType.TRAFFIC_LIGHT, // traffic light
+        // ---- 交通设施 ----
+        9 to ObstacleType.TRAFFIC_LIGHT,    // traffic light
+        10 to ObstacleType.TRAFFIC_SIGN,    // fire hydrant（消防栓，视为路边柱状设施）
+        11 to ObstacleType.TRAFFIC_SIGN,    // stop sign
+        12 to ObstacleType.PARKING_METER,   // parking meter
+        13 to ObstacleType.BENCH,           // bench
 
-        // 交通标志
-        10 to ObstacleType.TRAFFIC_SIGN, // stop sign
+        // ---- 动物 ----
+        14 to ObstacleType.BIRD,            // bird
+        15 to ObstacleType.CAT,             // cat
+        16 to ObstacleType.DOG,             // dog
+        17 to ObstacleType.HORSE,           // horse
+        18 to ObstacleType.SHEEP,           // sheep
+        19 to ObstacleType.COW,             // cow
+        20 to ObstacleType.ELEPHANT,        // elephant
+        21 to ObstacleType.BEAR,            // bear
+        22 to ObstacleType.ZEBRA,           // zebra
+        23 to ObstacleType.GIRAFFE,         // giraffe
 
-        // 街道设施
-        11 to ObstacleType.PILLAR,       // fire hydrant (归类为柱子/障碍)
-        12 to ObstacleType.BENCH,        // bench
+        // ---- 个人物品 ----
+        24 to ObstacleType.BACKPACK,        // backpack
+        25 to ObstacleType.UMBRELLA,        // umbrella
+        26 to ObstacleType.HANDBAG,         // handbag
+        27 to ObstacleType.ROAD_HAZARD,     // tie（领带 → 归为通用障碍物）
+        28 to ObstacleType.SUITCASE,        // suitcase
 
-        // 家居物品（可能阻挡路径）
-        56 to ObstacleType.CHAIR,        // chair
-        57 to ObstacleType.SOFA,         // sofa
-        58 to ObstacleType.POTTED_PLANT, // potted plant
-        59 to ObstacleType.BED,          // bed
-        60 to ObstacleType.TABLE,        // dining table
+        // ---- 运动/娱乐 ----
+        29 to ObstacleType.FRISBEE,         // frisbee
+        30 to ObstacleType.SKIS,            // skis
+        31 to ObstacleType.SNOWBOARD,       // snowboard
+        32 to ObstacleType.SPORTS_BALL,     // sports ball
+        33 to ObstacleType.KITE,            // kite
+        34 to ObstacleType.ROAD_HAZARD,     // baseball bat（运动器材 → 路面障碍）
+        35 to ObstacleType.ROAD_HAZARD,     // baseball glove
+        36 to ObstacleType.SKATEBOARD,      // skateboard
+        37 to ObstacleType.SURFBOARD,       // surfboard
+        38 to ObstacleType.TENNIS_RACKET,   // tennis racket
 
-        // 个人物品
-        24 to ObstacleType.BACKPACK,     // backpack
-        25 to ObstacleType.UMBRELLA,     // umbrella
-        26 to ObstacleType.HANDBAG,     // handbag
-        28 to ObstacleType.SUITCASE,     // suitcase
+        // ---- 厨房/餐饮 ----
+        39 to ObstacleType.BOTTLE,          // bottle
+        40 to ObstacleType.WINE_GLASS,      // wine glass
+        41 to ObstacleType.CUP,             // cup
+        42 to ObstacleType.FORK,            // fork
+        43 to ObstacleType.KNIFE,           // knife
+        44 to ObstacleType.SPOON,           // spoon
+        45 to ObstacleType.BOWL,            // bowl
 
-        // 电子设备
-        39 to ObstacleType.BOTTLE,      // bottle
-        63 to ObstacleType.LAPTOP,      // laptop
-        67 to ObstacleType.PHONE        // cell phone
+        // ---- 食物（归为通用食物类） ----
+        46 to ObstacleType.BANANA,          // banana
+        47 to ObstacleType.APPLE,           // apple
+        48 to ObstacleType.FOOD,            // sandwich
+        49 to ObstacleType.FOOD,            // orange
+        50 to ObstacleType.FOOD,            // broccoli
+        51 to ObstacleType.FOOD,            // carrot
+        52 to ObstacleType.FOOD,            // hot dog
+        53 to ObstacleType.FOOD,            // pizza
+        54 to ObstacleType.FOOD,            // donut
+        55 to ObstacleType.FOOD,            // cake
+
+        // ---- 家居/家具 ----
+        56 to ObstacleType.CHAIR,           // chair
+        57 to ObstacleType.SOFA,            // couch
+        58 to ObstacleType.POTTED_PLANT,    // potted plant
+        59 to ObstacleType.BED,             // bed
+        60 to ObstacleType.TABLE,           // dining table
+        61 to ObstacleType.SINK,            // toilet（卫生间设施 → 水槽类）
+        62 to ObstacleType.TV,              // tv
+
+        // ---- 电子设备 ----
+        63 to ObstacleType.LAPTOP,          // laptop
+        64 to ObstacleType.MOUSE_DEVICE,    // mouse
+        65 to ObstacleType.REMOTE,          // remote
+        66 to ObstacleType.KEYBOARD,        // keyboard
+        67 to ObstacleType.PHONE,           // cell phone
+        68 to ObstacleType.MICROWAVE,       // microwave
+        69 to ObstacleType.OVEN,            // oven
+        70 to ObstacleType.TOASTER,         // toaster
+        71 to ObstacleType.SINK,            // sink
+        72 to ObstacleType.REFRIGERATOR,    // refrigerator
+
+        // ---- 书籍/文具 ----
+        73 to ObstacleType.BOOK,            // book
+        74 to ObstacleType.CLOCK,           // clock
+        75 to ObstacleType.VASE,            // vase
+        76 to ObstacleType.SCISSORS,        // scissors
+        77 to ObstacleType.TEDDY_BEAR,      // teddy bear
+        78 to ObstacleType.HAIR_DRYER,      // hair drier
+        79 to ObstacleType.TOOTHBRUSH       // toothbrush
+    )
+
+    // ============ COCO 80类中文名称映射 ============
+    // 用于日志输出和调试，与 cocoToObstacle 一一对应
+    private val cocoChineseNames = mapOf(
+        0 to "人", 1 to "自行车", 2 to "汽车", 3 to "摩托车", 4 to "飞机",
+        5 to "公交车", 6 to "火车", 7 to "卡车", 8 to "船", 9 to "红绿灯",
+        10 to "消防栓", 11 to "停车标志", 12 to "停车收费桩", 13 to "长椅",
+        14 to "鸟", 15 to "猫", 16 to "狗", 17 to "马", 18 to "羊",
+        19 to "牛", 20 to "大象", 21 to "熊", 22 to "斑马", 23 to "长颈鹿",
+        24 to "背包", 25 to "雨伞", 26 to "手提包", 27 to "领带", 28 to "行李箱",
+        29 to "飞盘", 30 to "滑雪板", 31 to "单板滑雪", 32 to "运动球", 33 to "风筝",
+        34 to "棒球棒", 35 to "棒球手套", 36 to "滑板", 37 to "冲浪板", 38 to "网球拍",
+        39 to "瓶子", 40 to "酒杯", 41 to "杯子", 42 to "叉子", 43 to "刀",
+        44 to "勺子", 45 to "碗", 46 to "香蕉", 47 to "苹果", 48 to "三明治",
+        49 to "橙子", 50 to "西兰花", 51 to "胡萝卜", 52 to "热狗", 53 to "披萨",
+        54 to "甜甜圈", 55 to "蛋糕", 56 to "椅子", 57 to "沙发", 58 to "盆栽",
+        59 to "床", 60 to "餐桌", 61 to "马桶", 62 to "电视", 63 to "笔记本电脑",
+        64 to "鼠标", 65 to "遥控器", 66 to "键盘", 67 to "手机", 68 to "微波炉",
+        69 to "烤箱", 70 to "烤面包机", 71 to "水槽", 72 to "冰箱", 73 to "书",
+        74 to "时钟", 75 to "花瓶", 76 to "剪刀", 77 to "玩具熊", 78 to "吹风机",
+        79 to "牙刷"
     )
 
     // ============ 障碍物已知高度（用于单目测距） ============
@@ -143,12 +229,38 @@ class AIDetector @Inject constructor(
         ObstacleType.SOFA to 0.8f,          // 沙发高度约0.8m
         ObstacleType.POTTED_PLANT to 0.5f,  // 盆栽高度约0.5m
         ObstacleType.BED to 0.5f,           // 床高度约0.5m
-        ObstacleType.TABLE to 0.75f         // 餐桌高度约0.75m
+        ObstacleType.TABLE to 0.75f,         // 餐桌高度约0.75m
+
+        // 动物类
+        ObstacleType.CAT to 0.3f,             // 猫身高约0.3m
+        ObstacleType.DOG to 0.5f,             // 中型犬约0.5m
+        ObstacleType.BIRD to 0.2f,            // 鸟类约0.2m
+        ObstacleType.HORSE to 1.6f,           // 马肩高约1.6m
+        ObstacleType.COW to 1.4f,             // 牛肩高约1.4m
+        ObstacleType.ELEPHANT to 3.0f,        // 大象约3m
+        ObstacleType.BEAR to 1.0f,            // 熊约1m（四足状态）
+        ObstacleType.ZEBRA to 1.4f,           // 斑马约1.4m
+        ObstacleType.GIRAFFE to 4.5f,         // 长颈鹿约4.5m
+
+        // 交通工具（扩展）
+        ObstacleType.AIRPLANE to 5.0f,        // 飞机约5m
+        ObstacleType.TRAIN to 4.0f,           // 火车约4m
+        ObstacleType.BOAT to 2.5f,            // 船约2.5m
+
+        // 运动设施
+        ObstacleType.SKATEBOARD to 0.15f,     // 滑板约0.15m
+
+        // 室内物品
+        ObstacleType.REFRIGERATOR to 1.8f,    // 冰箱约1.8m
+        ObstacleType.TV to 0.6f,              // 电视约0.6m
+        ObstacleType.BOOK to 0.03f,           // 书约3cm
+        ObstacleType.VASE to 0.4f,            // 花瓶约0.4m
+        ObstacleType.CLOCK to 0.3f            // 时钟约0.3m
     )
 
-    // 检测阈值
-    private val confidenceThreshold = 0.4f  // 降低阈值，提高召回率，适合盲人导航场景
-    private val iouThreshold = 0.5f      // 提高IoU阈值，减少重叠框合并
+    // 检测阈值（★降低以提高召回率，适合视障导航场景★）
+    private val confidenceThreshold = 0.25f  // 0.4f → 0.25f，识别更多低置信度物体
+    private val iouThreshold = 0.45f         // 0.5f → 0.45f，减少重叠框误合并
 
     // 焦距（需根据实际摄像头参数校准）
     private var calibratedFocalLength: Float? = null
