@@ -258,9 +258,21 @@ class AIDetector @Inject constructor(
         ObstacleType.CLOCK to 0.3f            // 时钟约0.3m
     )
 
-    // 检测阈值（★降低以提高召回率，适合视障导航场景★）
-    private val confidenceThreshold = 0.25f  // 0.4f → 0.25f，识别更多低置信度物体
-    private val iouThreshold = 0.45f         // 0.5f → 0.45f，减少重叠框误合并
+    // [规范] 距离分段置信阈值 - 根治乱报/漏报
+    // 统一使用低阈值检测，在 postProcess 中按距离分段过滤
+    private val confidenceThreshold = 0.25f  // 检测阶段低阈值，保证召回
+    private val iouThreshold = 0.45f         // NMS阈值固定
+    
+    // [规范] 距离分段置信阈值
+    companion object {
+        const val DANGER_DISTANCE = 1.5f   // 危险区 <1.5m
+        const val WARNING_DISTANCE = 3.0f  // 警示区 1.5~3m
+        const val IGNORE_DISTANCE = 3.0f   // 忽略区 >3m，一律屏蔽播报
+        
+        const val CONF_DANGER = 0.28f      // 危险区置信阈值（压低，提高灵敏度）
+        const val CONF_WARNING = 0.45f     // 警示区置信阈值（中等，过滤噪点）
+        const val CONF_IGNORE = 0.7f       // 忽略区置信阈值（高，杜绝远景误报）
+    }
 
     // 焦距（需根据实际摄像头参数校准）
     private var calibratedFocalLength: Float? = null

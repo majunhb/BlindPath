@@ -547,16 +547,8 @@ class ObstacleRepositoryImpl @Inject constructor(
                     // 处理场景变化
                     processSceneChange(sceneResult)
                     
-                    // [增强] 如果检测到障碍物，也进行语音播报
-                    if (allObstacles.isNotEmpty()) {
-                        val closest = allObstacles.minByOrNull { it.distance }
-                        closest?.let {
-                            if (it.distance < 2f) {
-                                val msg = "前方${it.distance.toInt()}米有${it.type.chineseName}"
-                                voiceRepository.announce(msg, VoiceType.OBSTACLE_NORMAL)
-                            }
-                        }
-                    }
+                    // [规范] 障碍物语音播报统一由 processAlert() 处理
+                    // 不在此处直接播报，避免重复播报
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Image processing failed")
