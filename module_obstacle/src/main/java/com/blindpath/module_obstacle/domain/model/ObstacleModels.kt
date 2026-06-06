@@ -63,6 +63,62 @@ enum class ObstacleType(
     LAPTOP("笔记本电脑", 1, 8),
     PHONE("手机", 1, 9),
 
+    // ============ 交通工具（扩展）============
+    AIRPLANE("飞机", 2, 7),
+    TRAIN("火车", 3, 1),
+    BOAT("船只", 2, 6),
+
+    // ============ 动物类（COCO 80类） ============
+    CAT("猫", 1, 6),
+    DOG("狗", 2, 5),
+    BIRD("鸟类", 1, 8),
+    HORSE("马", 2, 5),
+    SHEEP("羊", 1, 7),
+    COW("牛", 2, 6),
+    ELEPHANT("大象", 3, 2),
+    BEAR("熊", 3, 1),
+    ZEBRA("斑马", 2, 5),
+    GIRAFFE("长颈鹿", 2, 5),
+
+    // ============ 运动/娱乐设施 ============
+    KITE("风筝", 1, 10),
+    SKATEBOARD("滑板", 2, 6),
+    SURFBOARD("冲浪板", 1, 9),
+    SPORTS_BALL("运动球", 1, 9),
+    TENNIS_RACKET("球拍", 1, 10),
+    FRISBEE("飞盘", 1, 10),
+    SKIS("滑雪板", 1, 9),
+    SNOWBOARD("单板滑雪", 1, 9),
+
+    // ============ 餐饮/厨房用品 ============
+    WINE_GLASS("酒杯", 1, 9),
+    CUP("杯子", 1, 9),
+    FORK("叉子", 1, 10),
+    KNIFE("刀具", 2, 7),
+    SPOON("勺子", 1, 10),
+    BOWL("碗", 1, 9),
+    BANANA("香蕉", 1, 10),
+    APPLE("苹果", 1, 10),
+    FOOD("食物", 1, 10),
+
+    // ============ 室内物品（扩展）============
+    BOOK("书本", 1, 9),
+    CLOCK("时钟", 1, 10),
+    VASE("花瓶", 1, 9),
+    SCISSORS("剪刀", 2, 8),
+    TEDDY_BEAR("玩具熊", 1, 10),
+    TOOTHBRUSH("牙刷", 1, 10),
+    HAIR_DRYER("吹风机", 1, 9),
+    TV("电视机", 1, 9),
+    KEYBOARD("键盘", 1, 10),
+    MOUSE_DEVICE("鼠标", 1, 10),
+    REMOTE("遥控器", 1, 10),
+    MICROWAVE("微波炉", 1, 9),
+    OVEN("烤箱", 1, 9),
+    TOASTER("烤面包机", 1, 9),
+    SINK("水槽", 1, 9),
+    REFRIGERATOR("冰箱", 1, 9),
+
     // ============ 通用障碍物 ============
     OBSTACLE("障碍物", 3, 2),
     UNKNOWN("未知物体", 1, 9);
@@ -150,6 +206,60 @@ enum class ObstacleType(
             // 电子设备
             LAPTOP -> "注意，前方${distanceInt}米有笔记本电脑"
             PHONE -> "注意，前方${distanceInt}米有手机"
+
+            // 交通工具（扩展）
+            AIRPLANE -> "注意，前方有飞机"
+            TRAIN -> if (distance < 5f) "危险，前方${distanceInt}米有火车" else "远处有火车"
+            BOAT -> "注意，前方${distanceInt}米有船只"
+
+            // 动物类
+            CAT -> if (distance < 1f) "注意脚下，有猫" else "前方${distanceInt}米有猫"
+            DOG -> if (distance < 1.5f) "注意，前方${distanceInt}米有狗" else "前方有狗"
+            BIRD -> "前方${distanceInt}米有鸟"
+            HORSE -> "注意，前方${distanceInt}米有马"
+            SHEEP -> "前方${distanceInt}米有羊"
+            COW -> "注意，前方${distanceInt}米有牛"
+            ELEPHANT -> if (distance < 5f) "危险，前方${distanceInt}米有大象" else "远处有大象"
+            BEAR -> if (distance < 5f) "危险，前方${distanceInt}米有熊" else "远处有熊"
+            ZEBRA -> "注意，前方${distanceInt}米有斑马"
+            GIRAFFE -> "注意，前方${distanceInt}米有长颈鹿"
+
+            // 运动/娱乐
+            KITE -> "上方有风筝"
+            SKATEBOARD -> "注意，前方${distanceInt}米有滑板"
+            SURFBOARD -> "前方${distanceInt}米有冲浪板"
+            SPORTS_BALL -> "注意脚下，前方有球"
+            TENNIS_RACKET -> "前方${distanceInt}米有球拍"
+            FRISBEE -> "前方${distanceInt}米有飞盘"
+            SKIS -> "前方${distanceInt}米有滑雪板"
+            SNOWBOARD -> "前方${distanceInt}米有单板滑雪"
+
+            // 餐饮/厨房
+            WINE_GLASS -> "注意，前方${distanceInt}米有酒杯"
+            CUP -> "前方${distanceInt}米有杯子"
+            FORK -> "前方${distanceInt}米有叉子"
+            KNIFE -> "注意，前方${distanceInt}米有刀具"
+            SPOON -> "前方${distanceInt}米有勺子"
+            BOWL -> "前方${distanceInt}米有碗"
+            BANANA, APPLE, FOOD -> "前方${distanceInt}米有食物"
+
+            // 室内物品
+            BOOK -> "前方${distanceInt}米有书本"
+            CLOCK -> "前方${distanceInt}米有时钟"
+            VASE -> "注意，前方${distanceInt}米有花瓶"
+            SCISSORS -> "注意，前方${distanceInt}米有剪刀"
+            TEDDY_BEAR -> "前方${distanceInt}米有玩具熊"
+            TOOTHBRUSH -> "前方${distanceInt}米有牙刷"
+            HAIR_DRYER -> "前方${distanceInt}米有吹风机"
+            TV -> "前方${distanceInt}米有电视"
+            KEYBOARD -> "前方${distanceInt}米有键盘"
+            MOUSE_DEVICE -> "前方${distanceInt}米有鼠标"
+            REMOTE -> "前方${distanceInt}米有遥控器"
+            MICROWAVE -> "前方${distanceInt}米有微波炉"
+            OVEN -> "前方${distanceInt}米有烤箱"
+            TOASTER -> "前方${distanceInt}米有烤面包机"
+            SINK -> "前方${distanceInt}米有水槽"
+            REFRIGERATOR -> "注意，前方${distanceInt}米有冰箱"
 
             // 通用
             OBSTACLE -> "注意，前方${distanceInt}米有障碍物"
@@ -281,6 +391,16 @@ enum class SceneType(
     SHOPPING_MALL("商城购物区", "商场购物中心区域"),
     RESTAURANT("餐饮区", "餐厅食堂区域"),
 
+    // ===== 新增：交通/动物/运动/专业区域场景 =====
+    PARKING_LOT("停车场", "停车场区域，注意车辆"),
+    TRANSPORTATION_HUB("交通枢纽", "机场/火车站/港口区域"),
+    ZOO_OR_FARM("动物区域", "动物园或农场区域"),
+    PET_AREA("宠物聚集区", "宠物聚集区域"),
+    SPORTS_AREA("运动区域", "运动场或健身区域"),
+    APPLIANCE_AREA("电器区域", "家电展示或使用区域"),
+    LIBRARY_AREA("图书馆/书店", "图书馆或书店区域"),
+    KITCHEN_AREA("厨房区域", "厨房或备餐区域"),
+
     UNKNOWN("未知", "未识别场景");
 
     /**
@@ -310,6 +430,14 @@ enum class SceneType(
             SCHOOL_AREA -> "进入校园区域，注意学生人流"
             SHOPPING_MALL -> "进入商场购物区"
             RESTAURANT -> "进入餐饮区域，注意餐桌椅"
+            PARKING_LOT -> "进入停车场，注意车辆往来"
+            TRANSPORTATION_HUB -> "进入交通枢纽，请留意周围"
+            ZOO_OR_FARM -> "前方有大型动物，请保持距离"
+            PET_AREA -> "附近有宠物聚集，请注意脚下"
+            SPORTS_AREA -> "进入运动区域，注意运动器材"
+            APPLIANCE_AREA -> "进入电器区域"
+            LIBRARY_AREA -> "进入图书馆或书店"
+            KITCHEN_AREA -> "进入厨房区域，注意尖锐物品"
             UNKNOWN -> ""
         }
     }
