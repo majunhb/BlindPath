@@ -339,6 +339,70 @@ class SceneClassifier @Inject constructor(
             return Pair(SceneType.BANK_AREA, 0.58f)
         }
 
+        // [新增] 交通工具聚集 → 停车场/交通枢纽
+        val vehicles = obstacles.count { it.type in listOf(
+            ObstacleType.VEHICLE, ObstacleType.TRUCK, ObstacleType.BUS,
+            ObstacleType.MOTORCYCLE, ObstacleType.BICYCLE
+        )}
+        if (vehicles >= 3) {
+            return Pair(SceneType.PARKING_LOT, 0.65f)
+        }
+        val hasAirplane = obstacles.any { it.type == ObstacleType.AIRPLANE }
+        val hasTrainOrBoat = obstacles.any {
+            it.type == ObstacleType.TRAIN || it.type == ObstacleType.BOAT
+        }
+        if (hasAirplane || hasTrainOrBoat) {
+            return Pair(SceneType.TRANSPORTATION_HUB, 0.70f)
+        }
+
+        // [新增] 动物出现 → 动物园/农场场景
+        val wildAnimals = obstacles.count { it.type in listOf(
+            ObstacleType.ELEPHANT, ObstacleType.BEAR, ObstacleType.ZEBRA,
+            ObstacleType.GIRAFFE, ObstacleType.HORSE, ObstacleType.COW,
+            ObstacleType.SHEEP
+        )}
+        if (wildAnimals >= 1) {
+            return Pair(SceneType.ZOO_OR_FARM, 0.70f)
+        }
+        val pets = obstacles.count { it.type in listOf(ObstacleType.CAT, ObstacleType.DOG) }
+        if (pets >= 2) {
+            return Pair(SceneType.PET_AREA, 0.60f)
+        }
+
+        // [新增] 运动器材 → 运动场/健身房场景
+        val sportEquip = obstacles.count { it.type in listOf(
+            ObstacleType.SPORTS_BALL, ObstacleType.SKATEBOARD, ObstacleType.TENNIS_RACKET,
+            ObstacleType.SURFBOARD, ObstacleType.SKIS, ObstacleType.FRISBEE
+        )}
+        if (sportEquip >= 2) {
+            return Pair(SceneType.SPORTS_AREA, 0.65f)
+        }
+
+        // [新增] 电子产品聚集 → 电器区域
+        val electronics = obstacles.count { it.type in listOf(
+            ObstacleType.TV, ObstacleType.LAPTOP, ObstacleType.KEYBOARD,
+            ObstacleType.MOUSE_DEVICE, ObstacleType.REMOTE, ObstacleType.MICROWAVE,
+            ObstacleType.OVEN, ObstacleType.REFRIGERATOR, ObstacleType.TOASTER
+        )}
+        if (electronics >= 2) {
+            return Pair(SceneType.APPLIANCE_AREA, 0.60f)
+        }
+
+        // [新增] 书本聚集 → 图书馆/书店
+        val books = obstacles.count { it.type == ObstacleType.BOOK }
+        if (books >= 3) {
+            return Pair(SceneType.LIBRARY_AREA, 0.65f)
+        }
+
+        // [新增] 餐饮器具聚集 → 厨房/餐厅
+        val kitchenItems = obstacles.count { it.type in listOf(
+            ObstacleType.BOWL, ObstacleType.KNIFE, ObstacleType.FORK,
+            ObstacleType.SPOON, ObstacleType.CUP, ObstacleType.WINE_GLASS
+        )}
+        if (kitchenItems >= 3) {
+            return Pair(SceneType.KITCHEN_AREA, 0.65f)
+        }
+
         return null
     }
 
