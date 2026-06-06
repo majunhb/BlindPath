@@ -22,7 +22,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          lfs: true
+          # [优化] shallow clone 只拉取最新提交，大幅减小下载量
+          fetch-depth: 1
+          # [优化] 不下载LFS文件（模型文件在CI中单独检查/下载）
+          lfs: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4

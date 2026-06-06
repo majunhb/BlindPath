@@ -191,3 +191,40 @@ cd BlindPath
 <p align="center">
   Made with ❤️ for accessibility
 </p>
+
+
+## 🚀 快速克隆（1分钟内完成）
+
+由于仓库托管在 GitHub，国内用户直接克隆可能较慢。推荐使用 shallow clone：
+
+### Linux/Mac
+```bash
+# 方式1：使用快速克隆脚本（自动尝试多个镜像）
+curl -sL https://raw.githubusercontent.com/majunhb/BlindPath/main/scripts/fast-clone.sh | bash
+
+# 方式2：手动 shallow clone（只下载最新版本，约10-30秒）
+git clone --depth=1 https://github.com/majunhb/BlindPath.git
+
+# 方式3：使用国内镜像
+git clone --depth=1 https://ghfast.top/https://github.com/majunhb/BlindPath.git
+```
+
+### Windows
+```powershell
+# 使用 shallow clone（只下载最新版本）
+git clone --depth=1 https://github.com/majunhb/BlindPath.git
+
+# 或使用快速克隆脚本
+.\scripts\fast-clone.bat
+```
+
+### 完整历史（可选）
+```bash
+cd BlindPath
+git fetch --unshallow  # 拉取完整提交历史
+```
+
+**仓库大小说明**：
+- 代码：约 5MB
+- 模型文件：`yolov8n.tflite` 仅 9 字节（LFS 占位符），APP 首次运行自动下载真实模型（约 6MB）
+- 总克隆时间（shallow）：**10-30 秒**（国内镜像）
