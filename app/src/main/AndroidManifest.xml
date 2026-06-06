@@ -1,36 +1,175 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+        <!-- 前台服务权限 -->
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+        <!-- 核心权限 -->
+        <uses-permission android:name="android.permission.CAMERA" />
+        <uses-permission android:name="android.permission.VIBRATE" />
+        <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+        <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+        <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- SOS 求助权限 -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
+    
+    <!-- 语音识别权限 -->
+        <uses-permission android:name="android.permission.RECORD_AUDIO" />
+        <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+        
+        <!-- 语音唤醒服务权限 -->
+        <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+        <uses-permission android:name="android.permission.WAKE_LOCK" />
+        <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+        
+        <!-- [P0 修复] 后台持续监听权限 -->
+        <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+        <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+        
+        <!-- 后台保活与常驻权限 -->
+        <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+        <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
+        <uses-permission android:name="android.permission.REQUEST_COMPANION_USE_DATA_IN_BACKGROUND" />
+        
+        <!-- 悬浮窗与后台界面权限 -->
+        <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+        <uses-permission android:name="android.permission.DISPLAY_OVER_OTHER_APPS" />
+        
+        <!-- 后台定位权限 -->
+        <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+        
+        <!-- 蓝牙权限 -->
+        <uses-permission android:name="android.permission.BLUETOOTH" />
+        <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+        <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
+        <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+
+    <uses-feature android:name="android.hardware.camera" android:required="true" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
 
     <application
+        android:name=".BlindPathApp"
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
-        android:theme="@style/Theme.AppCompat.DayNight.NoActionBar">
+        android:theme="@style/Theme.BlindPath">
+
+        <!-- 高德地图 API Key -->
+        <meta-data
+            android:name="com.amap.api.v2.apikey"
+            android:value="02d60524af990e3835f0b835ab5403e9" />
+
+        <!-- 百度语音 SDK 配置 -->
+        <meta-data
+            android:name="com.baidu.speech.APP_ID"
+            android:value="${BAIDU_APP_ID}" />
+        <meta-data
+            android:name="com.baidu.speech.API_KEY"
+            android:value="${BAIDU_API_KEY}" />
+        <meta-data
+            android:name="com.baidu.speech.SECRET_KEY"
+            android:value="${BAIDU_SECRET_KEY}" />
+
+        <!-- 百度语音识别服务（SDK 内部使用） -->
+        <service
+            android:name="com.baidu.speech.VoiceRecognitionService"
+            android:exported="false" />
+
+        <!-- 百度语音唤醒 AIDL 服务（EventManagerFactory 使用） -->
+        <service
+            android:name="com.baidu.speech.aidl.EventRecognitionService"
+            android:exported="false" />
 
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:theme="@style/Theme.BlindPath">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
+        <!-- 避障服务 -->
         <service
-            android:name=".service.GlobalGestureService"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:name="com.blindpath.module_obstacle.service.ObstacleService"
+            android:exported="false"
+            android:foregroundServiceType="camera"
+            android:stopWithTask="true" />
+
+        <!-- 导航服务 -->
+        <service
+            android:name="com.blindpath.module_navigation.service.NavigationService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!-- 唤醒词桥接服务（修复 v2-2：静态 BR 无法 Hilt 注入，用主进程 Service 桥接） -->
+        <service
+            android:name="com.blindpath.module_voice.service.WakeWordBridgeService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- 语音唤醒服务（独立进程，防止后台被回收） -->
+        <service
+            android:name="com.blindpath.module_voice.service.WakeWordService"
+            android:enabled="true"
+            android:exported="false"
+            android:process=":wakeword"
+            android:foregroundServiceType="microphone" />
+
+        <!-- 增强版语音唤醒服务（独立进程） -->
+        <service
+            android:name="com.blindpath.module_voice.service.WakeWordServiceEnhanced"
+            android:enabled="true"
+            android:exported="false"
+            android:process=":wakeword"
+            android:foregroundServiceType="microphone" />
+
+
+        <!-- 蓝牙音频接收器 -->
+        <receiver
+            android:name="com.blindpath.module_voice.receiver.BluetoothAudioReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED" />
+                <action android:name="android.media.ACTION_SCO_AUDIO_STATE_UPDATED" />
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 开机启动接收器 -->
+        <receiver
+            android:name="com.blindpath.module_voice.receiver.BootCompletedReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 唤醒词检测接收器 -->
+        <receiver
+            android:name="com.blindpath.module_voice.receiver.WakeWordReceiver"
+            android:enabled="true"
             android:exported="false">
             <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
+                <action android:name="com.blindpath.wakeword.DETECTED" />
+                <action android:name="com.blindpath.wakeword.START" />
+                <action android:name="com.blindpath.wakeword.STOP" />
             </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
+        </receiver>
+
     </application>
+
 </manifest>
