@@ -506,30 +506,50 @@ class ObstacleRepositoryImpl @Inject constructor(
                 val bitmap = imageProxyToBitmap(imageProxy)
                 if (bitmap != null) {
                     // AI目标检测
-                    val obstacles = aiDetector.detect(bitmap)
-                    latestObstacles = obstacles
-
+                    val aiObstacles = aiDetector.detect(bitmap)
+                    
                     // 场景识别
-                    val sceneResult = sceneClassifier.recognizeScene(bitmap, obstacles)
+                    val sceneResult = sceneClassifier.recognizeScene(bitmap, aiObstacles)
+                    
+                    // ============ 将场景检测结果转换为障碍物对象 ============
+                    val sceneObstacles = mutableListOf<DetectedObstacle>()
+                    
+                    // 检测到路沿/道牙
+                    if (sceneResult?.sceneType == SceneType.CURB) {
+                        sceneObstacles.add(
+                            DetectedObstacle(
+                                type = ObstacleType.CURB,
+                                confidence = sceneResult.confidence,
+                                distance = estimateCurbDistance(bitmap),
+                                direction = Direction.CENTER, // 路沿通常在正前方
+                                boundingBox = BoundingBox(0.3f, 0.8f, 0.7f, 1.0f) // 底部区域
+                            )
+                        )
+                        Timber.d("Curb detected by scene classifier, confidence=${sceneResult.confidence}")
+                    }
+                    
+                    // 合并 AI 检测和场景检测的障碍物
+                    val allObstacles = aiObstacles + sceneObstacles
+                    latestObstacles = allObstacles
 
                     // 更新状态
                     _state.update {
                         it.copy(
-                            detectedObstacles = obstacles,
+                            detectedObstacles = allObstacles,
                             sceneRecognition = sceneResult,
                             fps = calculateFps(imageProxy.imageInfo.timestamp)
                         )
                     }
 
                     // 处理预警
-                    processAlert(obstacles)
+                    processAlert(allObstacles)
 
                     // 处理场景变化
                     processSceneChange(sceneResult)
                     
                     // [增强] 如果检测到障碍物，也进行语音播报
-                    if (obstacles.isNotEmpty()) {
-                        val closest = obstacles.minByOrNull { it.distance }
+                    if (allObstacles.isNotEmpty()) {
+                        val closest = allObstacles.minByOrNull { it.distance }
                         closest?.let {
                             if (it.distance < 2f) {
                                 val msg = "前方${it.distance.toInt()}米有${it.type.chineseName}"
@@ -655,6 +675,16 @@ class ObstacleRepositoryImpl @Inject constructor(
         }
     }
 
+    /**
+     * 估算路沿距离（基于图像位置）
+     * 路沿通常在图像底部，距离估算基于其在图像中的垂直位置
+     */
+    private fun estimateCurbDistance(bitmap: Bitmap): Float {
+        // 简化估算：路沿在图像底部70-100%区域，对应0.5-2米距离
+        // 实际应用中可以使用更精确的单目测距算法
+        return 1.5f // 默认1.5米，提示用户注意脚下
+    }
+    
     /**
      * 将 CameraX ImageProxy 转为 Bitmap
      * 使用直接 YUV->RGB 转换，避免 JPEG 编码/解码的 GC 开销

@@ -144,10 +144,15 @@ enum class ObstacleType(
             STAIRS -> if (distance < 2f) "前方${distanceInt}米有楼梯，请注意" else "注意，前方${distanceInt}米有楼梯"
 
             // 地面障碍物
-            CURB -> if (distance < 1f) "小心，路沿就在脚下" else "前方${distanceInt}米有路沿"
-            PUDDLE -> if (distance < 1.5f) "前方${distanceInt}米有水坑，请绕行" else "注意，前方${distanceInt}米有水坑"
-            MANHOLE -> if (distance < 1.5f) "前方${distanceInt}米有井盖" else "注意，前方${distanceInt}米有井盖"
-            PIT -> if (distance < 1f) "危险，前方有坑洼" else "注意，前方${distanceInt}米有坑洼"
+            CURB -> when {
+                distance < 0.5f -> "小心，路沿就在脚下，注意抬脚"
+                distance < 1f -> "$directionPrefix路沿，注意脚下，小心绊倒"
+                distance < 2f -> "$directionPrefix${distanceInt}米有路沿，请提前注意"
+                else -> "注意，$directionPrefix${distanceInt}米有路沿"
+            }
+            PUDDLE -> if (distance < 1.5f) "$directionPrefix${distanceInt}米有水坑，请绕行" else "注意，$directionPrefix${distanceInt}米有水坑"
+            MANHOLE -> if (distance < 1.5f) "$directionPrefix${distanceInt}米有井盖" else "注意，$directionPrefix${distanceInt}米有井盖"
+            PIT -> if (distance < 1f) "危险，$directionPrefix有坑洼，请绕行" else "注意，$directionPrefix${distanceInt}米有坑洼"
             ZEBRA_CROSSING -> "斑马线"
 
             // 悬空/侧面障碍物

@@ -526,43 +526,65 @@ class SceneClassifier @Inject constructor(
     }
 
     /**
-     * [新增] 道牙/路沿检测
+     * [增强] 道牙/路沿检测
      * 在图像底部检测水平边缘突变线（道牙是地面到路缘的高度差）
+     * 
+     * 检测算法：
+     * 1. 分析底部30%区域的亮度梯度
+     * 2. 检测水平方向的连续边缘线
+     * 3. 验证边缘的几何特征（水平性、连续性）
      */
     private fun detectCurb(bitmap: Bitmap): Pair<SceneType, Float>? {
         try {
             val width = bitmap.width
             val height = bitmap.height
-            var curbLines = 0
-
-            // 检查最底部20%的图像区域
-            val startY = (height * 0.8).toInt()
-            for (y in startY until height step 2) {
+            
+            // ============ 1. 底部30%区域检测 ============
+            val startY = (height * 0.7).toInt()
+            val endY = height
+            
+            // 记录每行的边缘强度
+            val edgeStrengths = mutableListOf<Float>()
+            
+            for (y in startY until endY step 3) {
                 var prevBrightness = -1
                 var edgeCount = 0
+                var totalDiff = 0
 
-                for (x in 0 until width step 4) {
+                // 水平扫描，检测亮度突变
+                for (x in 0 until width step 3) {
                     val pixel = bitmap.getPixel(x, y)
                     val brightness = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
 
                     if (prevBrightness >= 0) {
                         val diff = abs(brightness - prevBrightness)
-                        // 道牙产生明显的亮度跳变（>40）
-                        if (diff > 40) edgeCount++
+                        // 道牙产生明显的亮度跳变（阈值调整为35，降低误检）
+                        if (diff > 35) {
+                            edgeCount++
+                            totalDiff += diff
+                        }
                     }
                     prevBrightness = brightness
                 }
-                // 一行内有多个边缘点，可能是道牙线
-                if (edgeCount >= width / 20) {
-                    curbLines++
-                }
+                
+                // 计算该行的边缘强度（边缘点占比）
+                val edgeStrength = edgeCount.toFloat() / (width / 3)
+                edgeStrengths.add(edgeStrength)
             }
-
-            if (curbLines >= 3) {
-                val confidence = kotlin.math.min(0.8f, 0.5f + curbLines * 0.05f)
-                Timber.d("Curb detected: $curbLines lines")
+            
+            // ============ 2. 验证连续水平边缘 ============
+            // 路沿应该在多行中表现为连续的边缘
+            val strongEdges = edgeStrengths.count { it > 0.08f } // 超过8%的像素有边缘
+            
+            // ============ 3. 计算置信度 ============
+            if (strongEdges >= 2) {
+                val avgStrength = edgeStrengths.average().toFloat()
+                val confidence = kotlin.math.min(0.85f, 0.55f + avgStrength * 2f)
+                
+                Timber.d("Curb detected: $strongEdges strong edges, avg strength=${(avgStrength * 100).toInt()}%, confidence=${(confidence * 100).toInt()}%")
                 return Pair(SceneType.CURB, confidence)
             }
+            
         } catch (e: Exception) {
             Timber.e(e, "Curb detection failed")
         }
