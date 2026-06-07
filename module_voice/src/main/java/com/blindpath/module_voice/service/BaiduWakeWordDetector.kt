@@ -1,5 +1,7 @@
 package com.blindpath.module_voice.service
 
+import com.blindpath.module_voice.domain.WakeWordDetector
+
 import android.content.Context
 import com.baidu.speech.EventListener
 import com.baidu.speech.EventManager
@@ -180,7 +182,12 @@ class BaiduWakeWordDetector(
      * - "words": 唤醒词文本列表（JSONArray 格式）
      * - "accept-audio-volume": 是否接受音频音量回调
      */
-    override fun startListening() {
+    override fun start(): Boolean {
+        startListening()
+        return true
+    }
+
+    fun startListening() {
         // 检查是否已初始化
         if (!isInitialized || wp == null) {
             Timber.w("$TAG: Not initialized, attempting re-initialization")
@@ -251,6 +258,10 @@ class BaiduWakeWordDetector(
     /**
      * 停止监听唤醒词
      */
+    fun stop() {
+        stopListening()
+    }
+
     fun stopListening() {
         if (wp == null || !isListening) return
 
@@ -273,6 +284,14 @@ class BaiduWakeWordDetector(
     fun getFrameLength(): Int = 512
     fun getSampleRate(): Int = 16000
     fun isListening(): Boolean = isListening
+
+    override fun setCallback(callback: WakeWordDetector.Callback) {
+        this.callback = callback
+    }
+
+    override fun setSensitivity(sens: Float) {
+        Timber.d("$TAG: Set sensitivity: $sens")
+    }
 
     override fun release() {
         stopListening()
