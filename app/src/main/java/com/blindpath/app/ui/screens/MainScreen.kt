@@ -553,7 +553,7 @@ private fun SafetyGlowRing(alertLevel: AlertLevel?, modifier: Modifier = Modifie
     val ringColor = when (alertLevel) {
         AlertLevel.DANGER -> Color(0xFFFF6B6B)
         AlertLevel.WARNING -> Color(0xFFFFB347)
-        AlertLevel.CAUTION -> Color(0xFF1E90FF)
+        AlertLevel.SAFE -> Color(0xFF1E90FF)
         else -> Color(0xFF4CAF50)
     }
     
@@ -577,15 +577,16 @@ private fun HUDInfoOverlay(navState: NavigationState, compassAzimuth: Float, mod
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            if (navState.isLocationAvailable && navState.currentLocation != null) {
+            val currentLocationVal = navState.currentLocation
+            if (navState.isLocationAvailable && currentLocationVal != null) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = Color(0xAA000000)
                 ) {
                     Text(
                         text = "GPS: %.4f, %.4f".format(
-                            navState.currentLocation.latitude,
-                            navState.currentLocation.longitude
+                            currentLocationVal.latitude,
+                            currentLocationVal.longitude
                         ),
                         color = Color.White,
                         fontSize = 12.sp,
