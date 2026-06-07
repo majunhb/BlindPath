@@ -168,7 +168,7 @@ class AIDetector @Inject constructor(
             ObstacleType.BENCH, ObstacleType.HANDRAIL,
             ObstacleType.TRAFFIC_SIGN,
             ObstacleType.PERSON, ObstacleType.VEHICLE,
-            ObstacleType.BUILDING_ENTRANCE, ObstacleType.OBSTACLE
+            ObstacleType.OBSTACLE, ObstacleType.OBSTACLE
         )
     }
 
@@ -354,11 +354,10 @@ class AIDetector @Inject constructor(
     suspend fun detect(bitmap: Bitmap): List<DetectedObstacle> {
         frameCounter++
 
-        lock.read {
-            if (!isLoaded || interpreter == null) {
-                return@read null
-            }
-        } ?: return if (useAssistedDetection) assistedDetect(bitmap) else emptyList()
+        val loaded = lock.read { isLoaded && interpreter != null }
+        if (!loaded) {
+            return if (useAssistedDetection) assistedDetect(bitmap) else emptyList()
+        }
 
         // 跳帧处理
         if (frameCounter % ASSIST_FRAME_SKIP != 0) return emptyList()
@@ -537,5 +536,6 @@ class AIDetector @Inject constructor(
         calibratedFocalLength = focalLength
     }
 }
+
 
 
