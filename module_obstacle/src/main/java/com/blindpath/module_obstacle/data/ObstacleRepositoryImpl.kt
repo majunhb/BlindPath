@@ -14,7 +14,7 @@
  * 5. P1 帧跳过策略：智能调整处理频率
  */
 
-package com.blindpath.obstacle.data
+package com.blindpath.module_obstacle.data
 
 import android.content.Context
 import android.graphics.Bitmap
