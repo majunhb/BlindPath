@@ -1,5 +1,7 @@
 package com.blindpath.module_voice.service
 
+import com.blindpath.module_voice.domain.WakeWordDetector
+
 import com.blindpath.module_voice.domain.model.WakeWordConfig
 import timber.log.Timber
 import kotlin.math.sqrt
@@ -32,7 +34,12 @@ class EnergyWakeWordDetector(
      * @param audioData 16-bit PCM 音频数据
      * @return 是否检测到声音（注意：不是唤醒词）
      */
-    override fun startListening() {
+    override fun start(): Boolean {
+        startListening()
+        return true
+    }
+
+    fun startListening() {
         // Energy detector only works via process() calls, nothing to start
         Timber.d("$TAG: startListening (no-op for energy detector)")
     }
@@ -76,6 +83,14 @@ class EnergyWakeWordDetector(
      * 获取采样率
      */
     fun getSampleRate(): Int = 16000
+
+    override fun setCallback(callback: WakeWordDetector.Callback) {
+        this.callback = callback
+    }
+
+    override fun setSensitivity(sens: Float) {
+        Timber.d("$TAG: Set sensitivity: $sens")
+    }
 
     override fun release() {
         isInitialized = false
