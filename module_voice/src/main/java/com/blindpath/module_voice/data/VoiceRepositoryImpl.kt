@@ -208,7 +208,7 @@ class VoiceRepositoryImpl @Inject constructor(
      */
     private suspend fun processAnnouncement(request: VoiceRequest) {
         // 危险级播报跳过去重，确保视障用户不遗漏关键预警
-        if (request.voiceType != VoiceType.OBSTACLE_DANGER) {
+        if (request.type != VoiceType.OBSTACLE_DANGER) {
             // 检查去重
             if (shouldDeduplicate(request)) {
                 Timber.d("Deduplicating announcement: ${request.text}")

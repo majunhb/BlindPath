@@ -21,7 +21,6 @@ import androidx.core.app.NotificationManagerCompat
 import dagger.hilt.android.AndroidEntryPoint
 import com.blindpath.module_voice.BuildConfig
 import com.blindpath.module_voice.domain.model.WakeWordConfig
-import com.blindpath.porcupine.PorcupineWakeWordEngine
 import kotlinx.coroutines.*
 import timber.log.Timber
 import java.io.File
@@ -272,50 +271,11 @@ class WakeWordService : Service() {
         Timber.i("WakeWordService: baiduAppId from BuildConfig=${useBaidu}, xfAppId available=${useXf}")
 
         if (!useBaidu && !useXf) {
-            // ★★★ 降级方案：尝试 Porcupine 引擎作为唤醒词检测
-            Timber.i("WakeWordService: No Baidu/iFlytek credentials, trying Porcupine fallback engine...")
-            try {
-                val porcupineEngine = PorcupineWakeWordEngine()
-                if (porcupineEngine.isAvailable) {
-                    Timber.i("WakeWordService: Porcupine engine available, starting detection with Porcupine")
-                    isRunning = true
-                    isServiceRunning = true
-                    startForeground(NOTIFICATION_ID, createNotification())
-                    acquireWakeLock()
-                    audioFocusManager.requestFocus("wakeword", priority = 10)
-                    if (audioFocusManager.isBluetoothHeadsetConnected()) {
-                        audioFocusManager.switchToBluetoothSco()
-                    }
-                    serviceScope.launch(Dispatchers.IO) {
-                        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
-                        try {
-                            engineManager = WakeWordEngineManager(this@WakeWordService)
-                            engineManager.onWakeWordDetected = { wakeWord -> onWakeWordDetected(wakeWord) }
-                            engineManager.onEngineSwitched = { engineType ->
-                                Timber.i("WakeWordService: Engine switched to $engineType")
-                                updateNotification()
-                            }
-                            // 使用 Porcupine 引擎初始化
-                            engineManager.setCustomEngine(porcupineEngine)
-                            updateNotification()
-                            initAudioRecord()
-                            startAudioProcessing()
-                        } catch (e: Exception) {
-                            Timber.e(e, "WakeWordService: Porcupine engine failed to start")
-                            stopSelf()
-                        }
-                    }
-                    return
-                } else {
-                    Timber.w("WakeWordService: Porcupine engine not available")
-                }
-            } catch (e: Exception) {
-                Timber.w(e, "WakeWordService: Porcupine engine initialization failed")
-            }
-
-            // Porcupine 也不可用，降级到内置 SpeechRecognizer 唤醒词模式
-            Timber.i("WakeWordService: No external engine credentials configured.")
-            Timber.i("WakeWordService: Built-in SpeechRecognizer wake word detection (via VoiceCommandRepositoryImpl) will handle it.")
+            // ★★★ 降级方案：使用 SpeechRecognizer 内置唤醒词模式
+            // 内置模式通过 VoiceCommandRepositoryImpl 的 onResults() 回调检测唤醒词
+            // 默认唤醒词："小智小智"（支持别名：小智同学、小智、晓得同学、小智同窗）
+            Timber.i("WakeWordService: No Baidu/iFlytek credentials, using built-in SpeechRecognizer wake word mode")
+            Timber.i("WakeWordService: Built-in wake words: 小智小智, 小智同学, 小智, 晓得同学, 小智同窗")
             Timber.i("WakeWordService: To enable low-power wake word engine, set BAIDU_APP_ID in local.properties")
             return
         }
