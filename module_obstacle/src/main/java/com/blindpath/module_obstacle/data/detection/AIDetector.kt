@@ -140,6 +140,36 @@ class AIDetector @Inject constructor(
         const val CONF_DANGER = 0.28f
         const val CONF_WARNING = 0.45f
         const val CONF_IGNORE = 0.7f
+
+        val INDOOR_WHITELIST = setOf(
+            ObstacleType.STEP_UP, ObstacleType.STEP_DOWN, ObstacleType.STAIRS,
+            ObstacleType.PIT, ObstacleType.PUDDLE,
+            ObstacleType.CHAIR, ObstacleType.TABLE, ObstacleType.SOFA,
+            ObstacleType.BED, ObstacleType.POTTED_PLANT,
+            ObstacleType.SINK, ObstacleType.REFRIGERATOR,
+            ObstacleType.MICROWAVE, ObstacleType.OVEN, ObstacleType.TOASTER,
+            ObstacleType.PHONE, ObstacleType.BACKPACK, ObstacleType.CUP,
+            ObstacleType.BOTTLE, ObstacleType.BOOK, ObstacleType.KEYBOARD,
+            ObstacleType.MOUSE_DEVICE, ObstacleType.REMOTE,
+            ObstacleType.CAT, ObstacleType.DOG,
+            ObstacleType.PERSON, ObstacleType.OBSTACLE
+        )
+
+        val NAVIGATION_WHITELIST = setOf(
+            ObstacleType.TRAFFIC_LIGHT, ObstacleType.TRAFFIC_SIGN, ObstacleType.ZEBRA_CROSSING,
+            ObstacleType.PERSON, ObstacleType.BICYCLE, ObstacleType.MOTORCYCLE,
+            ObstacleType.VEHICLE, ObstacleType.BUS, ObstacleType.TRUCK,
+            ObstacleType.CURB, ObstacleType.PUDDLE, ObstacleType.MANHOLE, ObstacleType.PIT,
+            ObstacleType.PILLAR, ObstacleType.ELECTRIC_POLE, ObstacleType.BENCH,
+            ObstacleType.HANDRAIL, ObstacleType.OBSTACLE
+        )
+
+        val SCENE_WHITELIST = setOf(
+            ObstacleType.BENCH, ObstacleType.HANDRAIL,
+            ObstacleType.TRAFFIC_SIGN,
+            ObstacleType.PERSON, ObstacleType.VEHICLE,
+            ObstacleType.BUILDING_ENTRANCE, ObstacleType.OBSTACLE
+        )
     }
 
     /**
@@ -162,7 +192,12 @@ class AIDetector @Inject constructor(
 
             // 2. 更新模式
             currentMode = mode
-            currentWhitelist = mode.getObstacleTypeWhitelist()
+            currentWhitelist = when (mode) {
+    PerceptionMode.INDOOR -> INDOOR_WHITELIST
+    PerceptionMode.NAVIGATION -> NAVIGATION_WHITELIST
+    PerceptionMode.SCENE -> SCENE_WHITELIST
+    PerceptionMode.AUTO -> null
+}
 
             Timber.d("Switched to mode: $mode, model: ${mode.modelFileName}")
         }
@@ -292,12 +327,12 @@ class AIDetector @Inject constructor(
                 val request = Request.Builder().url(url).build()
                 val response = client.newCall(request).execute()
 
-                if (!response.isSuccessful) {
-                    Timber.w("Download failed: HTTP ${response.code}")
+                if (!response.isSuccessful()) {
+                    Timber.w("Download failed: HTTP ${response.code()}")
                     return@withContext null
                 }
 
-                val body = response.body ?: return@withContext null
+                val body = response.body() ?: return@withContext null
                 outputFile = File(context.filesDir, fileName)
                 FileOutputStream(outputFile).use { output ->
                     body.byteStream().use { input ->
@@ -502,3 +537,5 @@ class AIDetector @Inject constructor(
         calibratedFocalLength = focalLength
     }
 }
+
+
