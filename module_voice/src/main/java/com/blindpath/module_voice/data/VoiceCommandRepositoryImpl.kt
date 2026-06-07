@@ -43,7 +43,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     override suspend fun stopListening(): Result<Boolean> = Result.Success(true)
 
     override suspend fun recognizeOnce(): Result<VoiceCommandResult> {
-        return Result.Success(VoiceCommandResult())
+        return Result.Success(VoiceCommandResult(command = null, confidence = 0f, rawText = ""))
     }
 
     override fun release() {
@@ -57,7 +57,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     override fun triggerWakeWordDetected(wakeWord: String) {
         _interactionState.value = _interactionState.value.copy(
             isWakeWordDetected = true,
-            lastWakeWord = wakeWord
+            wakeWord = wakeWord
         )
     }
 
