@@ -51,7 +51,7 @@ class AIDetector @Inject constructor(
     private var useAssistedDetection = false
     private var lastFrame: Bitmap? = null
     private var frameCounter = 0
-    private val ASSIST_FRAME_SKIP = 3  // 每3帧处理1帧
+    private val ASSIST_FRAME_SKIP = 2  // 每2帧处理1帧，提高灵敏度
 
     // 模型配置 - 支持多个路径（兼容不同模块的assets目录）
     private val modelPath = "yolov8n.tflite"
@@ -770,6 +770,16 @@ class AIDetector @Inject constructor(
 
             // 计算距离（基于物体大小估算）
             val distance = estimateDistance(obstacleType, h, imageHeight.toFloat())
+
+            // 距离分段置信过滤
+            val confThreshold = when {
+                distance < DANGER_DISTANCE -> CONF_DANGER
+                distance < WARNING_DISTANCE -> CONF_WARNING
+                else -> CONF_IGNORE
+            }
+            if (maxScore < confThreshold) continue
+            // >3m 一律丢弃
+            if (distance > WARNING_DISTANCE) continue
 
             // 计算方向
             val direction = calculateDirection(cx, imageWidth.toFloat())

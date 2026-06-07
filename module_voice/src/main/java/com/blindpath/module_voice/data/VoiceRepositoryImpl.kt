@@ -207,13 +207,16 @@ class VoiceRepositoryImpl @Inject constructor(
      * 处理单个播报请求
      */
     private suspend fun processAnnouncement(request: VoiceRequest) {
-        // 检查去重
-        if (shouldDeduplicate(request)) {
-            Timber.d("Deduplicating announcement: ${request.text}")
-            _statistics.update {
-                it.copy(deduplicatedCount = it.deduplicatedCount + 1)
+        // 危险级播报跳过去重，确保视障用户不遗漏关键预警
+        if (request.voiceType != VoiceType.OBSTACLE_DANGER) {
+            // 检查去重
+            if (shouldDeduplicate(request)) {
+                Timber.d("Deduplicating announcement: ${request.text}")
+                _statistics.update {
+                    it.copy(deduplicatedCount = it.deduplicatedCount + 1)
+                }
+                return
             }
-            return
         }
 
         // 检查冷却

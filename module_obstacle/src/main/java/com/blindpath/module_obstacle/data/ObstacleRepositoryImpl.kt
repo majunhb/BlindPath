@@ -96,6 +96,9 @@ class ObstacleRepositoryImpl @Inject constructor(
             try {
                 Timber.d("Starting obstacle detection")
 
+                // TTS 预初始化，确保危险播报立即可用
+                try { voiceRepository.initialize() } catch (_: Exception) {}
+
                 // 加载模型（避免重复加载）
                 val modelLoaded = if (aiDetector.isModelLoaded()) true else aiDetector.loadModel()
                 if (!modelLoaded) {

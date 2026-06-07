@@ -1,4 +1,4 @@
-package com.blindpath.module_voice.service
+﻿package com.blindpath.module_voice.service
 
 import android.Manifest
 import android.app.Notification
@@ -21,6 +21,7 @@ import androidx.core.app.NotificationManagerCompat
 import dagger.hilt.android.AndroidEntryPoint
 import com.blindpath.module_voice.BuildConfig
 import com.blindpath.module_voice.domain.model.WakeWordConfig
+import com.blindpath.porcupine.PorcupineWakeWordEngine
 import kotlinx.coroutines.*
 import timber.log.Timber
 import java.io.File
@@ -271,13 +272,51 @@ class WakeWordService : Service() {
         Timber.i("WakeWordService: baiduAppId from BuildConfig=${useBaidu}, xfAppId available=${useXf}")
 
         if (!useBaidu && !useXf) {
-            // ★★★ 修复：凭证缺失时不 stopSelf()，内置 SpeechRecognizer 唤醒路径已由
-            // VoiceInteractionManagerImpl.speakWelcome() → commandRepository.setWakeWordEnabled(true) 接管。
-            // 本服务没有调用 startForeground()，Android 系统会自动回收（正常行为，非崩溃）。
+            // ★★★ 降级方案：尝试 Porcupine 引擎作为唤醒词检测
+            Timber.i("WakeWordService: No Baidu/iFlytek credentials, trying Porcupine fallback engine...")
+            try {
+                val porcupineEngine = PorcupineWakeWordEngine()
+                if (porcupineEngine.isAvailable) {
+                    Timber.i("WakeWordService: Porcupine engine available, starting detection with Porcupine")
+                    isRunning = true
+                    isServiceRunning = true
+                    startForeground(NOTIFICATION_ID, createNotification())
+                    acquireWakeLock()
+                    audioFocusManager.requestFocus("wakeword", priority = 10)
+                    if (audioFocusManager.isBluetoothHeadsetConnected()) {
+                        audioFocusManager.switchToBluetoothSco()
+                    }
+                    serviceScope.launch(Dispatchers.IO) {
+                        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
+                        try {
+                            engineManager = WakeWordEngineManager(this@WakeWordService)
+                            engineManager.onWakeWordDetected = { wakeWord -> onWakeWordDetected(wakeWord) }
+                            engineManager.onEngineSwitched = { engineType ->
+                                Timber.i("WakeWordService: Engine switched to $engineType")
+                                updateNotification()
+                            }
+                            // 使用 Porcupine 引擎初始化
+                            engineManager.setCustomEngine(porcupineEngine)
+                            updateNotification()
+                            initAudioRecord()
+                            startAudioProcessing()
+                        } catch (e: Exception) {
+                            Timber.e(e, "WakeWordService: Porcupine engine failed to start")
+                            stopSelf()
+                        }
+                    }
+                    return
+                } else {
+                    Timber.w("WakeWordService: Porcupine engine not available")
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "WakeWordService: Porcupine engine initialization failed")
+            }
+
+            // Porcupine 也不可用，降级到内置 SpeechRecognizer 唤醒词模式
             Timber.i("WakeWordService: No external engine credentials configured.")
             Timber.i("WakeWordService: Built-in SpeechRecognizer wake word detection (via VoiceCommandRepositoryImpl) will handle it.")
             Timber.i("WakeWordService: To enable low-power wake word engine, set BAIDU_APP_ID in local.properties")
-            // 直接 return，不调用 stopSelf()，让 VoiceCommandRepositoryImpl 的持续监听接管
             return
         }
 
