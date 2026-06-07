@@ -1,16 +1,12 @@
-name: Android CI
+﻿name: Android CI
 
 on:
-  # Push 到 main 分支时触发
   push:
     branches: [ main ]
-  # PR 到 main 分支时触发
   pull_request:
     branches: [ main ]
-  # 手动触发
   workflow_dispatch:
 
-# 并发控制：同一分支只保留最新构建
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -22,9 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # [优化] shallow clone 只拉取最新提交，大幅减小下载量
           fetch-depth: 1
-          # [优化] 不下载LFS文件（模型文件在CI中单独检查/下载）
           lfs: false
 
       - name: Set up JDK 17
@@ -44,8 +38,6 @@ jobs:
 
       - name: Configure Gradle
         run: |
-          # GitHub Actions 运行在国外，使用官方仓库更稳定
-          # 国内用户本地构建时可自行配置 ~/.gradle/init.gradle
           mkdir -p ~/.gradle
           cat > ~/.gradle/init.gradle << 'GRADLE_EOF'
           allprojects {
@@ -63,25 +55,12 @@ jobs:
               }
           }
           GRADLE_EOF
-          echo "Gradle init script configured with official repositories"
-
-          # Git LFS 并发传输
-          git config --global lfs.concurrenttransfers 8
-
-          # 环境变量
           echo "GRADLE_OPTS=-Dorg.gradle.daemon=false -Dorg.gradle.internal.network.timeout=300000" >> $GITHUB_ENV
-          echo "Configured Gradle with official repositories"
 
-
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/gradle.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      - name: Clean Gradle Cache
+        run: |
+          ./gradlew clean --no-daemon || true
+          rm -rf ~/.gradle/caches/build-cache-1/*
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -98,8 +77,6 @@ jobs:
           echo "IFLYTEK_API_SECRET=${{ secrets.IFLYTEK_API_SECRET }}" >> ~/.gradle/gradle.properties
           echo "Credentials injected"
 
-          echo "Credentials injected into ~/.gradle/gradle.properties"
-         
       - name: Check AI model (yolov8n.tflite)
         run: |
           MODEL_FILE="app/src/main/assets/yolov8n.tflite"
@@ -115,7 +92,6 @@ jobs:
             echo "::warning::Model file not found. APP will download it on first run."
           fi
 
-
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
@@ -125,11 +101,10 @@ jobs:
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/*.apk
-         
 
       - name: Report success
         if: success()
         run: |
-          echo "✅ Build completed successfully!"
-          echo "📦 Build type: debug"
-          echo "📱 APK artifact uploaded with 7-day retention"
+          echo "Build completed successfully!"
+          echo "Build type: debug"
+          echo "APK artifact uploaded with 7-day retention"
