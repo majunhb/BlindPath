@@ -2,6 +2,7 @@
 
 import android.content.Context
 import android.os.Bundle
+import com.blindpath.module_voice.domain.WakeWordDetector
 import com.blindpath.module_voice.domain.model.WakeWordConfig
 import org.json.JSONObject
 import timber.log.Timber
@@ -46,6 +47,7 @@ class XfWakeWordDetector(
     private var isInitialized = false
     private var isListening = false
     private var aiHelper: Any? = null
+    private var callback: WakeWordDetector.Callback? = null
 
     init {
         try {
@@ -186,14 +188,21 @@ class XfWakeWordDetector(
                 val score = result.optInt("score", 0)
                 Timber.i("$TAG: Wake word detected! keyword=$keyword, score=$score")
                 onWakeWordDetected.invoke(wakeWord)
+                callback?.onWakeWordDetected(wakeWord, 0.9f)
             }
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Failed to parse wake result")
             onWakeWordDetected.invoke(wakeWord)
+                callback?.onWakeWordDetected(wakeWord, 0.9f)
         }
     }
 
-    override fun startListening() {
+    override fun start(): Boolean {
+        startListening()
+        return true
+    }
+
+    fun startListening() {
         if (!isInitialized || aiHelper == null) {
             Timber.w("$TAG: Not initialized")
             return
@@ -275,6 +284,10 @@ class XfWakeWordDetector(
         }
     }
 
+    fun stop() {
+        stopListening()
+    }
+
     fun stopListening() {
         if (!isListening) return
         isListening = false
@@ -288,6 +301,14 @@ class XfWakeWordDetector(
     fun getFrameLength(): Int = 512
     fun getSampleRate(): Int = 16000
     fun isListening(): Boolean = isListening
+
+    override fun setCallback(callback: WakeWordDetector.Callback) {
+        this.callback = callback
+    }
+
+    override fun setSensitivity(sens: Float) {
+        Timber.d("$TAG: Set sensitivity: $sens")
+    }
 
     override fun release() {
         stopListening()
