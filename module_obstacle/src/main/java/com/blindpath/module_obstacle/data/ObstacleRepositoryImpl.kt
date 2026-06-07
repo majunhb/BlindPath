@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BlindPath - 视障人士出行辅助应用
  *
  * 文件：ObstacleRepositoryImpl.kt
@@ -44,6 +44,7 @@ import com.blindpath.module_obstacle.data.detection.AIDetector
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_obstacle.domain.model.ObstacleState
+import com.blindpath.module_obstacle.domain.model.PerceptionMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -281,6 +282,38 @@ class ObstacleRepositoryImpl @Inject constructor(
             aiDetector.unloadModel()
             _obstacleState.value = _obstacleState.value.copy(isModelLoaded = false)
         }
+    }
+
+    override suspend fun setPerceptionMode(mode: PerceptionMode): Result<Boolean> {
+        return withContext(Dispatchers.IO) {
+            try {
+                Timber.d("ObstacleRepository: Switching to mode: ${mode.chineseName}")
+                val wasRunning = _obstacleState.value.isRunning
+                if (wasRunning) { stopDetection() }
+                val success = aiDetector.switchMode(mode)
+                if (!success) {
+                    return@withContext Result.Error(message = "切换模式失败: ${mode.modelFileName}")
+                }
+                _obstacleState.value = _obstacleState.value.copy(
+                    isModelLoaded = true,
+                    currentAlert = ObstacleAlert(
+                        level = AlertLevel.SAFE,
+                        description = mode.getModeSwitchAnnouncement(),
+                        distance = Float.MAX_VALUE,
+                        direction = ""
+                    )
+                )
+                if (wasRunning) { startDetection() }
+                Result.Success(true)
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to switch mode")
+                Result.Error(message = e.message ?: "切换模式失败")
+            }
+        }
+    }
+
+    override fun getCurrentPerceptionMode(): PerceptionMode {
+        return aiDetector.getCurrentMode()
     }
 
     /**
@@ -700,3 +733,6 @@ data class DetectionConfig(
     // 检测帧率限制（目标 FPS）
     val targetFps: Int = AppConfig.FrameRate.MEDIUM_FPS
 )
+
+
+

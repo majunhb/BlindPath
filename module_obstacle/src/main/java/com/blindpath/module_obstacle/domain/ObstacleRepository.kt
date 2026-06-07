@@ -1,74 +1,28 @@
-package com.blindpath.module_obstacle.domain
+﻿package com.blindpath.module_obstacle.domain
 
+import androidx.camera.core.Preview
+import androidx.lifecycle.LifecycleOwner
 import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.common.Result
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_obstacle.domain.model.ObstacleState
+import com.blindpath.module_obstacle.domain.model.PerceptionMode
 import kotlinx.coroutines.flow.Flow
 
-/**
- * 避障模块对外接口
- */
 interface ObstacleRepository {
-
-    /**
-     * 初始化避障模块
-     */
-    suspend fun initialize(): Result<Boolean>
-
-    /**
-     * 避障状态Flow
-     */
     val obstacleState: Flow<ObstacleState>
-
-    /**
-     * 启动避障检测
-     */
+    suspend fun initialize(): Result<Boolean>
     suspend fun startDetection(): Result<Boolean>
-
-    /**
-     * 停止避障检测
-     */
     suspend fun stopDetection(): Result<Boolean>
-
-    /**
-     * 获取最新检测结果
-     */
     fun getLatestObstacles(): List<DetectedObstacle>
-
-    /**
-     * 加载AI模型
-     */
     suspend fun loadModel(): Result<Boolean>
-
-    /**
-     * 释放AI模型
-     */
     suspend fun unloadModel()
-
-    /**
-     * 处理单帧图像
-     */
     suspend fun processFrame(imageData: ByteArray, width: Int, height: Int): List<DetectedObstacle>
-
-    /**
-     * 切换前置/后置摄像头
-     */
     suspend fun switchCamera(useFrontCamera: Boolean): Result<Boolean>
-
-    /**
-     * 设置相机预览 SurfaceProvider（用于显示预览画面）
-     */
-    fun setPreviewSurfaceProvider(provider: androidx.camera.core.Preview.SurfaceProvider)
-
-    /**
-     * [修复] 设置生命周期所有者，确保 Preview 和 ImageAnalysis 绑定到同一个生命周期
-     */
-    fun setLifecycleOwner(owner: androidx.lifecycle.LifecycleOwner)
-
-    /**
-     * 获取预警级别
-     */
+    fun setPreviewSurfaceProvider(provider: Preview.SurfaceProvider)
+    fun setLifecycleOwner(owner: LifecycleOwner)
+    suspend fun setPerceptionMode(mode: PerceptionMode): Result<Boolean>
+    fun getCurrentPerceptionMode(): PerceptionMode
     fun getAlertLevel(distance: Float): AlertLevel {
         return when {
             distance < 0.5f -> AlertLevel.DANGER
