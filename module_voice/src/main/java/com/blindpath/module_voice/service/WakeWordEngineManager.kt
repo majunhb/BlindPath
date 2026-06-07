@@ -1,6 +1,7 @@
 ﻿package com.blindpath.module_voice.service
 
 import android.content.Context
+import com.blindpath.module_voice.domain.WakeWordDetector
 import com.blindpath.module_voice.domain.model.WakeWordConfig
 import timber.log.Timber
 
@@ -105,11 +106,6 @@ class WakeWordEngineManager(private val context: Context) {
 
     /**
      * 创建百度语音唤醒引擎
-     *
-     * 注意：BaiduWakeWordDetector 在构造函数的 init{} 块中调用 initialize()
-     * 如果百度 SDK 内部抛出 NullPointerException（EventListener 为 null 的已知 bug），
-     * init 块会捕获并将 isInitialized 标记为 false。
-     * 此处检查 isInitialized，如果为 false 则视为创建失败，返回 null 触发降级。
      */
     private fun createBaiduEngine(): BaiduWakeWordDetector? {
         if (config.baiduAppId.isBlank() || config.baiduApiKey.isBlank()) {
@@ -130,12 +126,8 @@ class WakeWordEngineManager(private val context: Context) {
                 }
             )
 
-            // 检查百度 SDK 是否真正初始化成功
-            // BaiduWakeWordDetector.init{} 块中可能因 EventManagerFactory NPE 而失败
-            // 注意：startListening() 由外部调用，此处仅检查初始化状态
             if (!detector.isInitialized) {
                 Timber.w("WakeWordEngineManager: Baidu engine created but not initialized (SDK NPE likely)")
-                // 释放资源，防止 SDK 后台线程继续访问已 null 的 listener
                 try {
                     detector.release()
                 } catch (e: Exception) {
@@ -172,7 +164,6 @@ class WakeWordEngineManager(private val context: Context) {
                     onWakeWordDetected?.invoke(keyword)
                 }
             )
-            // 讯飞引擎需要手动启动监听
             detector.startListening()
             detector
         } catch (e: Exception) {
@@ -225,7 +216,7 @@ class WakeWordEngineManager(private val context: Context) {
      * 启动当前引擎的唤醒词监听
      */
     fun startListening() {
-        currentEngine?.startListening()
+        currentEngine?.start()
     }
 
     /**

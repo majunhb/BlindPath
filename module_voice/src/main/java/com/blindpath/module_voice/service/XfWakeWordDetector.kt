@@ -193,7 +193,7 @@ class XfWakeWordDetector(
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Failed to parse wake result")
             onWakeWordDetected.invoke(wakeWord)
-                callback?.onWakeWordDetected(wakeWord, 0.9f)
+            callback?.onWakeWordDetected(wakeWord, 0.9f)
         }
     }
 
@@ -247,7 +247,7 @@ class XfWakeWordDetector(
             }
 
             isListening = true
-            Timber.i("$TAG: Wake-up started, listening for \u0027$wakeWord\u0027")
+            Timber.i("$TAG: Wake-up started, listening for '$wakeWord'")
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Failed to start listening")
             isListening = false
@@ -284,7 +284,7 @@ class XfWakeWordDetector(
         }
     }
 
-    fun stop() {
+    override fun stop() {
         stopListening()
     }
 
@@ -292,10 +292,6 @@ class XfWakeWordDetector(
         if (!isListening) return
         isListening = false
         Timber.i("$TAG: Stopped listening")
-    }
-
-    override fun process(audioData: ShortArray): Boolean {
-        return false
     }
 
     fun getFrameLength(): Int = 512

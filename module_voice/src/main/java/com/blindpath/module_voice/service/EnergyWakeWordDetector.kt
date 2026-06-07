@@ -1,4 +1,4 @@
-package com.blindpath.module_voice.service
+﻿package com.blindpath.module_voice.service
 
 import com.blindpath.module_voice.domain.WakeWordDetector
 
@@ -20,6 +20,7 @@ class EnergyWakeWordDetector(
     private var isInitialized = true
     private var lastDetectionTime = 0L
     private val detectionCooldown = 2000L // 2秒冷却时间
+    private var callback: WakeWordDetector.Callback? = null
 
     companion object {
         private const val TAG = "EnergyWakeWordDetector"
@@ -29,28 +30,30 @@ class EnergyWakeWordDetector(
         Timber.i("$TAG: Initialized with threshold: $threshold")
     }
 
-    /**
-     * 处理音频数据
-     * @param audioData 16-bit PCM 音频数据
-     * @return 是否检测到声音（注意：不是唤醒词）
-     */
     override fun start(): Boolean {
         startListening()
         return true
     }
 
     fun startListening() {
-        // Energy detector only works via process() calls, nothing to start
         Timber.d("$TAG: startListening (no-op for energy detector)")
     }
 
-    override fun process(audioData: ShortArray): Boolean {
+    override fun stop() {
+        Timber.d("$TAG: stop (no-op for energy detector)")
+    }
+
+    /**
+     * 处理音频数据（供 WakeWordServiceEnhanced 手动采集时调用）
+     * @param audioData 16-bit PCM 音频数据
+     * @return 是否检测到声音（注意：不是唤醒词）
+     */
+    fun process(audioData: ShortArray): Boolean {
         if (!isInitialized) return false
 
         val energy = calculateEnergy(audioData)
         val currentTime = System.currentTimeMillis()
 
-        // 检查是否超过阈值且冷却时间已过
         if (energy > threshold && (currentTime - lastDetectionTime) > detectionCooldown) {
             lastDetectionTime = currentTime
             Timber.i("$TAG: Sound detected (energy: ${energy.toInt()}), triggering wake word")
@@ -74,14 +77,7 @@ class EnergyWakeWordDetector(
         return sqrt(sum / buffer.size)
     }
 
-    /**
-     * 获取帧长度（能量检测对帧长度没有严格要求，返回一个常用值）
-     */
     fun getFrameLength(): Int = 512
-
-    /**
-     * 获取采样率
-     */
     fun getSampleRate(): Int = 16000
 
     override fun setCallback(callback: WakeWordDetector.Callback) {
