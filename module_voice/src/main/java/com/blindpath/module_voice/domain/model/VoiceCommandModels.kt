@@ -106,7 +106,8 @@ data class VoiceInteractionState(
     val isWakeWordDetected: Boolean = false,  // 唤醒词是否被检测到
     val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD,  // 唤醒词（统一配置）
     val lastCommand: VoiceCommandResult? = null,
-    val lastError: String? = null
+    val lastError: String? = null,
+    val hasSpokenWelcome: Boolean = false  // 是否已播报欢迎语
 )
 
 /**
