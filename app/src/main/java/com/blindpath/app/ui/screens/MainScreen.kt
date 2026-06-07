@@ -905,40 +905,6 @@ private fun InfoChip(label: String, value: String, valueColor: Color) {
     }
 }
 
-// ==================== 占位符组件（需要从其他文件导入）==================
-@Composable
-private fun LocationScreen(onBackClick: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0xFF1A1A2E)), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.LocationOn, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(64.dp))
-            Spacer(Modifier.height(16.dp))
-            Text("位置信息", color = Color.White, fontSize = 18.sp)
-        }
-    }
-}
-
-@Composable
-private fun NavigationScreen(onBackClick: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0xFF1A1A2E)), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.Navigation, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(64.dp))
-            Spacer(Modifier.height(16.dp))
-            Text("导航功能", color = Color.White, fontSize = 18.sp)
-        }
-    }
-}
-
-@Composable
-private fun IndoorScreen(onBackClick: () -> Unit) {
-    Box(Modifier.fillMaxSize().background(Color(0xFF1A1A2E)), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Default.Home, null, tint = Color(0xFF64B5F6), modifier = Modifier.size(64.dp))
-            Spacer(Modifier.height(16.dp))
-            Text("室内导航", color = Color.White, fontSize = 18.sp)
-        }
-    }
-}
-
 // ==================== NearbyPoiService（保持原样）==================
 // 完整的 NearbyPoiService 实现见原始文件
 object NearbyPoiService {
