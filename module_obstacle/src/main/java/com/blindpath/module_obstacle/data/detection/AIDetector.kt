@@ -480,7 +480,7 @@ class AIDetector @Inject constructor(
     suspend fun detect(bitmap: Bitmap): List<DetectedObstacle> {
         frameCounter++
         
-        // [增强] 跳帧处理 - 每3帧处理1帧，提高FPS
+        // [增强] 跳帧处理 - 每2帧处理1帧，提高FPS
         if (frameCounter % ASSIST_FRAME_SKIP != 0 && isLoaded) {
             return emptyList()  // 跳过此帧，降低CPU负载
         }
@@ -488,8 +488,15 @@ class AIDetector @Inject constructor(
         if (!isLoaded || interpreter == null) {
             // [增强] 模型未加载时使用辅助检测
             return if (useAssistedDetection) {
-                assistedDetect(bitmap)
+                val result = assistedDetect(bitmap)
+                if (result.isNotEmpty() && frameCounter % 10 == 0) {
+                    Timber.d("Assisted detection found ${result.size} obstacles (model not loaded)")
+                }
+                result
             } else {
+                if (frameCounter % 30 == 0) {
+                    Timber.w("detect() called but model not loaded and assisted detection disabled")
+                }
                 emptyList()
             }
         }
@@ -551,7 +558,7 @@ class AIDetector @Inject constructor(
     
     // [新增] 帧间确认缓存
     private val frameConfirmCache = mutableMapOf<ObstacleType, Int>()
-    private val CONFIRM_FRAMES_REQUIRED = 3  // 需要连续3帧确认
+    private val CONFIRM_FRAMES_REQUIRED = 2  // 需要连续2帧确认（辅助模式更快响应）
     private val CONFIRM_DECAY = 0.5f  // 未检测到时的衰减系数
     
     /**
@@ -591,8 +598,8 @@ class AIDetector @Inject constructor(
                           kotlin.math.abs(((prevPixel shr 8) and 0xFF) - ((currPixel shr 8) and 0xFF)) +
                           kotlin.math.abs(((prevPixel shr 16) and 0xFF) - ((currPixel shr 16) and 0xFF))
                 
-                // [修复] 提高差异阈值（50->120），减少光线变化误报
-                if (diff > 120) {
+                // [修复] 辅助检测使用较低阈值（80），提高灵敏度
+                if (diff > 80) {
                     diffPixels++
                     motionRegions.add(x.toFloat() / width to y.toFloat() / height)
                 }
@@ -666,8 +673,8 @@ class AIDetector @Inject constructor(
                           kotlin.math.abs(((topPixel shr 8) and 0xFF) - ((bottomPixel shr 8) and 0xFF)) +
                           kotlin.math.abs(((topPixel shr 16) and 0xFF) - ((bottomPixel shr 16) and 0xFF))
                 
-                // [修复] 大幅提高阈值（80->200），只有明显颜色分界才算边缘
-                if (diff > 200) {
+                // [修复] 辅助检测使用中等阈值（150），平衡灵敏度和误报
+                if (diff > 150) {
                     lineEdgeCount++
                     lineEdgeX += x
                     consecutiveEdges++
@@ -679,14 +686,14 @@ class AIDetector @Inject constructor(
             
             // [修复] 要求边缘连续（路沿是连续直线，纹理是离散的）
             val lineWidth = width / 2  // 实际检测的像素数
-            if (maxConsecutive > lineWidth * 0.4f) {  // [修复] 要求40%以上连续
+            if (maxConsecutive > lineWidth * 0.3f) {  // [修复] 辅助检测要求30%以上连续
                 consistentEdges++
                 totalEdgeScore += lineEdgeCount
             }
         }
         
         // [修复] 要求多条扫描线都检测到连续边缘（确认是水平路沿而非随机纹理）
-        if (consistentEdges >= 2 && totalEdgeScore > width * 0.3f) {
+        if (consistentEdges >= 2 && totalEdgeScore > width * 0.2f) {
             // [修复] 使用帧间确认
             if (confirmDetection(ObstacleType.CURB)) {
                 results.add(DetectedObstacle(
