@@ -24,6 +24,7 @@ import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.YuvImage
 import android.os.Build
+import android.view.Surface
 import android.util.Size
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -204,9 +205,9 @@ class ObstacleRepositoryImpl(
                 Timber.e(e, "ObstacleRepository: Failed to start detection")
                 _obstacleState.value = _obstacleState.value.copy(
                     isRunning = false,
-                    errorMessage = "启动检测失败: ${e.message}"
+                    lastError = "启动检测失败: ${e.message}"
                 )
-                Result.Error(e.message ?: "启动检测失败")
+                Result.Error(message = e.message ?: "启动检测失败")
             }
         }
     }
@@ -243,7 +244,7 @@ class ObstacleRepositoryImpl(
                 
             } catch (e: Exception) {
                 Timber.e(e, "ObstacleRepository: Error stopping detection")
-                Result.Error(e.message ?: "停止检测失败")
+                Result.Error(message = e.message ?: "停止检测失败")
             }
         }
     }
@@ -302,21 +303,6 @@ class ObstacleRepositoryImpl(
         return Result.Success(true)
     }
     
-    /**
-     * 设置预览 SurfaceProvider
-     */
-    override fun setPreviewSurfaceProvider(provider: Preview.SurfaceProvider) {
-        surfaceProvider = provider
-        preview?.setSurfaceProvider(provider)
-    }
-    
-    /**
-     * 设置生命周期所有者
-     */
-    override fun setLifecycleOwner(owner: LifecycleOwner) {
-        lifecycleOwner = owner
-    }
-    
     // ==================== CameraX 配置 ====================
     
     /**
@@ -352,7 +338,7 @@ class ObstacleRepositoryImpl(
             // 配置 ImageAnalysis
             imageAnalysis = ImageAnalysis.Builder()
                 .setTargetResolution(Size(640, 480))
-                .setTargetRotation(ImageInfo.ROTATION_0)
+                .setTargetRotation(Surface.ROTATION_0)
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build()
