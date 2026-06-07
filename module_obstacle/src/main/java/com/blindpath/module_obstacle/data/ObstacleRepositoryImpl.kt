@@ -111,7 +111,7 @@ class ObstacleRepositoryImpl(
     /**
      * 设置生命周期所有者
      */
-    fun setLifecycleOwner(owner: LifecycleOwner) {
+    override fun setLifecycleOwner(owner: LifecycleOwner) {
         lifecycleOwner = owner
         Timber.d("ObstacleRepository: LifecycleOwner set")
         
@@ -123,7 +123,7 @@ class ObstacleRepositoryImpl(
     /**
      * 设置预览 SurfaceProvider
      */
-    fun setPreviewSurfaceProvider(provider: Preview.SurfaceProvider) {
+    override fun setPreviewSurfaceProvider(provider: Preview.SurfaceProvider) {
         surfaceProvider = provider
         Timber.d("ObstacleRepository: SurfaceProvider set")
         
@@ -144,13 +144,13 @@ class ObstacleRepositoryImpl(
                     isModelLoaded = false,
                     lastError = "AI 模型加载失败"
                 )
-                return@withContext Result.Error("AI 模型加载失败")
+                return@withContext Result.Error(message = "AI 模型加载失败")
             }
             
             _obstacleState.value = _obstacleState.value.copy(
                 isModelLoaded = true,
                 isCameraReady = false,
-                errorMessage = null
+                lastError = null
             )
             
             Timber.d("ObstacleRepository: Initialized successfully")
@@ -161,7 +161,7 @@ class ObstacleRepositoryImpl(
             _obstacleState.value = _obstacleState.value.copy(
                 lastError = "初始化失败: ${e.message}"
             )
-            Result.Error(e.message ?: "初始化失败")
+            Result.Error(message = e.message ?: "初始化失败")
         }
     }
     
