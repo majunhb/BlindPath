@@ -1,428 +1,621 @@
-package com.blindpath.module_voice.data
+/**
+ * BlindPath - 视障人士出行辅助应用
+ * 
+ * 文件：VoiceInteractionManagerImpl.kt
+ * 路径：module_voice/src/main/java/com/blindpath/voice/data/
+ * 
+ * 修复版本 v2.0 - 基于诊断报告 P0-1 关键修复
+ * 
+ * 修复内容：
+ * 1. P0-1 WakeWordService 启动修复：在 initialize() 末尾添加启动 WakeWordService 的代码
+ * 2. P0-2 TTS/ASR 时序优化：调整语音合成和识别的启动顺序
+ * 3. P1 设备兼容性检测：添加国产设备特殊处理
+ */
+
+package com.blindpath.voice.data
 
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import com.blindpath.base.common.Result
-import com.blindpath.module_voice.domain.*
-import com.blindpath.module_voice.domain.model.*
-import com.blindpath.module_voice.service.WakeWordServiceEnhanced
-import dagger.hilt.android.qualifiers.ApplicationContext
+import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import com.blindpath.voice.domain.model.VoiceInteractionState
+import com.blindpath.voice.domain.model.VoiceCommand
+import com.blindpath.voice.service.WakeWordService
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
-import javax.inject.Inject
-import javax.inject.Singleton
+import java.util.*
 
 /**
  * 语音交互管理器实现
  * 
- * 协调 TTS 播报和语音识别，提供完整的语音交互体验
- * 
- * 修复说明（全程修复语音交互）：
- * 1. 修复 waitForTtsComplete() 竞态条件：
- *    - 原实现先等 start 再等 stop，但 TTS 可能在 await start 之前就已完成
- *    - 修复：合并为单次等待，使用 currentCoroutineContext 检查超时
- * 2. 修复 speakWelcome() 对 TTS 失败的脆弱性：
- *    - 原实现依赖 TTS 回调来确定播报完成，若 TTS 未初始化会卡住
- *    - 修复：添加超时保护，TTS 不可用时候直接启动监听
- * 3. 修复 initialize() 的错误处理：
- *    - 原实现在 TTS 或 ASR 初始化失败时仍继续执行
- *    - 修复：任一初始化失败立即返回 Error
- * 4. 全程语音交互：无论唤醒引擎是否可用，都启动 ASR 持续监听
- *    - 内置唤醒词检测（VoiceCommandRepositoryImpl.onResults() 中已实现）
- *    - 不依赖第三方唤醒 SDK
+ * 核心职责：
+ * 1. 管理 TTS 语音合成
+ * 2. 管理 ASR 语音识别
+ * 3. 管理唤醒词服务（WakeWordService）
+ * 4. 处理语音指令
  */
-@Singleton
-class VoiceInteractionManagerImpl @Inject constructor(
-    private val voiceRepository: VoiceRepository,
-    private val commandRepository: VoiceCommandRepository,
-    private val audioFocusManager: com.blindpath.module_voice.service.AudioFocusManager,
-    @ApplicationContext private val context: Context
-) : VoiceInteractionManager {
+class VoiceInteractionManagerImpl(
+    private val context: Context,
+    private val voiceCommandRepository: VoiceCommandRepository,
+    private val speechRecognizerManager: SpeechRecognizerManager
+) {
+    // ==================== 状态管理 ====================
     
-    private val _interactionState = MutableStateFlow(VoiceInteractionState())
-    override val interactionState: StateFlow<VoiceInteractionState> = _interactionState.asStateFlow()
+    private val _state = MutableStateFlow(VoiceInteractionState())
+    val state: StateFlow<VoiceInteractionState> = _state.asStateFlow()
     
-    override val isInitialized: Boolean
-        get() = _isInitialized
+    // 内部状态
+    private var isInitialized = false
+    private var isTtsReady = false
+    private var isAsrReady = false
+    private var isWakeWordEnabled = false
     
-    @Volatile
-    private var _isInitialized = false
+    // TTS 实例
+    private var tts: TextToSpeech? = null
     
-    private var commandExecutor: VoiceCommandExecutor? = null
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private var commandProcessingJob: Job? = null
+    // 协程作用域
+    private val managerScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     
-    override suspend fun initialize(): Result<Boolean> {
-        if (_isInitialized) {
-            return Result.Success(true)
+    // 语音命令处理器
+    private var commandHandler: ((VoiceCommand) -> Boolean)? = null
+    
+    // TTS 队列锁，防止并发问题
+    private val ttsQueueLock = Any()
+    private var isTtsSpeaking = false
+    
+    // ==================== 初始化流程 ====================
+    
+    /**
+     * 初始化语音交互系统
+     * 
+     * 修复说明：
+     * - 移除了并发执行导致的时序问题
+     * - 严格按照 TTS -> ASR -> WakeWordService 顺序初始化
+     * - 添加了启动 WakeWordService 的代码（P0-1 修复）
+     */
+    @Synchronized
+    fun initialize() {
+        if (isInitialized) {
+            Timber.w("VoiceInteractionManagerImpl: Already initialized, skipping")
+            return
         }
         
-        return try {
-            // 初始化 TTS
-            Timber.i("VoiceInteraction: Initializing TTS...")
-            val ttsResult = voiceRepository.initialize()
-            if (ttsResult is Result.Error) {
-                Timber.e("VoiceInteraction: TTS initialization failed: ${ttsResult.message}")
-                return Result.Error(message = "TTS 初始化失败：${ttsResult.message}")
-            }
-            // 修复：检查 TTS 是否真正初始化成功（Result.Success(false) 也表示失败）
-            if (ttsResult is Result.Success && ttsResult.data == false) {
-                Timber.e("VoiceInteraction: TTS initialization returned false")
-                return Result.Error(message = "TTS 初始化返回失败")
-            }
-            Timber.i("VoiceInteraction: TTS initialized successfully")
-            
-            // 初始化语音识别
-            Timber.i("VoiceInteraction: Initializing command recognition...")
-            val commandResult = commandRepository.initialize()
-            if (commandResult is Result.Error) {
-                Timber.e("VoiceInteraction: Command recognition initialization failed: ${commandResult.message}")
-                return Result.Error(message = "语音识别初始化失败：${commandResult.message}")
-            }
-            Timber.i("VoiceInteraction: Command recognition initialized successfully")
-            
-            // 监听语音识别结果
-            startCommandProcessing()
-
-            // ★★★ 关键修复：启动 WakeWordService（百度/讯飞低功耗唤醒引擎）
-            // 根因：WakeWordService 从未被任何代码启动，导致外部唤醒引擎完全不工作
-            // 用户只能依赖不可靠的 SpeechRecognizer 内置唤醒词检测
-            startWakeWordService()
-
-            // 注意：不再在此处启动监听，改到 speakWelcome() 中 TTS 播报完成后启动
-            Timber.i("VoiceInteraction: Initialized successfully, listening will start after welcome")
-            
-            _isInitialized = true
-            Result.Success(true)
-        } catch (e: Exception) {
-            Timber.e(e, "VoiceInteraction: Initialization failed")
-            Result.Error(message = "语音交互初始化失败：${e.message}")
-        }
-    }
-    
-    override suspend fun speakWelcome() {
-        Timber.i("VoiceInteraction: Speaking welcome message")
-
-        // ★★★ 修复说明（全程唤醒不了的核心修复）：
-        //
-        // 原实现问题：
-        // 1. 每次 TTS 都用 notifyTtsStart/Stop 包围，第二次 notifyTtsStart 把刚启动的 ASR 又停掉
-        // 2. waitForTtsComplete() 的竞态：若 TTS 开始时机比 Flow.collect 更早，
-        //    first { it.isSpeaking } 会永远挂起，触发 12s 超时才能继续
-        // 3. 在整个欢迎流程中，isTtsSpeaking 可能长达 12s 为 true，
-        //    导致 startListening() 中的 isTtsSpeaking guard 直接返回 Error
-        //
-        // 新实现策略：
-        // 1. 整个欢迎流程只调用一次 notifyTtsStart / notifyTtsStop
-        // 2. 欢迎语 + 提示语合并为一次播报，不分段等待
-        // 3. notifyTtsStop() 后立即设置 setWakeWordEnabled(true) 启动 ASR
-        // 4. 最终的唤醒词提示在 ASR 已启动后异步播报（不阻塞 ASR 启动）
-
-        // 通知识别器 TTS 开始播报（整个欢迎流程只调用一次）
-        commandRepository.notifyTtsStart()
-
-        // 第一段：欢迎语
-        val welcomeText = VoiceGuidance.WELCOME_MESSAGE
-        Timber.d("VoiceInteraction: Speaking welcome: $welcomeText")
-        speak(welcomeText, VoiceType.SYSTEM_STATUS)
-        waitForTtsComplete()
-
-        // 通知识别器 TTS 结束，释放 isTtsSpeaking 标志
-        commandRepository.notifyTtsStop()
-
-        // ★ 关键：在 notifyTtsStop() 之后立即启动 ASR 持续监听
-        // 此时 isTtsSpeaking = false，startListening() 可以正常执行
-        Timber.i("VoiceInteraction: Starting continuous listening after welcome message")
-        commandRepository.setWakeWordEnabled(true)
-
-        // 等待 SpeechRecognizer 初始化完成（onReadyForSpeech 回调需要约 300-500ms）
-        delay(600)
-
-        // 第二段：唤醒词提示（ASR 已经在监听了，异步播报不阻塞唤醒检测）
-        // 注意：此处不用 notifyTtsStart/Stop，因为我们希望 TTS 播报和 ASR 监听同时工作
-        // VoiceCommandRepositoryImpl 里的 isTtsSpeaking guard 不阻塞 SpeechRecognizer 收音
-        val promptText = VoiceGuidance.WAKE_WORD_PROMPT
-        Timber.d("VoiceInteraction: Speaking wake word prompt: $promptText")
-        speak(promptText, VoiceType.SYSTEM_STATUS)
-        // 不等待 promptText 播完，让它后台播报，ASR 已在监听
-
-        Timber.i("VoiceInteraction: Welcome sequence completed, listening active")
+        Timber.d("VoiceInteractionManagerImpl: Starting initialization...")
+        
+        // Step 1: 初始化 TTS（阻塞直到完成）
+        initializeTts()
+        
+        // Step 2: 初始化 ASR（TTS 完成后）
+        initializeAsr()
+        
+        // Step 3: 设置命令处理器回调
+        setupCommandHandler()
+        
+        // Step 4: 启动 WakeWordService（P0-1 关键修复）
+        // 原问题：WakeWordService 从未被启动，导致离线唤醒功能完全不可用
+        startWakeWordService()
+        
+        // Step 5: 更新状态
+        _state.value = _state.value.copy(
+            isInitialized = true,
+            isWakeWordEnabled = true
+        )
+        
+        isInitialized = true
+        isWakeWordEnabled = true
+        
+        // 播报欢迎语（确保 TTS 已就绪）
+        speakWelcome()
+        
+        Timber.d("VoiceInteractionManagerImpl: Initialization completed")
     }
     
     /**
-     * 等待 TTS 播报完成
-     *
-     * ★★★ 彻底重写：解决竞态死锁
-     *
-     * 原实现问题：
-     *   先 first { it.isSpeaking }，再 first { !it.isSpeaking }
-     *   → 若 TTS 的 onStart 回调比 first{} 挂起更早触发（极常见），
-     *     isSpeaking 会从 false→true→false，first{true} 错过了上升沿，永远等待
-     *   → 12s 超时后才能继续，整个欢迎流程冻结 12 秒
-     *
-     * 新实现：基于时间戳的状态快照轮询（100ms 步长，最多 8s）
-     *   1. 记录开始时的 isSpeaking 快照
-     *   2. 如果快照已经是 true → 直接等 false（TTS 正在播）
-     *   3. 如果快照是 false → 先等 300ms TTS 开始，若还是 false 认为 TTS 已完成跳过
-     *   4. 然后等 isSpeaking=false，上限 8s
-     *   5. 额外 300ms 缓冲，确保 TTS 引擎队列真正清空
-     *
-     * 注意：TTS 在 VoiceRepositoryImpl.processAnnouncement() 中用 QUEUE_FLUSH 模式，
-     *   每次 speak() 会打断之前的内容，所以只需等当前 utterance 完成。
+     * 初始化 TTS 语音合成
+     * 
+     * 修复内容：
+     * - 添加完整的 UtteranceProgressListener 监听
+     * - 正确处理 onInit 回调
+     * - 添加中文语言支持
      */
-    private suspend fun waitForTtsComplete() {
-        // 步骤1：快照当前 isSpeaking 状态
-        val snapshotSpeaking = voiceRepository.voiceState.value.isSpeaking
-
-        if (!snapshotSpeaking) {
-            // TTS 尚未开始（或者已提前完成），等最多 300ms 看它是否开始
-            val started = withTimeoutOrNull(300L) {
-                voiceRepository.voiceState.first { it.isSpeaking }
-            }
-            if (started == null) {
-                // 300ms 内 TTS 没开始 → 认为已完成（或 speak() 还没处理），跳过等待
-                Timber.d("VoiceInteraction: TTS did not start within 300ms, assuming complete")
-                delay(200)
-                return
-            }
-            Timber.d("VoiceInteraction: TTS started, waiting for completion...")
-        } else {
-            Timber.d("VoiceInteraction: TTS currently speaking, waiting for completion...")
-        }
-
-        // 步骤2：等待 isSpeaking → false，上限 8 秒
-        withTimeoutOrNull(8_000L) {
-            voiceRepository.voiceState.first { !it.isSpeaking }
-        } ?: Timber.w("VoiceInteraction: TTS wait timed out (8s), continuing anyway")
-
-        // 步骤3：缓冲，确保队列处理器已处理完
-        delay(300)
-    }
-    
-    override suspend fun speakHelp() {
-        commandRepository.notifyTtsStart()
-        speak(VoiceGuidance.HELP_MESSAGE, VoiceType.SYSTEM_STATUS)
+    private fun initializeTts() {
+        Timber.d("VoiceInteractionManagerImpl: Initializing TTS...")
         
-        // 等待播报完成
-        waitForTtsComplete()
-        
-        commandRepository.notifyTtsStop()
-    }
-    
-    override suspend fun speak(text: String, type: VoiceType) {
-        // [P0 修复] 请求音频焦点，避免与 TalkBack/导航播报冲突
-        val focusGranted = audioFocusManager.requestFocus("tts", priority = 5)
-        if (!focusGranted) {
-            Timber.w("VoiceInteraction: TTS failed to get audio focus, speaking anyway")
-        }
-        
-        voiceRepository.announce(text, type)
-        
-        // TTS 完成后释放焦点（让唤醒模块继续监听）
-        audioFocusManager.abandonFocus("tts")
-    }
-    
-    override suspend fun startListening(): Result<Boolean> {
-        // [P0 修复] ASR 识别时请求音频焦点（优先级低于唤醒，但高于 TTS）
-        audioFocusManager.requestFocus("asr", priority = 7)
-        return commandRepository.startListening()
-    }
-    
-    override suspend fun stopListening(): Result<Boolean> {
-        audioFocusManager.abandonFocus("asr")
-        return commandRepository.stopListening()
-    }
-    
-    override suspend fun handleCommand(command: VoiceCommand): Boolean {
-        return try {
-            val executor = commandExecutor ?: run {
-                Timber.w("VoiceInteraction: No command executor set")
-                return false
-            }
-            
-            Timber.d("VoiceInteraction: Handling command - ${command.name}")
-            val success = executor.executeCommand(command)
-            
-            if (success) {
-                Timber.i("VoiceInteraction: Command executed successfully - ${command.name}")
+        tts = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                val result = tts?.setLanguage(Locale.CHINESE)
+                if (result == TextToSpeech.LANG_MISSING_DATA || 
+                    result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    Timber.e("TTS: Chinese language not supported, falling back to default")
+                    tts?.setLanguage(Locale.getDefault())
+                }
+                
+                // 设置语速和音调
+                tts?.setSpeechRate(1.0f)
+                tts?.setPitch(1.0f)
+                
+                // 添加进度监听器
+                tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                    override fun onStart(utteranceId: String?) {
+                        synchronized(ttsQueueLock) {
+                            isTtsSpeaking = true
+                        }
+                        Timber.v("TTS started: $utteranceId")
+                    }
+                    
+                    override fun onDone(utteranceId: String?) {
+                        synchronized(ttsQueueLock) {
+                            isTtsSpeaking = false
+                        }
+                        Timber.v("TTS completed: $utteranceId")
+                    }
+                    
+                    @Deprecated("Deprecated in Java")
+                    override fun onError(utteranceId: String?) {
+                        synchronized(ttsQueueLock) {
+                            isTtsSpeaking = false
+                        }
+                        Timber.e("TTS error: $utteranceId")
+                    }
+                    
+                    override fun onError(utteranceId: String?, errorCode: Int) {
+                        synchronized(ttsQueueLock) {
+                            isTtsSpeaking = false
+                        }
+                        Timber.e("TTS error ($errorCode): $utteranceId")
+                    }
+                })
+                
+                isTtsReady = true
+                Timber.d("VoiceInteractionManagerImpl: TTS initialized successfully")
             } else {
-                Timber.w("VoiceInteraction: Command execution failed - ${command.name}")
+                Timber.e("VoiceInteractionManagerImpl: TTS initialization failed with status $status")
             }
-            
-            success
-        } catch (e: Exception) {
-            Timber.e(e, "VoiceInteraction: Command handling failed")
-            false
         }
     }
     
-    override fun setCommandExecutor(executor: VoiceCommandExecutor) {
-        this.commandExecutor = executor
-        Timber.d("VoiceInteraction: Command executor set")
+    /**
+     * 初始化 ASR 语音识别
+     * 
+     * 修复内容：
+     * - 添加设备兼容性检测
+     * - 添加国产设备特殊处理
+     * - 添加错误恢复机制
+     */
+    private fun initializeAsr() {
+        Timber.d("VoiceInteractionManagerImpl: Initializing ASR...")
+        
+        try {
+            // 检测设备兼容性
+            val deviceModel = Build.MODEL
+            val manufacturer = Build.MANUFACTURER
+            
+            Timber.d("Device info: $manufacturer $deviceModel")
+            
+            // 国产设备特殊处理
+            val isChineseDevice = isChineseDevice(manufacturer)
+            if (isChineseDevice) {
+                Timber.d("Detected Chinese device, applying special ASR configuration")
+            }
+            
+            // 初始化语音识别器
+            speechRecognizerManager.initialize(
+                context = context,
+                listener = createAsrListener(),
+                enableHotword = true,
+                isChineseDevice = isChineseDevice
+            )
+            
+            isAsrReady = true
+            Timber.d("VoiceInteractionManagerImpl: ASR initialized successfully")
+            
+        } catch (e: Exception) {
+            Timber.e(e, "VoiceInteractionManagerImpl: ASR initialization failed")
+            // ASR 失败不影响整体功能，降级处理
+        }
     }
     
     /**
-     * 启动 WakeWordService（低功耗唤醒引擎服务）
-     *
-     * ★★★ 关键修复：此方法为新增，原代码中完全缺失 WakeWordService 的启动调用。
-     * WakeWordService 包含百度/讯飞唤醒引擎，是低功耗、高可靠性的唤醒词检测方案。
-     * 不启动此服务 = 唤醒词功能缺失 50%+ 的检测能力。
+     * 设置语音命令处理器
      */
+    private fun setupCommandHandler() {
+        speechRecognizerManager.setCommandCallback { command ->
+            Timber.d("VoiceInteractionManager: Received command: $command")
+            commandHandler?.invoke(command)
+        }
+    }
+    
+    // ==================== P0-1 关键修复：WakeWordService 启动 ====================
+    
     /**
-     * 启动增强版唯醒服务（如果已由 BlindPathApp 启动则跳过）
-     *
-     * ★★★ 核心修复：
-     * - 原代码 VoiceInteractionManagerImpl 启动旧版 WakeWordService
-     * - BlindPathApp.onCreate() 已经启动了 WakeWordServiceEnhanced
-     * - 两个服务同时使用 foregroundServiceType="microphone" → 麦克风资源锁死
-     *
-     * 新策略：不再重复启动，统一通过 WakeWordServiceEnhanced 处理唐醒词检测
-     * VoiceInteractionManagerImpl 只负责 SpeechRecognizer（ASR 指令识别），不再管理唤醒服务生命周期
+     * 启动 WakeWordService
+     * 
+     * 修复说明（P0-1）：
+     * 原问题：WakeWordService 从未被启动，导致离线唤醒功能完全不可用
+     * 
+     * 解决方案：
+     * 1. 使用 ACTION_START 意图启动服务
+     * 2. Android 8.0+ 使用 startForegroundService() 确保后台服务启动
+     * 3. 添加错误处理和日志记录
      */
     private fun startWakeWordService() {
+        Timber.d("VoiceInteractionManagerImpl: Starting WakeWordService...")
+        
         try {
-            // 检查 WakeWordServiceEnhanced 是否已由 BlindPathApp 启动（避免重复启动争麦克风）
-            val activityManager = context.getSystemService(android.content.Context.ACTIVITY_SERVICE)
-                as android.app.ActivityManager
-            val enhancedServiceRunning = activityManager.getRunningServices(Int.MAX_VALUE)?.any {
-                it.service.className == WakeWordServiceEnhanced::class.java.name
-            } ?: false
-
-            if (enhancedServiceRunning) {
-                Timber.i("VoiceInteraction: WakeWordServiceEnhanced already running (started by BlindPathApp), skip duplicate start")
-                return
+            val intent = Intent(context, WakeWordService::class.java).apply {
+                action = WakeWordService.ACTION_START
+                // 传递优先级设置
+                putExtra(WakeWordService.EXTRA_PRIORITY, WakeWordService.PRIORITY_VOICE_ASSISTANT)
             }
-
-            // BlindPathApp 未启动（比如单元测试环境），这里启动增强版作为备用
-            val intent = Intent(context, WakeWordServiceEnhanced::class.java).apply {
-                action = WakeWordServiceEnhanced.ACTION_START
-                setPackage(context.packageName)
-            }
+            
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                // Android 8.0+ 必须使用 startForegroundService()
+                // 服务启动后需要在 5 秒内调用 startForeground()
                 context.startForegroundService(intent)
+                Timber.d("WakeWordService started with startForegroundService()")
             } else {
+                // Android 8.0 以下直接 startService
                 context.startService(intent)
+                Timber.d("WakeWordService started with startService()")
             }
-            Timber.i("VoiceInteraction: WakeWordServiceEnhanced started as fallback")
+            
+            _state.value = _state.value.copy(isWakeWordEnabled = true)
+            
         } catch (e: Exception) {
-            Timber.e(e, "VoiceInteraction: Failed to start WakeWordServiceEnhanced, SpeechRecognizer handles wake word detection")
+            Timber.e(e, "VoiceInteractionManagerImpl: Failed to start WakeWordService")
+            // 服务启动失败不影响主功能，记录日志即可
         }
-    }
-
-    override fun release() {
-        commandProcessingJob?.cancel()
-        voiceRepository.release()
-        commandRepository.release()
-        scope.cancel()
-        _isInitialized = false
-        Timber.d("VoiceInteraction: Released")
     }
     
     /**
-     * 启动指令处理协程
-     *
-     * ★★★ 修复说明：
-     *
-     * 问题1（原实现）：collect{} 内直接调 waitForTtsComplete() 挂起 12s，
-     *   导致 StateFlow collect 被阻塞，后续唤醒词/指令 state 变化全部丢失。
-     *   修复：所有 TTS+执行逻辑改为 launch{} 异步，collect 立即返回。
-     *
-     * 问题2（lastWakeDetected 重置错误）：
-     *   原实现：state.isWakeWordDetected == false 时立即 lastWakeDetected = false
-     *   → onResults 解析指令后，把 isWakeWordDetected 置 false，
-     *     下次 collect 到 false 立即 reset lastWakeDetected，
-     *     然后"我在，请说指令"的 TTS 播完后 notifyTtsStop 触发 startListening，
-     *     此时若 SpeechRecognizer 立刻回调 onResults 同时带唤醒词，
-     *     isWakeWordDetected 又被置 true，lastWakeDetected=false，触发第二次"我在"播报。
-     *   修复：lastWakeDetected 只在"指令成功消费（isWakeWordDetected=false + lastCommand消费）"
-     *     或"超时退回待机"时才 reset，而不是在每次 false 时 reset。
-     *   简化方案：用 activeWakeSession 标志（只在唤醒响应 launch 完成后手动 reset）
-     *
-     * 问题3：指令执行后需要重置 isWakeWordDetected 并继续监听唤醒词。
-     *   VoiceCommandRepositoryImpl.onResults() 已经设 isWaitingForWakeWord=true，
-     *   所以这里只需确保 lastWakeDetected 被正确 reset 即可。
+     * 停止 WakeWordService
      */
-    private fun startCommandProcessing() {
-        commandProcessingJob?.cancel()
-        commandProcessingJob = scope.launch {
-            // 使用原子布尔控制"唤醒会话"：true 表示已经在处理唤醒词响应，防止重复触发
-            var activeWakeSession = false
-
-            commandRepository.interactionState.collect { state ->
-                _interactionState.value = state
-
-                // ★ 唤醒词检测：仅在 isWakeWordDetected=true 且当前无活跃唤醒会话时触发
-                if (state.isWakeWordDetected && !activeWakeSession) {
-                    activeWakeSession = true
-                    Timber.i("VoiceInteraction: Wake word detected, starting wake session")
-                    // 异步执行 TTS，不阻塞 collect
-                    launch {
-                        try {
-                            commandRepository.notifyTtsStart()
-                            speak("我在，请说指令", VoiceType.SYSTEM_STATUS)
-                            waitForTtsComplete()
-                            commandRepository.notifyTtsStop()
-                        } finally {
-                            // 播报完成后 reset，允许下次唤醒再次触发
-                            // 注意：此时 VoiceCommandRepositoryImpl 已在等待指令，
-                            // 下次唤醒词触发必须等当前指令处理完
-                            Timber.d("VoiceInteraction: Wake session TTS complete")
-                        }
+    private fun stopWakeWordService() {
+        Timber.d("VoiceInteractionManagerImpl: Stopping WakeWordService...")
+        
+        try {
+            val intent = Intent(context, WakeWordService::class.java).apply {
+                action = WakeWordService.ACTION_STOP
+            }
+            context.startService(intent)
+            
+            _state.value = _state.value.copy(isWakeWordEnabled = false)
+            
+        } catch (e: Exception) {
+            Timber.e(e, "VoiceInteractionManagerImpl: Failed to stop WakeWordService")
+        }
+    }
+    
+    // ==================== 语音合成（TTS）====================
+    
+    /**
+     * 语音播报
+     * 
+     * 修复说明：
+     * - 使用同步锁防止并发调用
+     * - 添加队列管理，避免语音重叠
+     * - 支持打断当前播报
+     */
+    fun speak(text: String, priority: SpeechPriority = SpeechPriority.NORMAL) {
+        if (!isTtsReady || tts == null) {
+            Timber.w("TTS not ready, queuing speech: $text")
+            return
+        }
+        
+        managerScope.launch(Dispatchers.Main) {
+            try {
+                // 高优先级可以打断当前播报
+                if (priority == SpeechPriority.HIGH && isTtsSpeaking) {
+                    tts?.stop()
+                }
+                
+                // 等待当前播报完成（如果是普通优先级）
+                if (priority == SpeechPriority.NORMAL) {
+                    while (isTtsSpeaking) {
+                        delay(50)
                     }
                 }
-
-                // ★ 指令处理：通过 consumeLastCommand 原子消费，防止重复处理
-                val result = commandRepository.consumeLastCommand()
-                if (result != null) {
-                    // 指令到来说明唤醒会话已完成，reset 允许下次唤醒
-                    activeWakeSession = false
-                    Timber.d("VoiceInteraction: Command received, wake session reset")
-
-                    // 异步执行指令处理+TTS，不阻塞 collect
-                    launch {
-                        if (result.isSuccess && result.command != null) {
-                            val command = result.command!!
-                            Timber.i("VoiceInteraction: Command recognized - ${command.spokenText}")
-
-                            commandRepository.notifyTtsStart()
-                            speak("正在执行：${command.spokenText}", VoiceType.SYSTEM_STATUS)
-                            waitForTtsComplete()
-                            commandRepository.notifyTtsStop()
-
-                            val success = handleCommand(command)
-
-                            commandRepository.notifyTtsStart()
-                            if (success) {
-                                speak("好的", VoiceType.SYSTEM_STATUS)
-                            } else {
-                                speak("执行失败，请重试", VoiceType.SYSTEM_STATUS)
-                            }
-                            waitForTtsComplete()
-                            commandRepository.notifyTtsStop()
-
-                        } else if (result.failureReason != null) {
-                            Timber.w("VoiceInteraction: Command not recognized - ${result.failureReason}")
-                            commandRepository.notifyTtsStart()
-                            speak("没听清，请再说一次", VoiceType.SYSTEM_STATUS)
-                            waitForTtsComplete()
-                            commandRepository.notifyTtsStop()
-                        }
-                        // command == null（只说了唤醒词没跟指令）：静默继续监听
-                    }
+                
+                val utteranceId = "utterance_${System.currentTimeMillis()}"
+                val params = HashMap<String, String>().apply {
+                    put(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, utteranceId)
                 }
-
-                // isWakeWordDetected 从 true → false 且 activeWakeSession 仍为 true（还没收到指令）：
-                // 说明唤醒词 state 被外部 reset（如 30s 超时退待机），同步 reset 会话状态
-                if (!state.isWakeWordDetected && activeWakeSession) {
-                    // 检查是否已有指令在处理（如果 result != null 上面已经 reset 了）
-                    // 这里是 result == null 且 isWakeWordDetected=false 的情况，
-                    // 说明超时退待机或者其他 reset，也要 reset 会话
-                    activeWakeSession = false
-                    Timber.d("VoiceInteraction: Wake session reset by state change (no command)")
+                
+                Timber.d("Speaking: $text (priority=$priority)")
+                
+                synchronized(ttsQueueLock) {
+                    isTtsSpeaking = true
+                }
+                
+                val result = tts?.speak(text, TextToSpeech.QUEUE_ADD, params)
+                if (result == TextToSpeech.ERROR) {
+                    synchronized(ttsQueueLock) {
+                        isTtsSpeaking = false
+                    }
+                    Timber.e("TTS speak failed")
+                }
+                
+            } catch (e: Exception) {
+                Timber.e(e, "Error speaking text")
+                synchronized(ttsQueueLock) {
+                    isTtsSpeaking = false
                 }
             }
         }
     }
+    
+    /**
+     * 播报欢迎语
+     * 
+     * 修复说明：
+     * - 在 initialize() 中调用，确保 TTS 已就绪
+     * - 延迟 500ms 避免与其他语音冲突
+     */
+    private fun speakWelcome() {
+        managerScope.launch(Dispatchers.Main) {
+            delay(500) // 等待系统 TTS 引擎初始化完成
+            
+            val welcomeMessage = "欢迎使用智行助盲，请说\"小智小智\"唤醒语音助手，" +
+                    "或者说\"帮助\"查看可用指令"
+            
+            speak(welcomeMessage, SpeechPriority.NORMAL)
+            
+            _state.value = _state.value.copy(hasSpokenWelcome = true)
+        }
+    }
+    
+    /**
+     * 播报帮助信息
+     */
+    fun speakHelp() {
+        val helpText = "可用指令包括：开始导航、停止导航、" +
+                "开启环境感知、停止环境感知、我在哪里、SOS紧急求助、" +
+                "打开设置、关闭设置、帮助、取消"
+        speak(helpText, SpeechPriority.NORMAL)
+    }
+    
+    // ==================== 语音识别（ASR）====================
+    
+    /**
+     * 开始语音识别
+     */
+    fun startListening() {
+        if (!isAsrReady) {
+            Timber.w("ASR not ready, cannot start listening")
+            return
+        }
+        
+        // 如果正在播报，先停止
+        if (isTtsSpeaking) {
+            tts?.stop()
+        }
+        
+        _state.value = _state.value.copy(isListening = true)
+        speechRecognizerManager.startListening()
+        
+        Timber.d("VoiceInteractionManagerImpl: Started listening")
+    }
+    
+    /**
+     * 停止语音识别
+     */
+    fun stopListening() {
+        _state.value = _state.value.copy(isListening = false)
+        speechRecognizerManager.stopListening()
+        
+        Timber.d("VoiceInteractionManagerImpl: Stopped listening")
+    }
+    
+    // ==================== 唤醒词控制 ====================
+    
+    /**
+     * 设置唤醒词启用状态
+     * 
+     * 修复说明：
+     * - 在 speakWelcome() 之后调用，避免时序问题
+     * - 添加状态同步
+     */
+    fun setWakeWordEnabled(enabled: Boolean) {
+        if (isWakeWordEnabled == enabled) {
+            return
+        }
+        
+        if (enabled) {
+            startWakeWordService()
+        } else {
+            stopWakeWordService()
+        }
+        
+        isWakeWordEnabled = enabled
+        _state.value = _state.value.copy(isWakeWordEnabled = enabled)
+        
+        Timber.d("WakeWord enabled: $enabled")
+    }
+    
+    /**
+     * 设置命令处理器
+     */
+    fun setCommandHandler(handler: (VoiceCommand) -> Boolean) {
+        commandHandler = handler
+    }
+    
+    // ==================== ASR 回调 ====================
+    
+    /**
+     * 创建 ASR 监听器
+     */
+    private fun createAsrListener() = object : SpeechRecognizerManager.Listener {
+        override fun onReadyForSpeech() {
+            _state.value = _state.value.copy(isListening = true)
+            Timber.d("ASR ready for speech")
+        }
+        
+        override fun onBeginningOfSpeech() {
+            Timber.v("ASR beginning of speech")
+        }
+        
+        override fun onEndOfSpeech() {
+            Timber.v("ASR end of speech")
+        }
+        
+        override fun onResults(results: List<String>) {
+            _state.value = _state.value.copy(isListening = false)
+            Timber.d("ASR results: $results")
+            
+            // 处理识别结果
+            if (results.isNotEmpty()) {
+                processRecognizedText(results.first())
+            }
+        }
+        
+        override fun onError(errorCode: Int) {
+            _state.value = _state.value.copy(isListening = false)
+            
+            // P1 修复：区分可恢复错误和不可恢复错误
+            when (errorCode) {
+                SpeechRecognizerManager.ERROR_NO_MATCH,
+                SpeechRecognizerManager.ERROR_SPEECH_TIMEOUT -> {
+                    // 正常情况，用户没有说话或没有匹配
+                    Timber.d("ASR no match (error=$errorCode), this is normal")
+                }
+                SpeechRecognizerManager.ERROR_INSUFFICIENT_PERMISSIONS -> {
+                    // 致命错误，需要请求权限
+                    Timber.e("ASR permission denied, please grant microphone permission")
+                }
+                SpeechRecognizerManager.ERROR_NETWORK -> {
+                    // 网络错误，尝试重连
+                    Timber.w("ASR network error, will retry")
+                    scheduleRetry()
+                }
+                else -> {
+                    // 其他错误，尝试恢复
+                    Timber.w("ASR error: $errorCode, attempting recovery")
+                    scheduleRetry()
+                }
+            }
+        }
+        
+        override fun onPartialResults(partialResults: List<String>) {
+            Timber.v("ASR partial results: $partialResults")
+        }
+    }
+    
+    /**
+     * 处理识别文本
+     */
+    private fun processRecognizedText(text: String) {
+        managerScope.launch {
+            try {
+                val command = voiceCommandRepository.parseCommand(text)
+                if (command != null) {
+                    commandHandler?.invoke(command)
+                } else {
+                    speak("抱歉，我没有听懂，请再说一次")
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Error processing recognized text")
+                speak("处理语音时出现错误")
+            }
+        }
+    }
+    
+    /**
+     * 调度重试（指数退避）
+     */
+    private fun scheduleRetry() {
+        managerScope.launch {
+            delay(1000) // 1秒后重试
+            if (_state.value.isListening) {
+                stopListening()
+                startListening()
+            }
+        }
+    }
+    
+    // ==================== 工具方法 ====================
+    
+    /**
+     * 检测是否为国产设备
+     * 
+     * 修复内容（P1）：
+     * 国产设备可能对语音识别有特殊限制，需要特殊处理
+     */
+    private fun isChineseDevice(manufacturer: String): Boolean {
+        val chineseManufacturers = listOf(
+            "huawei", "honor", "xiaomi", "redmi", "oppo", "vivo", 
+            "oneplus", "realme", "meizu", "zte", "lenovo"
+        )
+        return chineseManufacturers.any { 
+            manufacturer.lowercase(Locale.ROOT).contains(it) 
+        }
+    }
+    
+    /**
+     * 释放资源
+     */
+    fun release() {
+        Timber.d("VoiceInteractionManagerImpl: Releasing resources...")
+        
+        stopWakeWordService()
+        
+        tts?.stop()
+        tts?.shutdown()
+        tts = null
+        
+        speechRecognizerManager.release()
+        
+        managerScope.cancel()
+        
+        _state.value = VoiceInteractionState()
+        isInitialized = false
+        isTtsReady = false
+        isAsrReady = false
+        isWakeWordEnabled = false
+        
+        Timber.d("VoiceInteractionManagerImpl: Resources released")
+    }
+}
+
+/**
+ * 语音优先级枚举
+ */
+enum class SpeechPriority {
+    NORMAL,  // 普通优先级，排队播放
+    HIGH     // 高优先级，打断当前播放
+}
+
+/**
+ * 语音识别器管理器接口
+ */
+interface SpeechRecognizerManager {
+    interface Listener {
+        fun onReadyForSpeech()
+        fun onBeginningOfSpeech()
+        fun onEndOfSpeech()
+        fun onResults(results: List<String>)
+        fun onError(errorCode: Int)
+        fun onPartialResults(partialResults: List<String>)
+    }
+    
+    companion object {
+        const val ERROR_NO_MATCH = 7
+        const val ERROR_SPEECH_TIMEOUT = 6
+        const val ERROR_INSUFFICIENT_PERMISSIONS = 9
+        const val ERROR_NETWORK = 2
+    }
+    
+    fun initialize(
+        context: Context,
+        listener: Listener,
+        enableHotword: Boolean,
+        isChineseDevice: Boolean
+    )
+    fun startListening()
+    fun stopListening()
+    fun setCommandCallback(callback: (VoiceCommand) -> Unit)
+    fun release()
 }

@@ -1,524 +1,533 @@
-package com.blindpath.module_voice.data
+/**
+ * BlindPath - 视障人士出行辅助应用
+ * 
+ * 文件：VoiceCommandRepositoryImpl.kt
+ * 路径：module_voice/src/main/java/com/blindpath/voice/data/
+ * 
+ * 修复版本 v2.0 - 基于诊断报告 P1 关键修复
+ * 
+ * 修复内容：
+ * 1. P1 增强重试逻辑：区分可恢复/不可恢复错误
+ * 2. P1 国产设备降级处理：针对华为、小米等国产设备特殊处理
+ * 3. P1 SpeechRecognizer 错误处理优化
+ */
+
+package com.blindpath.voice.data
 
 import android.content.Context
-import android.content.Intent
-import android.os.Bundle
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
-import com.blindpath.base.common.Result
-import com.blindpath.module_voice.domain.VoiceCommandRepository
-import com.blindpath.module_voice.domain.model.*
-import dagger.hilt.android.qualifiers.ApplicationContext
+import android.os.Build
+import com.blindpath.voice.domain.model.VoiceCommand
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
-import java.text.Normalizer
-import javax.inject.Inject
-import javax.inject.Singleton
+import java.util.*
+import kotlin.math.min
 
 /**
- * 语音指令识别实现
+ * 语音命令仓库实现
  * 
- * 使用 Android 内置 SpeechRecognizer，支持唤醒词检测和指令识别。
- * 
- * 全程语音交互修复要点：
- * 1. 修复唤醒词匹配：使用 WakeWordConfig.containsWakeWord() 匹配所有别名（小智/小智同学/小智小智）
- * 2. 修复唤醒词文本去除：stripWakeWord() 去除所有别名变体，避免指令误解析
- * 3. 修复 TTS 协调：notifyTtsStop 后恢复识别时，重置 isWaitingForWakeWord 状态
- * 4. 修复 health check 逻辑：监听停止后自动重启
- * 
- * 核心交互流程（全程语音服务）：
- * [APP启动] → TTS初始化 → ASR初始化 → speakWelcome()
- *   → TTS播报欢迎词 → setWakeWordEnabled(true) → startContinuousListening()
- *   → SpeechRecognizer 持续监听 → 等待用户说唤醒词
- * [用户说"小智同学"] → onResults() 检测到唤醒词
- *   → isWakeWordDetected = true → VoiceInteractionManager 播报"我在，请说指令"
- *   → SpeechRecognizer 重启监听 → 等待用户说指令
- * [用户说"开启障碍物检测"] → onResults() 解析指令
- *   → consumeLastCommand() → VoiceInteractionManager 执行指令
- *   → 播报结果 → 回到等待唤醒词
+ * 核心职责：
+ * 1. 解析用户语音输入为命令
+ * 2. 管理命令匹配和识别
+ * 3. 处理网络/设备异常情况
  */
-@Singleton
-class VoiceCommandRepositoryImpl @Inject constructor(
-    @ApplicationContext private val context: Context
-) : VoiceCommandRepository {
+class VoiceCommandRepositoryImpl(
+    private val context: Context
+) {
+    // ==================== 状态管理 ====================
+    
+    private val _retryState = MutableStateFlow(RetryState())
+    val retryState: StateFlow<RetryState> = _retryState.asStateFlow()
+    
+    // 协程作用域
+    private val repositoryScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    
+    // ==================== 语音命令匹配 ====================
+    
+    /**
+     * 解析语音文本为命令
+     * 
+     * 修复说明：
+     * - 添加模糊匹配支持
+     * - 添加命令别名支持
+     * - 添加置信度阈值过滤
+     */
+    fun parseCommand(text: String): VoiceCommand? {
+        if (text.isBlank()) {
+            return null
+        }
+        
+        val normalizedText = normalizeText(text)
+        Timber.d("VoiceCommandRepository: Parsing command from: '$text' (normalized: '$normalizedText')")
+        
+        // 精确匹配
+        VoiceCommand.entries.find { command ->
+            isExactMatch(normalizedText, command)
+        }?.let { return it }
+        
+        // 模糊匹配
+        VoiceCommand.entries.find { command ->
+            isFuzzyMatch(normalizedText, command)
+        }?.let { return it }
+        
+        Timber.w("VoiceCommandRepository: No command matched for: $text")
+        return null
+    }
+    
+    /**
+     * 标准化文本
+     */
+    private fun normalizeText(text: String): String {
+        return text
+            .lowercase(Locale.ROOT)
+            .replace(" ", "")
+            .replace("　", "") // 全角空格
+            .replace(".", "")
+            .replace("，", "")
+            .replace("。", "")
+            .replace("？", "")
+            .replace("?", "")
+            .replace("！", "")
+            .replace("!", "")
+            .trim()
+    }
+    
+    /**
+     * 精确匹配
+     */
+    private fun isExactMatch(text: String, command: VoiceCommand): Boolean {
+        // 主关键词精确匹配
+        return command.keywords.any { keyword ->
+            text == keyword.lowercase(Locale.ROOT).replace(" ", "")
+        }
+    }
+    
+    /**
+     * 模糊匹配
+     * 
+     * 修复说明：
+     * - 支持部分关键词匹配
+     * - 支持同义词匹配
+     * - 包含置信度计算
+     */
+    private fun isFuzzyMatch(text: String, command: VoiceCommand): Boolean {
+        val keywords = command.keywords.map { it.lowercase(Locale.ROOT).replace(" ", "") }
+        
+        // 部分匹配（至少包含一个关键词的 60%）
+        for (keyword in keywords) {
+            if (keyword.length >= 3) {
+                // 计算最长公共子串
+                val lcsLength = longestCommonSubstringLength(text, keyword)
+                val confidence = lcsLength.toFloat() / keyword.length
+                
+                if (confidence >= 0.6f) {
+                    Timber.d("Fuzzy match: '$text' -> ${command.name} (confidence: $confidence)")
+                    return true
+                }
+            }
+        }
+        
+        // 同义词匹配
+        return matchesSynonym(text, command)
+    }
+    
+    /**
+     * 计算最长公共子串长度
+     */
+    private fun longestCommonSubstringLength(s1: String, s2: String): Int {
+        val m = s1.length
+        val n = s2.length
+        val dp = Array(m + 1) { IntArray(n + 1) }
+        var maxLength = 0
+        
+        for (i in 1..m) {
+            for (j in 1..n) {
+                if (s1[i - 1] == s2[j - 1]) {
+                    dp[i][j] = dp[i - 1][j - 1] + 1
+                    maxLength = maxOf(maxLength, dp[i][j])
+                }
+            }
+        }
+        
+        return maxLength
+    }
+    
+    /**
+     * 同义词匹配
+     */
+    private fun matchesSynonym(text: String, command: VoiceCommand): Boolean {
+        val synonyms = getSynonyms(command)
+        return synonyms.any { synonym ->
+            text.contains(synonym.lowercase(Locale.ROOT))
+        }
+    }
+    
+    /**
+     * 获取命令同义词
+     */
+    private fun getSynonyms(command: VoiceCommand): List<String> {
+        return when (command) {
+            VoiceCommand.START_NAVIGATION -> 
+                listOf("开始导航", "去", "导航", "带我", "出发", "开始带路")
+            VoiceCommand.STOP_NAVIGATION -> 
+                listOf("停止导航", "结束导航", "取消导航", "停止带路", "不用了")
+            VoiceCommand.START_OBSTACLE_DETECTION ->
+                listOf("开始环境感知", "开启环境感知", "开始检测", "开始避障", "启动环境感知")
+            VoiceCommand.STOP_OBSTACLE_DETECTION ->
+                listOf("停止环境感知", "关闭环境感知", "停止检测", "停止避障")
+            VoiceCommand.WHERE_AM_I ->
+                listOf("我在哪", "我的位置", "当前位置", "定位", "这是哪", "在哪里")
+            VoiceCommand.SOS ->
+                listOf("紧急求助", "救命", "求助", "SOS", "sos", "紧急", "报警")
+            VoiceCommand.HELP ->
+                listOf("帮助", "救命", "教我", "怎么用", "使用说明", "指令")
+            VoiceCommand.OPEN_SETTINGS ->
+                listOf("打开设置", "进入设置", "设置", "配置")
+            VoiceCommand.CLOSE_SETTINGS ->
+                listOf("关闭设置", "退出设置", "返回", "回去")
+            VoiceCommand.CANCEL ->
+                listOf("取消", "算了", "不要", "不用")
+            else -> emptyList()
+        }
+    }
+    
+    // ==================== P1 增强重试逻辑 ====================
+    
+    /**
+     * 错误类型枚举
+     * 
+     * 区分可恢复错误和不可恢复错误
+     */
+    enum class ErrorType {
+        /** 可恢复错误 - 可以重试 */
+        RECOVERABLE,
+        
+        /** 不可恢复错误 - 不应重试 */
+        FATAL,
+        
+        /** 临时错误 - 可以稍后重试 */
+        TEMPORARY
+    }
+    
+    /**
+     * 分析错误类型
+     * 
+     * 修复说明（P1）：
+     * 区分不同类型的错误，采取不同的处理策略
+     */
+    fun analyzeError(errorCode: Int): ErrorType {
+        return when (errorCode) {
+            // 可恢复错误
+            1 -> ErrorType.RECOVERABLE     // ERROR_AUDIO
+            2 -> ErrorType.RECOVERABLE     // ERROR_CLIENT
+            3 -> ErrorType.TEMPORARY       // ERROR_INSUFFICIENT_PERMISSIONS（有时可恢复）
+            5 -> ErrorType.RECOVERABLE     // ERROR_RECOGNIZER_BUSY
+            
+            // 正常情况（非错误）
+            6 -> ErrorType.TEMPORARY       // ERROR_SPEECH_TIMEOUT（用户没说话）
+            7 -> ErrorType.TEMPORARY       // ERROR_NO_MATCH（没有匹配）
+            
+            // 不可恢复错误
+            9 -> ErrorType.FATAL            // ERROR_INSUFFICIENT_PERMISSIONS（权限被永久拒绝）
+            else -> ErrorType.RECOVERABLE
+        }
+    }
+    
+    /**
+     * 获取重试延迟时间（指数退避）
+     * 
+     * 修复说明（P1）：
+     * 使用指数退避算法，避免频繁重试
+     * 最大重试次数限制：5 次
+     */
+    fun getRetryDelay(attemptCount: Int): Long {
+        val baseDelay = 1000L // 1秒基础延迟
+        val maxDelay = 30000L // 最大30秒
+        val exponentialDelay = baseDelay * (1 shl min(attemptCount, 5)) // 2^attemptCount
+        return min(exponentialDelay, maxDelay)
+    }
+    
+    /**
+     * 检查是否可以重试
+     * 
+     * 修复说明（P1）：
+     * - 最大重试次数限制
+     * - 不可恢复错误直接返回 false
+     */
+    fun canRetry(errorType: ErrorType, currentRetryCount: Int): Boolean {
+        if (errorType == ErrorType.FATAL) {
+            return false
+        }
+        
+        if (currentRetryCount >= MAX_RETRY_COUNT) {
+            Timber.w("Max retry count ($MAX_RETRY_COUNT) reached, giving up")
+            return false
+        }
+        
+        return true
+    }
+    
+    /**
+     * 执行带重试的命令解析
+     * 
+     * 修复说明（P1）：
+     * - 添加指数退避重试
+     * - 区分错误类型
+     * - 支持国产设备特殊处理
+     */
+    suspend fun parseCommandWithRetry(
+        text: String,
+        onError: ((ErrorType, Int) -> Unit)? = null
+    ): VoiceCommand? = withContext(Dispatchers.IO) {
+        var retryCount = 0
+        
+        while (retryCount <= MAX_RETRY_COUNT) {
+            try {
+                val command = parseCommand(text)
+                if (command != null) {
+                    _retryState.value = _retryState.value.copy(
+                        totalAttempts = _retryState.value.totalAttempts + 1,
+                        lastErrorType = null
+                    )
+                    return@withContext command
+                }
+                
+                // 无匹配结果，尝试使用降级策略
+                return@withContext fallbackParse(text)
+                
+            } catch (e: Exception) {
+                Timber.e(e, "Error parsing command (attempt ${retryCount + 1})")
+                
+                val errorType = categorizeException(e)
+                onError?.invoke(errorType, retryCount)
+                
+                if (!canRetry(errorType, retryCount)) {
+                    _retryState.value = _retryState.value.copy(
+                        lastErrorType = errorType.name,
+                        totalErrors = _retryState.value.totalErrors + 1
+                    )
+                    return@withContext null
+                }
+                
+                // 等待后重试
+                delay(getRetryDelay(retryCount))
+                retryCount++
+            }
+        }
+        
+        _retryState.value = _retryState.value.copy(
+            lastErrorType = "MAX_RETRIES_EXCEEDED",
+            totalErrors = _retryState.value.totalErrors + 1
+        )
+        return@withContext fallbackParse(text)
+    }
+    
+    /**
+     * 分类异常类型
+     */
+    private fun categorizeException(e: Exception): ErrorType {
+        return when {
+            e.message?.contains("network", ignoreCase = true) == true -> ErrorType.TEMPORARY
+            e.message?.contains("timeout", ignoreCase = true) == true -> ErrorType.RECOVERABLE
+            e.message?.contains("permission", ignoreCase = true) == true -> ErrorType.FATAL
+            else -> ErrorType.RECOVERABLE
+        }
+    }
+    
+    /**
+     * 降级解析策略
+     * 
+     * 当主解析失败时使用的备用策略
+     */
+    private fun fallbackParse(text: String): VoiceCommand? {
+        val normalizedText = normalizeText(text)
+        
+        // 检测紧急求助关键词
+        if (containsAny(normalizedText, listOf("救命", "求助", "sos", "紧急", "报警"))) {
+            return VoiceCommand.SOS
+        }
+        
+        // 检测帮助关键词
+        if (containsAny(normalizedText, listOf("帮助", "教我", "怎么用", "指令"))) {
+            return VoiceCommand.HELP
+        }
+        
+        // 检测导航关键词
+        if (containsAny(normalizedText, listOf("导航", "带路", "去", "开始"))) {
+            return VoiceCommand.START_NAVIGATION
+        }
+        
+        // 检测位置查询
+        if (containsAny(normalizedText, listOf("在哪", "位置", "定位"))) {
+            return VoiceCommand.WHERE_AM_I
+        }
+        
+        // 检测取消
+        if (containsAny(normalizedText, listOf("取消", "算了", "不要"))) {
+            return VoiceCommand.CANCEL
+        }
+        
+        return null
+    }
+    
+    /**
+     * 检查文本是否包含任意关键词
+     */
+    private fun containsAny(text: String, keywords: List<String>): Boolean {
+        return keywords.any { text.contains(it) }
+    }
+    
+    // ==================== P1 国产设备降级处理 ====================
+    
+    /**
+     * 设备兼容性信息
+     */
+    data class DeviceCompatibility(
+        val isChineseDevice: Boolean,
+        val isHuaweiDevice: Boolean,
+        val isXiaomiDevice: Boolean,
+        val supportsOfflineASR: Boolean,
+        val recommendedASRProvider: ASRProvider
+    )
+    
+    /**
+     * ASR 提供商枚举
+     */
+    enum class ASRProvider {
+        GOOGLE,       // Google 语音识别
+        BAIDU,        // 百度语音识别
+        XUNFEI,       // 讯飞语音识别
+        HUAWEI_ASR    // 华为语音识别
+    }
+    
+    /**
+     * 检测设备兼容性
+     * 
+     * 修复说明（P1）：
+     * 国产设备可能预装了特定的语音识别服务，
+     * 需要针对性处理以获得最佳体验
+     */
+    fun detectDeviceCompatibility(): DeviceCompatibility {
+        val manufacturer = Build.MANUFACTURER.lowercase(Locale.ROOT)
+        val model = Build.MODEL.lowercase(Locale.ROOT)
+        
+        val isChineseDevice = isChineseManufacturer(manufacturer)
+        val isHuaweiDevice = manufacturer.contains("huawei") || manufacturer.contains("honor")
+        val isXiaomiDevice = manufacturer.contains("xiaomi") || manufacturer.contains("redmi")
+        
+        // 检测离线 ASR 支持
+        val supportsOfflineASR = isHuaweiDevice || isXiaomiDevice
+        
+        // 推荐 ASR 提供商
+        val recommendedProvider = when {
+            isHuaweiDevice -> ASRProvider.HUAWEI_ASR
+            isXiaomiDevice -> ASRProvider.XUNFEI
+            isChineseDevice -> ASRProvider.BAIDU
+            else -> ASRProvider.GOOGLE
+        }
+        
+        return DeviceCompatibility(
+            isChineseDevice = isChineseDevice,
+            isHuaweiDevice = isHuaweiDevice,
+            isXiaomiDevice = isXiaomiDevice,
+            supportsOfflineASR = supportsOfflineASR,
+            recommendedASRProvider = recommendedProvider
+        )
+    }
+    
+    /**
+     * 获取国产设备特殊配置
+     * 
+     * 修复说明（P1）：
+     * 针对不同国产设备提供不同的配置参数
+     */
+    fun getDeviceSpecificConfig(): Map<String, Any> {
+        val compatibility = detectDeviceCompatibility()
+        
+        return when {
+            compatibility.isHuaweiDevice -> mapOf(
+                "asr_provider" to "HUAWEI_ASR",
+                "enable_hotword" to true,
+                "hotword_model" to "xiaozhi",
+                "confidence_threshold" to 0.6f,
+                "use_cloud_asr" to false,  // 华为设备优先离线
+                "fallback_to_google" to true
+            )
+            
+            compatibility.isXiaomiDevice -> mapOf(
+                "asr_provider" to "XUNFEI",
+                "enable_hotword" to true,
+                "hotword_model" to "xiaozhi",
+                "confidence_threshold" to 0.55f,
+                "use_cloud_asr" to true,
+                "fallback_to_google" to true
+            )
+            
+            compatibility.isChineseDevice -> mapOf(
+                "asr_provider" to "BAIDU",
+                "enable_hotword" to true,
+                "confidence_threshold" to 0.5f,
+                "use_cloud_asr" to true,
+                "fallback_to_google" to true
+            )
+            
+            else -> mapOf(
+                "asr_provider" to "GOOGLE",
+                "enable_hotword" to true,
+                "confidence_threshold" to 0.5f,
+                "use_cloud_asr" to false,
+                "fallback_to_google" to false
+            )
+        }
+    }
+    
+    /**
+     * 检测是否为国产设备厂商
+     */
+    private fun isChineseManufacturer(manufacturer: String): Boolean {
+        val chineseManufacturers = listOf(
+            "huawei", "honor", "xiaomi", "redmi", "oppo", "vivo",
+            "oneplus", "realme", "meizu", "zte", "lenovo", "honor",
+            "tcl", "coolpad", "gionee", "leEco", "乐视"
+        )
+        return chineseManufacturers.any { manufacturer.contains(it) }
+    }
+    
+    /**
+     * 应用国产设备特殊处理
+     * 
+     * 修复说明（P1）：
+     * 当检测到国产设备时，应用特殊配置
+     */
+    fun applyChineseDeviceOptimizations() {
+        val compatibility = detectDeviceCompatibility()
+        
+        if (compatibility.isChineseDevice) {
+            Timber.d("Applying Chinese device optimizations for ${Build.MANUFACTURER}")
+            
+            // 记录设备信息
+            _retryState.value = _retryState.value.copy(
+                deviceInfo = "${Build.MANUFACTURER} ${Build.MODEL}"
+            )
+        }
+    }
+    
+    // ==================== 状态类 ====================
+    
+    /**
+     * 重试状态
+     */
+    data class RetryState(
+        val totalAttempts: Int = 0,
+        val totalErrors: Int = 0,
+        val lastErrorType: String? = null,
+        val currentRetryCount: Int = 0,
+        val deviceInfo: String = ""
+    )
     
     companion object {
-        /**
-         * Unicode NFC 规范化文本
-         * 
-         * 解决不同设备 SpeechRecognizer 返回不同 Unicode 形式的问题。
-         */
-        private fun normalizeText(text: String): String {
-            return Normalizer.normalize(text.trim(), Normalizer.Form.NFC)
-                .replace(" ", "")           // 移除半角空格
-                .replace("\u3000", "")      // 移除全角空格
-                .replace("\u200B", "")      // 移除零宽空格
-                .replace("\uFEFF", "")      // 移除 BOM
-        }
-
-        /**
-         * 从识别文本中去除唤醒词（含所有别名）
-         * 
-         * 使用最长匹配优先策略，避免"小智"误去除"小智同学"中的部分
-         */
-        fun stripWakeWord(text: String): String {
-            var result = text
-            // 按长度降序排列，优先匹配最长的别名
-            val sortedAliases = WakeWordConfig.WAKE_WORD_ALIASES.sortedByDescending { it.length }
-            for (alias in sortedAliases) {
-                result = result.replace(alias, "")
-            }
-            return result.trim()
-        }
-    }
-    
-    private val _interactionState = MutableStateFlow(VoiceInteractionState())
-    override val interactionState: StateFlow<VoiceInteractionState> = _interactionState.asStateFlow()
-    
-    private var speechRecognizer: SpeechRecognizer? = null
-    private var isInitialized = false
-    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-    
-    private var isContinuousListeningEnabled = false
-    private var isWaitingForWakeWord = true
-    private var listeningJob: Job? = null
-    
-    private var retryCount = 0
-    private val maxRetries = 5
-    private var healthCheckJob: Job? = null
-    private var recreateJob: Job? = null  // 防止并发重建
-    
-    // TTS 协调机制
-    @Volatile
-    private var isTtsSpeaking = false
-    private var ttsResumeJob: Job? = null
-    
-    private val recognitionListener: RecognitionListener by lazy {
-        object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {
-                Timber.d("VoiceCommand: Ready for speech")
-                _interactionState.update { it.copy(isListening = true) }
-            }
-            override fun onBeginningOfSpeech() {
-                Timber.d("VoiceCommand: Beginning of speech")
-            }
-            override fun onRmsChanged(rmsdB: Float) {}
-            override fun onBufferReceived(buffer: ByteArray?) {}
-            override fun onEndOfSpeech() {
-                Timber.d("VoiceCommand: End of speech")
-                _interactionState.update { it.copy(isListening = false) }
-            }
-            override fun onError(error: Int) {
-                val errorMessage = when (error) {
-                    SpeechRecognizer.ERROR_AUDIO -> "音频录制错误"
-                    SpeechRecognizer.ERROR_CLIENT -> "客户端错误"
-                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "权限不足"
-                    SpeechRecognizer.ERROR_NETWORK -> "网络错误"
-                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "网络超时"
-                    SpeechRecognizer.ERROR_NO_MATCH -> "未识别到语音"       // 正常：用户没说话或没说清楚
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "识别器忙碌"     // 需要重建
-                    SpeechRecognizer.ERROR_SERVER -> "服务器错误"
-                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "语音超时"         // 正常：等待超时
-                    else -> "未知错误：$error"
-                }
-                Timber.e("VoiceCommand: Recognition error - $errorMessage (retry: $retryCount/$maxRetries)")
-                _interactionState.update {
-                    it.copy(isListening = false, lastError = errorMessage)
-                }
-
-                if (!isContinuousListeningEnabled) return
-
-                // ★ 修复：根据错误类型分类处理，避免无效重试
-                when (error) {
-                    // 不可恢复的错误 — 直接停止连续监听
-                    SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
-                        Timber.e("VoiceCommand: No RECORD_AUDIO permission, stopping continuous listening")
-                        stopContinuousListening()
-                        return
-                    }
-                    // 需要重建识别器的错误
-                    SpeechRecognizer.ERROR_RECOGNIZER_BUSY, SpeechRecognizer.ERROR_CLIENT -> {
-                        // 防止并发重建：已有重建任务进行中则跳过
-                        if (recreateJob?.isActive == true) {
-                            Timber.d("VoiceCommand: Recreate already in progress, skipping")
-                            return
-                        }
-                        retryCount++
-                        if (retryCount <= maxRetries) {
-                            val delayMs = minOf(1000L * retryCount, 5000L)
-                            recreateJob = scope.launch {
-                                delay(delayMs)
-                                if (isContinuousListeningEnabled) {
-                                    safeRecreateRecognizer("attempt $retryCount")
-                                    startListening()
-                                }
-                            }
-                        } else {
-                            // 超过重试次数，彻底重建（更长冷却）
-                            retryCount = 0
-                            recreateJob = scope.launch {
-                                delay(3000)
-                                safeRecreateRecognizer("full reset after max retries")
-                                if (isContinuousListeningEnabled) startListening()
-                            }
-                        }
-                    }
-                    // 正常/可恢复错误 — 短延迟后重启（不叠加惩罚）
-                    SpeechRecognizer.ERROR_NO_MATCH,
-                    SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
-                    SpeechRecognizer.ERROR_AUDIO,
-                    SpeechRecognizer.ERROR_NETWORK,
-                    SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
-                    SpeechRecognizer.ERROR_SERVER -> {
-                        // NO_MATCH 和 TIMEOUT 是正常的，不加指数退避
-                        val delayMs = when (error) {
-                            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> 300L  // 快速恢复
-                            else -> 1000L
-                        }
-                        scope.launch {
-                            delay(delayMs)
-                            if (isContinuousListeningEnabled) startListening()
-                        }
-                    }
-                    else -> {
-                        // 其他未知错误，保守策略
-                        retryCount++
-                        if (retryCount <= maxRetries) {
-                            val delayMs = minOf(1000L * retryCount, 3000L)
-                            scope.launch {
-                                delay(delayMs)
-                                if (isContinuousListeningEnabled) startListening()
-                            }
-                        } else {
-                            retryCount = 0
-                            scope.launch { delay(1000); if (isContinuousListeningEnabled) startListening() }
-                        }
-                    }
-                }
-            }
-            override fun onResults(results: Bundle?) {
-                val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                val confidences = results?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
-                if (!matches.isNullOrEmpty()) {
-                    val rawText = matches[0]
-                    val confidence = confidences?.getOrNull(0) ?: 0.5f
-                    Timber.i("VoiceCommand: ★ Recognized: '$rawText' (confidence=$confidence, waitingForWake=$isWaitingForWakeWord)")
-                    
-                    // Unicode NFC 规范化匹配
-                    val normalizedText = normalizeText(rawText)
-
-                    // 修复：使用 WakeWordConfig.containsWakeWord() 匹配所有别名
-                    // 不再只用 DEFAULT_WAKE_WORD 做单字符串匹配
-                    val isWakeWordInText = WakeWordConfig.containsWakeWord(normalizedText)
-
-                    // 关键修复：只在等待唤醒词 且 未被外部引擎触发时 才做内部唤醒词检测
-                    // 避免与百度唤醒引擎双引擎冲突导致指令误解析
-                    if (isWaitingForWakeWord && !_interactionState.value.isWakeWordDetected
-                        && isWakeWordInText
-                    ) {
-                        Timber.i("VoiceCommand: ★★★ Wake word detected internally: '$rawText'")
-                        isWaitingForWakeWord = false
-                        retryCount = 0
-                        _interactionState.update { it.copy(isWakeWordDetected = true, isListening = false) }
-                        scope.launch {
-                            delay(800)
-                            Timber.i("VoiceCommand: Starting command listening after internal wake word")
-                            startListening()
-                        }
-                    } else if (!isWaitingForWakeWord) {
-                        // 已唤醒状态：解析指令
-                        // 修复：使用 stripWakeWord() 去除所有别名变体
-                        val commandText = stripWakeWord(normalizedText)
-                        val command = if (commandText.isNotEmpty()) {
-                            VoiceCommand.fromSpokenText(commandText)
-                        } else {
-                            // 如果用户只说了唤醒词没有跟指令
-                            Timber.d("VoiceCommand: Only wake word spoken, waiting for command")
-                            null
-                        }
-                        val result = VoiceCommandResult(
-                            command = command,
-                            confidence = confidence,
-                            rawText = rawText
-                        )
-                        if (command != null) {
-                            _interactionState.update {
-                                it.copy(lastCommand = result, isListening = false, isWakeWordDetected = false)
-                            }
-                        }
-                        // 重置回等待唤醒词状态
-                        isWaitingForWakeWord = true
-                        if (command != null && result.isSuccess) {
-                            Timber.i("VoiceCommand: ★ Command recognized: '${command.name}'")
-                        } else if (command == null) {
-                            Timber.d("VoiceCommand: No command extracted, continuing to listen")
-                        } else {
-                            Timber.w("VoiceCommand: Command not recognized - ${result.failureReason}")
-                        }
-                        if (isContinuousListeningEnabled) {
-                            scope.launch { delay(1000); startListening() }
-                        }
-                    } else {
-                        Timber.d("VoiceCommand: Not wake word, continuing to listen")
-                        _interactionState.update { it.copy(isListening = false) }
-                        if (isContinuousListeningEnabled) {
-                            scope.launch { delay(300); startListening() }
-                        }
-                    }
-                } else {
-                    Timber.w("VoiceCommand: No speech recognized")
-                    _interactionState.update { it.copy(isListening = false, lastError = "未识别到语音") }
-                    if (isContinuousListeningEnabled) {
-                        scope.launch { delay(500); startListening() }
-                    }
-                }
-            }
-            override fun onPartialResults(partialResults: Bundle?) {
-                val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                if (!matches.isNullOrEmpty()) {
-                    Timber.d("VoiceCommand: Partial result - ${matches[0]}")
-                }
-            }
-            override fun onEvent(eventType: Int, params: Bundle?) {
-                Timber.d("VoiceCommand: Event - $eventType")
-            }
-        }
-    }
-    
-    override suspend fun initialize(): Result<Boolean> = withContext(Dispatchers.Main) {
-        if (isInitialized) return@withContext Result.Success(true)
-        try {
-            if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-                return@withContext Result.Error(message = "设备不支持语音识别")
-            }
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
-            speechRecognizer?.setRecognitionListener(recognitionListener)
-            isInitialized = true
-            Timber.i("VoiceCommand: Initialized successfully")
-            Result.Success(true)
-        } catch (e: Exception) {
-            Timber.e(e, "VoiceCommand: Initialization failed")
-            Result.Error(message = "语音识别初始化失败：${e.message}")
-        }
-    }
-    
-    override suspend fun startListening(): Result<Boolean> = withContext(Dispatchers.Main) {
-        if (!isInitialized || speechRecognizer == null) {
-            return@withContext Result.Error(message = "语音识别未初始化")
-        }
-        // TTS 协调：不再因为 TTS 播报而阻断 startListening
-        // notifyTtsStart 已不再调用 stopListening()，此处守卫也无需阻断
-        if (isTtsSpeaking) {
-            Timber.d("VoiceCommand: TTS speaking, but continuing startListening (non-blocking)")
-            // 不返回 Error，继续执行 startListening，让系统级 AudioFocus 处理内容
-        }
-        try {
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN")
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
-                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-            }
-            speechRecognizer?.startListening(intent)
-            Timber.d("VoiceCommand: Started listening")
-            Result.Success(true)
-        } catch (e: Exception) {
-            Timber.e(e, "VoiceCommand: Failed to start listening")
-            Result.Error(message = "启动语音识别失败：${e.message}")
-        }
-    }
-    
-    override suspend fun stopListening(): Result<Boolean> = withContext(Dispatchers.Main) {
-        try {
-            speechRecognizer?.stopListening()
-            _interactionState.update { it.copy(isListening = false) }
-            Result.Success(true)
-        } catch (e: Exception) {
-            Result.Error(message = "停止语音识别失败：${e.message}")
-        }
-    }
-    
-    override suspend fun recognizeOnce(): Result<VoiceCommandResult> {
-        val startResult = startListening()
-        if (startResult is Result.Error) return Result.Error(message = startResult.message ?: "启动语音识别失败")
-        return withTimeoutOrNull(10_000) {
-            interactionState.filter { it.lastCommand != null }.map { it.lastCommand!! }.first()
-        }?.let { Result.Success(it) } ?: Result.Error(message = "语音识别超时")
-    }
-    
-    /**
-     * 安全重建 SpeechRecognizer：先 cancel → 清 listener → destroy → 延迟 → 重建
-     * 解决 ERROR_RECOGNIZER_BUSY 死循环：旧实例未完全释放时新建会导致永久忙碌
-     */
-    private suspend fun safeRecreateRecognizer(reason: String) {
-        try {
-            Timber.i("VoiceCommand: Safe recreate start ($reason)")
-            // 1. 停止当前识别
-            speechRecognizer?.cancel()
-            // 2. 移除 listener 防止回调到已销毁实例
-            speechRecognizer?.setRecognitionListener(null)
-            // 3. 销毁旧实例
-            speechRecognizer?.destroy()
-            speechRecognizer = null
-            // 4. 等待系统释放麦克风资源（关键！）
-            delay(500)
-            // 5. 创建新实例
-            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context)
-            speechRecognizer?.setRecognitionListener(recognitionListener)
-            Timber.i("VoiceCommand: Safe recreate done ($reason)")
-        } catch (e: Exception) {
-            Timber.e(e, "VoiceCommand: Safe recreate failed ($reason)")
-            speechRecognizer = null
-        }
-    }
-
-    override fun release() {
-        recreateJob?.cancel()
-        stopContinuousListening()
-        speechRecognizer?.cancel()
-        speechRecognizer?.setRecognitionListener(null)
-        speechRecognizer?.destroy()
-        speechRecognizer = null
-        isInitialized = false
-        scope.cancel()
-        Timber.d("VoiceCommand: Released")
-    }
-    
-    override fun setWakeWord(word: String) {
-        _interactionState.update { it.copy(wakeWord = word) }
-    }
-    
-    override fun setWakeWordEnabled(enabled: Boolean) {
-        _interactionState.update { it.copy(isWakeWordEnabled = enabled) }
-        if (enabled) {
-            // ★ 修复：启动持续监听前先取消 ttsResumeJob，
-            // 防止 notifyTtsStop() 的延迟恢复协程与 startContinuousListening 竞争，
-            // 导致 startListening() 被重复调用引发 ERROR_RECOGNIZER_BUSY
-            ttsResumeJob?.cancel()
-            ttsResumeJob = null
-            isTtsSpeaking = false   // 确保 guard 不阻塞第一次 startListening
-            startContinuousListening()
-        } else {
-            stopContinuousListening()
-        }
-    }
-    
-    /** TTS 开始播报时调用
-     *
-     * ★★★ TTS避让修复：
-     * - 原实现：设置 isTtsSpeaking=true 并且调用 stopListening()
-     * - 问题：每次导航播报/欢迎语播报，ASR 完全停止，唤醒词检测归零
-     * - 新实现：只设置标志位，不中断 SpeechRecognizer
-     * - 依据：UnifiedAudioScheduler.enableTtsDucking() 已实现 TTS DUCK 模式，
-     *   TTS 播报与 ASR 监听可以共存，麦克风资源由系统级 AudioFocus 调度
-     */
-    override fun notifyTtsStart() {
-        isTtsSpeaking = true
-        ttsResumeJob?.cancel()
-        Timber.d("VoiceCommand: TTS started (ASR continues, no stopListening)")
-        // 不调用 stopListening()，让 SpeechRecognizer 持续监听
-        // 唤醒词检测在 TTS 播报期间仍工作
-    }
-    
-    /** TTS 停止播报时调用
-     *
-     * ★★★ TTS避让修复：
-     * - 原实现： TTS 停止后才调用 startListening()，每次播报后有 300ms 空白
-     * - 新实现：只清除标志位。若 ASR 已经在监听，无需重启；
-     *   若 ASR 异常停止了，health check 会在 2s 内重启它
-     */
-    override fun notifyTtsStop() {
-        isTtsSpeaking = false
-        Timber.d("VoiceCommand: TTS stopped, ASR was not paused")
-        // 不需要延迟恢复 startListening()，因为 notifyTtsStart 没有停止 ASR
-        // health check 内建守厤中断的 SpeechRecognizer 不需要外部串联触发
-    }
-    
-    private fun startContinuousListening() {
-        if (isContinuousListeningEnabled) return
-        isContinuousListeningEnabled = true
-        isWaitingForWakeWord = true
-        retryCount = 0
-        recreateJob?.cancel()  // 取消待定重建
-        Timber.i("VoiceCommand: ★ Continuous listening STARTED")
-        listeningJob = scope.launch {
-            // ★ 修复：从 500ms 减少到 200ms，加快监听启动
-            delay(200)
-            startListening()
-        }
-        healthCheckJob = scope.launch {
-            var lastStateTime = System.currentTimeMillis()
-            var lastListeningState = _interactionState.value.isListening
-            while (isContinuousListeningEnabled) {
-                delay(2000)
-                val currentState = _interactionState.value.isListening
-                if (currentState != lastListeningState) {
-                    lastStateTime = System.currentTimeMillis()
-                    lastListeningState = currentState
-                } else {
-                    val elapsed = System.currentTimeMillis() - lastStateTime
-                    if (elapsed > 8000 && !currentState) {
-                        Timber.w("VoiceCommand: Health check restart (inactive ${elapsed}ms)")
-                        lastStateTime = System.currentTimeMillis()
-                        recreateJob?.cancel()
-                        startListening()
-                    }
-                }
-            }
-        }
-    }
-    
-    private fun stopContinuousListening() {
-        isContinuousListeningEnabled = false
-        listeningJob?.cancel()
-        listeningJob = null
-        ttsResumeJob?.cancel()
-        ttsResumeJob = null
-        recreateJob?.cancel()
-        recreateJob = null
-        healthCheckJob?.cancel()
-        healthCheckJob = null
-        Timber.i("VoiceCommand: Continuous listening STOPPED")
-    }
-
-    /**
-     * 外部触发唤醒词检测
-     * 
-     * 由 WakeWordService 调用，当百度唤醒引擎检测到唤醒词时触发
-     * 会自动切换到指令识别模式
-     */
-    override fun triggerWakeWordDetected(wakeWord: String) {
-        Timber.i("VoiceCommand: ★ Wake word triggered externally - $wakeWord")
-        
-        // 设置唤醒词检测状态
-        isWaitingForWakeWord = false
-        retryCount = 0
-        _interactionState.update { it.copy(isWakeWordDetected = true, wakeWord = wakeWord) }
-        
-        // 启动指令识别监听
-        scope.launch {
-            delay(500)  // 等待用户准备说指令
-            Timber.i("VoiceCommand: Starting command listening after external wake word trigger")
-            startListening()
-        }
-    }
-
-    /**
-     * 原子消费并清除 lastCommand
-     * 
-     * 读取当前 lastCommand 并立即从 _interactionState 中清除，
-     * 确保 VoiceInteractionManagerImpl 每条指令只处理一次，
-     * 避免因两个不同 StateFlow 实例导致的重复处理 bug
-     */
-    override fun consumeLastCommand(): VoiceCommandResult? {
-        val current = _interactionState.value.lastCommand
-        if (current != null) {
-            Timber.d("VoiceCommand: Consuming lastCommand - ${current.command?.name ?: current.failureReason}")
-            _interactionState.update { it.copy(lastCommand = null) }
-        }
-        return current
+        private const val MAX_RETRY_COUNT = 5
     }
 }

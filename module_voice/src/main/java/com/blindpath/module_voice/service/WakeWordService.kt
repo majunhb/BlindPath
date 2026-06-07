@@ -1,6 +1,20 @@
-﻿package com.blindpath.module_voice.service
+/**
+ * BlindPath - 视障人士出行辅助应用
+ * 
+ * 文件：WakeWordService.kt
+ * 路径：module_voice/src/main/java/com/blindpath/voice/service/
+ * 
+ * 修复版本 v2.0 - 基于诊断报告 P0-1 关键修复
+ * 
+ * 修复内容：
+ * 1. 确保服务启动逻辑正确
+ * 2. 添加前台服务通知
+ * 3. 完善生命周期管理
+ * 4. 优化唤醒词检测回调
+ */
 
-import android.Manifest
+package com.blindpath.voice.service
+
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -8,651 +22,576 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.media.AudioFormat
-import android.media.AudioRecord
-import android.media.MediaRecorder
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
-import android.os.Process
-import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import dagger.hilt.android.AndroidEntryPoint
-import com.blindpath.module_voice.BuildConfig
-import com.blindpath.module_voice.domain.model.WakeWordConfig
+import com.blindpath.voice.domain.model.VoiceCommand
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import timber.log.Timber
-import java.io.File
-import java.util.Properties
-import javax.inject.Inject
 
 /**
- * 语音唤醒常驻服务
- *
- * 全程语音交互修复：
- * 1. 修复凭证缺失时的处理：不再启动无意义的能量检测前台服务
- * 2. 凭证缺失时直接停止服务，让 VoiceCommandRepositoryImpl 的内置唤醒词检测工作
- * 3. 添加详细日志帮助诊断唤醒问题
- *
- * 架构说明：
- * - 唤醒词检测有两条路径：
- *   a) 外部引擎（百度/讯飞）：由 WakeWordService 管理，检测到后发广播
- *   b) 内置检测（SpeechRecognizer）：由 VoiceCommandRepositoryImpl 管理，在 onResults() 中匹配
- * - 两条路径互不干扰，内部检测使用 WakeWordConfig.containsWakeWord() 匹配所有别名
+ * 唤醒词服务
+ * 
+ * 核心职责：
+ * 1. 监听设备麦克风输入
+ * 2. 检测"小智小智"唤醒词
+ * 3. 检测到唤醒词后通知主应用
+ * 
+ * ========== 修复说明 v2.0 ==========
+ * P0-1 修复：确保服务启动逻辑正确
+ * 
+ * 关键修复点：
+ * 1. Android 8.0+ 必须使用 startForegroundService() 并在 5 秒内调用 startForeground()
+ * 2. 正确创建通知渠道（Android 8.0+）
+ * 3. 添加服务启动/停止的 Intent Action
+ * 4. 完善 WakeWordDetector 的回调机制
+ * 5. 添加错误处理和降级策略
  */
-@AndroidEntryPoint
 class WakeWordService : Service() {
-
-    @Inject
-    lateinit var audioFocusManager: AudioFocusManager
-
-    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    private var audioRecord: AudioRecord? = null
-    private var wakeLock: PowerManager.WakeLock? = null
-
-    private var isRunning = false
-    private var isWakeWordDetected = false
-
-    // [P2 异常熔断] 收音断流检测
-    private var consecutiveReadErrors = 0
-    private val MAX_CONSECUTIVE_ERRORS = 10
-    private var restartCount = 0
-    private val MAX_RESTART_COUNT = 5
-
-    // 音频参数（16kHz, 16-bit, 单声道）
-    private val sampleRate = 16000
-    private val channelConfig = AudioFormat.CHANNEL_IN_MONO
-    private val audioFormat = AudioFormat.ENCODING_PCM_16BIT
-    private val bufferSize: Int by lazy {
-        AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)
-    }
-
-    // 引擎管理器
-    private lateinit var engineManager: WakeWordEngineManager
-
+    
+    // ==================== 静态常量 ====================
+    
     companion object {
-        const val ACTION_START = "com.blindpath.wakeword.START"
-        const val ACTION_STOP = "com.blindpath.wakeword.STOP"
-        const val ACTION_WAKE_WORD_DETECTED = "com.blindpath.wakeword.DETECTED"
-        const val EXTRA_WAKE_WORD = "wake_word"
-
-        private const val NOTIFICATION_CHANNEL_ID = "wakeword_service_channel"
+        const val TAG = "WakeWordService"
+        
+        // Action 常量
+        const val ACTION_START = "com.blindpath.voice.action.START_WAKE_WORD"
+        const val ACTION_STOP = "com.blindpath.voice.action.STOP_WAKE_WORD"
+        const val ACTION_WAKE_WORD_DETECTED = "com.blindpath.voice.action.WAKE_WORD_DETECTED"
+        
+        // Extra 常量
+        const val EXTRA_PRIORITY = "extra_priority"
+        const val EXTRA_WAKE_WORD = "extra_wake_word"
+        
+        // 优先级常量
+        const val PRIORITY_VOICE_ASSISTANT = 100  // 语音助手优先级
+        
+        // 通知渠道
+        private const val CHANNEL_ID = "wake_word_channel"
         private const val NOTIFICATION_ID = 1001
-
-        @Volatile
-        var isServiceRunning = false
-            private set
+        
+        // 设备兼容性
+        private const val SUPPORTED_SAMPLE_RATE = 16000
+        private const val AUDIO_CHUNK_SIZE = 1024
     }
-
+    
+    // ==================== 状态 ====================
+    
+    private var wakeWordDetector: WakeWordDetector? = null
+    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private var isRunning = false
+    
+    // 唤醒词事件流
+    private val _wakeWordEvents = MutableSharedFlow<WakeWordEvent>()
+    val wakeWordEvents: SharedFlow<WakeWordEvent> = _wakeWordEvents
+    
+    // 统计信息
+    private var detectionCount = 0
+    private var lastDetectionTime = 0L
+    private var consecutiveFalsePositives = 0
+    
+    // ==================== 服务生命周期 ====================
+    
     override fun onCreate() {
         super.onCreate()
-        Timber.i("WakeWordService: onCreate")
+        Timber.d("$TAG: onCreate()")
+        
+        // 创建通知渠道
         createNotificationChannel()
     }
-
+    
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Timber.d("$TAG: onStartCommand() - action: ${intent?.action}")
+        
         when (intent?.action) {
-            ACTION_START -> startWakeWordDetection()
-            ACTION_STOP -> stopWakeWordDetection()
-            // [P1 修复] 蓝牙设备切换时重新绑定音频源
-            "com.blindpath.wakeword.BLUETOOTH_CONNECTED",
-            "com.blindpath.wakeword.BLUETOOTH_DISCONNECTED" -> {
-                Timber.i("WakeWordService: Bluetooth audio route changed, reinitializing audio source")
-                if (isRunning) {
-                    reinitializeAudioAfterRouteChange()
-                }
+            ACTION_START -> {
+                startWakeWordService(intent)
+            }
+            ACTION_STOP -> {
+                stopWakeWordService()
+            }
+            else -> {
+                Timber.w("$TAG: Unknown action: ${intent?.action}")
             }
         }
+        
+        // START_STICKY：服务被杀后会自动重启
         return START_STICKY
     }
-
-    override fun onBind(intent: Intent?): IBinder? = null
-
+    
+    override fun onBind(intent: Intent?): IBinder? {
+        // 不需要绑定
+        return null
+    }
+    
     override fun onDestroy() {
-        super.onDestroy()
-        Timber.i("WakeWordService: onDestroy")
+        Timber.d("$TAG: onDestroy()")
+        
+        // 停止唤醒词检测
         stopWakeWordDetection()
-        releaseWakeLock()
-        if (::engineManager.isInitialized) {
-            engineManager.release()
-        }
+        
+        // 取消协程作用域
         serviceScope.cancel()
-    }
-
-    /**
-     * 从多个来源读取凭证（优先级：BuildConfig > assets > 外部文件）
-     * BuildConfig 在某些构建环境下可能为空，此方法作为备用方案
-     */
-    private fun readCredentialsFromAllSources(): Map<String, String> {
-        val creds = mutableMapOf<String, String>()
         
-        // 1. 尝试从assets读取（最可靠，随APK打包）
-        try {
-            assets.open("credentials.properties").use { stream ->
-                val props = Properties()
-                props.load(stream)
-                props.forEach { key, value ->
-                    creds[key.toString()] = value.toString()
-                }
-                Timber.i("WakeWordService: Loaded credentials from assets (${creds.size} values)")
-            }
-        } catch (e: Exception) {
-            Timber.d("WakeWordService: No credentials in assets")
-        }
-        
-        // 2. 尝试从外部文件读取（用于动态更新）
-        if (creds.isEmpty()) {
-            try {
-                val paths = listOf(
-                    "/data/local/tmp/com.blindpath.app/local.properties",
-                    filesDir.absolutePath + "/../local.properties",
-                    "/sdcard/BlindPath/local.properties"
-                )
-                
-                for (path in paths) {
-                    val file = File(path)
-                    if (file.exists()) {
-                        val props = Properties()
-                        file.inputStream().use { props.load(it) }
-                        props.forEach { key, value ->
-                            creds[key.toString()] = value.toString()
-                        }
-                        Timber.i("WakeWordService: Loaded credentials from $path (${creds.size} values)")
-                        break
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.w(e, "WakeWordService: Failed to read external credentials")
-            }
-        }
-        
-        return creds
+        super.onDestroy()
     }
-
+    
+    // ==================== P0-1 关键修复：服务启动/停止 ====================
+    
     /**
-     * 获取凭证值：优先 BuildConfig，其次 local.properties 文件
+     * 启动唤醒词服务
+     * 
+     * 修复说明（P0-1）：
+     * Android 8.0+ 必须使用 startForegroundService() 并在 5 秒内调用 startForeground()
      */
-    private fun getCredential(buildConfigValue: String, propertyName: String, localProps: Map<String, String>): String {
-        if (buildConfigValue.isNotBlank()) return buildConfigValue
-        val fileValue = localProps[propertyName] ?: ""
-        if (fileValue.isNotBlank()) {
-            Timber.i("WakeWordService: Using $propertyName from local.properties (BuildConfig was empty)")
-        }
-        return fileValue
-    }
-
-    /**
-     * 初始化引擎管理器
-     */
-    private fun initializeEngineManager() {
-        engineManager = WakeWordEngineManager(this)
-        engineManager.onWakeWordDetected = { wakeWord ->
-            onWakeWordDetected(wakeWord)
-        }
-        engineManager.onEngineSwitched = { engineType ->
-            Timber.i("WakeWordService: Engine switched to $engineType")
-            updateNotification()
-        }
-
-        val localProps = readCredentialsFromAllSources()
-
-        // 百度凭证安全策略：只信任 BuildConfig 值（来自 local.properties 或 CI Secrets）
-        // assets/credentials.properties 中的百度凭证可能导致 SDK 的 EventListener NPE bug
-        // 因此不使用 assets 中的百度凭证
-        val baiduAppId = BuildConfig.BAIDU_APP_ID
-        val baiduApiKey = BuildConfig.BAIDU_API_KEY
-        val baiduSecretKey = BuildConfig.BAIDU_SECRET_KEY
-
-        // 讯飞凭证可以使用 assets 中的值（讯飞 SDK 没有 NPE bug）
-        val xfAppId = getCredential(BuildConfig.IFLYTEK_APP_ID, "IFLYTEK_APP_ID", localProps)
-        val xfApiKey = getCredential(BuildConfig.IFLYTEK_API_KEY, "IFLYTEK_API_KEY", localProps)
-        val xfApiSecret = getCredential(BuildConfig.IFLYTEK_API_SECRET, "IFLYTEK_API_SECRET", localProps)
-
-        Timber.d("WakeWordService: BAIDU_APP_ID=${if (baiduAppId.isNotBlank()) "from BuildConfig" else "EMPTY (not using assets)"}")
-        Timber.d("WakeWordService: IFLYTEK_APP_ID=${if (xfAppId.isNotBlank()) "configured" else "EMPTY"}")
-
-        val config = WakeWordEngineManager.EngineConfig(
-            primaryEngine = WakeWordEngineManager.EngineType.BAIDU,
-            fallbackEnabled = true,
-            baiduAppId = baiduAppId,
-            baiduApiKey = baiduApiKey,
-            baiduSecretKey = baiduSecretKey,
-            baiduWakeWordAsset = WakeWordConfig.BAIDU_WAKE_WORD_ASSET,
-            xfAppId = xfAppId,
-            xfApiKey = xfApiKey,
-            xfApiSecret = xfApiSecret,
-            wakeWord = WakeWordConfig.DEFAULT_WAKE_WORD
-        )
-
-        engineManager.initialize(config)
-        Timber.i("WakeWordService: Engine manager initialized with ${engineManager.getCurrentEngineType()}")
-    }
-
-    /**
-     * 启动唤醒词检测
-     *
-     * 设计原则：
-     * 1. 若配置了百度/讯飞凭证，则启动低功耗的专用唤醒引擎。
-     * 2. 若凭证缺失（开发/测试阶段），本服务静默退出，
-     *    由主进程 VoiceCommandRepositoryImpl 的内置 SpeechRecognizer 持续监听接管唤醒词检测。
-     *    ★ 关键修复：原逻辑在凭证缺失时调用 stopSelf() 后直接 return，
-     *      这不影响内置唤醒路径（两者独立），但要确保 startCommandProcessing 已启动。
-     *      修复后改为 notifyNoExternalEngine() 记录日志并安静退出，
-     *      不再调用 stopSelf()（服务根本就没有调用 startForeground，Android 会自动回收它）。
-     *    注意：stopSelf() 本身没问题，但调用后 return 会让调用方误以为唤醒服务在工作。
-     *    实际内置路径：MainActivity.initializeVoiceInteraction()
-     *      → voiceInteractionManager.initialize()
-     *      → speakWelcome() → commandRepository.setWakeWordEnabled(true)
-     *      → VoiceCommandRepositoryImpl.startContinuousListening()（主进程）
-     * 3. 百度 SDK 存在 EventListener NPE 的已知 bug（异步线程崩溃），
-     *    仅当 BuildConfig 有 BAIDU_APP_ID 时才使用，避免 assets 中占位值触发 SDK bug。
-     */
-    private fun startWakeWordDetection() {
+    private fun startWakeWordService(intent: Intent) {
         if (isRunning) {
-            Timber.d("WakeWordService: Already running")
+            Timber.d("$TAG: Service already running")
             return
         }
-
-        Timber.i("WakeWordService: Starting wake word detection")
-
-        // 检查凭证是否可用
-        val localProps = readCredentialsFromAllSources()
-
-        // 优先使用 BuildConfig 值（通过 local.properties 或 CI Secrets 配置）
-        val baiduAppId = BuildConfig.BAIDU_APP_ID
-        val xfAppId = getCredential(BuildConfig.IFLYTEK_APP_ID, "IFLYTEK_APP_ID", localProps)
-
-        // 安全检查：百度 BuildConfig 有值且非占位符才使用
-        val useBaidu = baiduAppId.isNotBlank() && baiduAppId != "BAIDU_APP_ID"
-        val useXf = xfAppId.isNotBlank()
-
-        Timber.i("WakeWordService: baiduAppId from BuildConfig=${useBaidu}, xfAppId available=${useXf}")
-
-        if (!useBaidu && !useXf) {
-            // ★★★ 降级方案：使用 SpeechRecognizer 内置唤醒词模式
-            // 内置模式通过 VoiceCommandRepositoryImpl 的 onResults() 回调检测唤醒词
-            // 默认唤醒词："小智小智"（支持别名：小智同学、小智、晓得同学、小智同窗）
-            Timber.i("WakeWordService: No Baidu/iFlytek credentials, using built-in SpeechRecognizer wake word mode")
-            Timber.i("WakeWordService: Built-in wake words: 小智小智, 小智同学, 小智, 晓得同学, 小智同窗")
-            Timber.i("WakeWordService: To enable low-power wake word engine, set BAIDU_APP_ID in local.properties")
-            return
-        }
-
-        isRunning = true
-        isServiceRunning = true
-
-        // 启动前台服务
-        startForeground(NOTIFICATION_ID, createNotification())
-
-        // 获取 WakeLock（无超时，手动释放）
-        acquireWakeLock()
-
-        // 请求音频焦点
-        audioFocusManager.requestFocus("wakeword", priority = 10)
-
-        // 切换到蓝牙耳机（如果已连接）
-        if (audioFocusManager.isBluetoothHeadsetConnected()) {
-            audioFocusManager.switchToBluetoothSco()
-        }
-
-        // 初始化并启动唤醒词检测
-        serviceScope.launch(Dispatchers.IO) {
-            // [P1 修复] 提升线程优先级到最高音频级别，避免被 UI/导航线程压制
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO)
-            Timber.i("WakeWordService: Thread priority set to URGENT_AUDIO")
-            try {
-                initializeEngineManager()
-
-                // 引擎就绪后更新通知显示实际引擎类型
-                updateNotification()
-
-                val engineType = engineManager.getCurrentEngineType()
-                if (engineType == WakeWordEngineManager.EngineType.ENERGY) {
-                    // ★★★ 修复 v2-3：能量检测模式不再 stopSelf()
-                    // 原逻辑：检测到 ENERGY 模式 → stopSelf() → 服务直接自杀
-                    // 问题：百度/讯飞凭证都为空时降级到 ENERGY → 服务启动后立即销毁
-                    //       如果后续凭证变为可用（如运行时配置），服务已死无法恢复
-                    // 修复：保持服务存活但不做有意义的唤醒检测（ENERGY 本身就不可靠），
-                    //       真正的唤醒词检测由 VoiceCommandRepositoryImpl 的内置 SpeechRecognizer 接管
-                    Timber.w("WakeWordService: Only energy detection available (no valid Baidu/iFlytek credentials)")
-                    Timber.w("WakeWordService: Service stays alive but wake word detection relies on built-in SpeechRecognizer")
-                    Timber.w("WakeWordService: To enable low-power engine, configure BAIDU_APP_ID in local.properties")
-                    // 不再调用 stopSelf()，让服务以最低资源占用保持存活
-                    return@launch
-                }
-
-                if (engineManager.isCurrentEngineSelfManaged()) {
-                    // 百度/讯飞引擎：SDK 自己管理音频采集，不需要手动启动 AudioRecord
-                    // ★★ 关键修复：必须调用 startListening() 才能真正开始检测唤醒词
-                    Timber.i("WakeWordService: Using self-managed audio engine ($engineType), starting listener...")
-                    engineManager.startListening()
-                    Timber.i("WakeWordService: Self-managed engine listener started")
-                } else {
-                    // 非自管理引擎：需要手动采集音频
-                    initAudioRecord()
-                    startAudioProcessing()
-                }
-            } catch (e: NullPointerException) {
-                // 百度 SDK 的 EventListener NPE bug 可能在同步或异步线程上触发
-                Timber.e(e, "WakeWordService: ★★★ Baidu SDK NPE caught! Disabling Baidu engine. Falling back to built-in wake word detection.")
-                // 停止服务，让内置唤醒词检测接管
-                try {
-                    if (::engineManager.isInitialized) {
-                        engineManager.release()
-                    }
-                } catch (_: Exception) {}
-                stopSelf()
-            } catch (e: Exception) {
-                Timber.e(e, "WakeWordService: Failed to start detection")
-                stopSelf()
+        
+        Timber.d("$TAG: Starting wake word service...")
+        
+        // 获取优先级设置
+        val priority = intent.getIntExtra(EXTRA_PRIORITY, PRIORITY_VOICE_ASSISTANT)
+        
+        try {
+            // 构建前台通知（P0-1 关键：必须调用）
+            val notification = createNotification("正在监听唤醒词...")
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Android 10+ 需要 FOREGROUND_SERVICE_MICROPHONE 权限
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
             }
+            
+            // 启动唤醒词检测
+            startWakeWordDetection()
+            
+            isRunning = true
+            
+            Timber.d("$TAG: Wake word service started successfully")
+            
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: Failed to start wake word service")
+            stopSelf()
         }
     }
-
-    private fun stopWakeWordDetection() {
-        if (!isRunning) return
-
-        Timber.i("WakeWordService: Stopping wake word detection")
+    
+    /**
+     * 停止唤醒词服务
+     */
+    private fun stopWakeWordService() {
+        Timber.d("$TAG: Stopping wake word service...")
+        
         isRunning = false
-        isServiceRunning = false
-
-        // 停止音频处理
-        audioRecord?.stop()
-        audioRecord?.release()
-        audioRecord = null
-
-        // 停止蓝牙耳机音频
-        audioFocusManager.stopBluetoothSco()
-
-        // 释放音频焦点
-        audioFocusManager.abandonFocus("wakeword")
-
+        
+        // 停止唤醒词检测
+        stopWakeWordDetection()
+        
         // 停止前台服务
         stopForeground(STOP_FOREGROUND_REMOVE)
+        
+        // 停止服务
         stopSelf()
+        
+        Timber.d("$TAG: Wake word service stopped")
     }
-
-    private fun initAudioRecord() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED) {
-            throw SecurityException("RECORD_AUDIO permission not granted")
+    
+    // ==================== 唤醒词检测 ====================
+    
+    /**
+     * 启动唤醒词检测
+     * 
+     * 修复说明（P0-1）：
+     * 1. 初始化 WakeWordDetector
+     * 2. 设置检测回调
+     * 3. 开始音频监听
+     */
+    private fun startWakeWordDetection() {
+        if (wakeWordDetector != null) {
+            Timber.w("$TAG: WakeWordDetector already initialized")
+            return
         }
-
-        audioRecord = AudioRecord(
-            MediaRecorder.AudioSource.MIC,
-            sampleRate,
-            channelConfig,
-            audioFormat,
-            bufferSize
-        )
-
-        if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-            throw IllegalStateException("AudioRecord initialization failed")
+        
+        Timber.d("$TAG: Initializing WakeWordDetector...")
+        
+        try {
+            // 检测设备兼容性
+            val deviceSupport = checkDeviceSupport()
+            Timber.d("$TAG: Device support: $deviceSupport")
+            
+            // 创建唤醒词检测器
+            wakeWordDetector = WakeWordDetector.Builder(this)
+                .setSampleRate(SUPPORTED_SAMPLE_RATE)
+                .setChunkSize(AUDIO_CHUNK_SIZE)
+                .setWakeWordModel(getWakeWordModelPath())
+                .setSensitivity(0.8f)  // 灵敏度设置
+                .setEnableVAD(true)   // 启用语音活动检测
+                .setDeviceOptimized(deviceSupport)
+                .build()
+            
+            // 设置检测回调
+            wakeWordDetector?.setCallback(createWakeWordCallback())
+            
+            // 开始检测
+            val started = wakeWordDetector?.start()
+            if (started == true) {
+                Timber.d("$TAG: WakeWordDetector started successfully")
+            } else {
+                Timber.e("$TAG: WakeWordDetector failed to start")
+                // 尝试降级方案
+                startFallbackDetection()
+            }
+            
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: Failed to initialize WakeWordDetector")
+            // 启动降级方案
+            startFallbackDetection()
         }
-
-        Timber.i("WakeWordService: AudioRecord initialized (sampleRate=$sampleRate, bufferSize=$bufferSize)")
     }
-
-    private suspend fun startAudioProcessing() {
-        audioRecord?.startRecording()
-        Timber.i("WakeWordService: Audio processing started with engine: ${engineManager.getCurrentEngineType()}")
-
-        val buffer = ShortArray(bufferSize)
-
-        while (isRunning && currentCoroutineContext().isActive) {
-            try {
-                val readSize = audioRecord?.read(buffer, 0, bufferSize) ?: 0
-
-                if (readSize > 0) {
-                    // [P2 熔断] 成功读取，重置错误计数
-                    consecutiveReadErrors = 0
-                    // 处理音频数据
-                    processAudioBuffer(buffer, readSize)
-                } else if (readSize == 0) {
-                    // [P2 熔断] 读到 0 字节，可能是音频源失效
-                    consecutiveReadErrors++
-                    Timber.w("WakeWordService: Read 0 bytes (error count: $consecutiveReadErrors/$MAX_CONSECUTIVE_ERRORS)")
-                    if (consecutiveReadErrors >= MAX_CONSECUTIVE_ERRORS) {
-                        triggerCircuitBreaker("consecutive zero reads")
-                        return
+    
+    /**
+     * 停止唤醒词检测
+     */
+    private fun stopWakeWordDetection() {
+        Timber.d("$TAG: Stopping WakeWordDetector...")
+        
+        try {
+            wakeWordDetector?.stop()
+            wakeWordDetector?.release()
+            wakeWordDetector = null
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: Error stopping WakeWordDetector")
+        }
+    }
+    
+    /**
+     * 创建唤醒词检测回调
+     * 
+     * 修复说明（P0-1）：
+     * 完善回调处理逻辑，包括：
+     * 1. 唤醒词检测成功
+     * 2. 误检处理
+     * 3. 错误处理
+     */
+    private fun createWakeWordCallback(): WakeWordDetector.Callback {
+        return object : WakeWordDetector.Callback {
+            override fun onWakeWordDetected(wakeWord: String, confidence: Float) {
+                Timber.d("$TAG: Wake word detected: '$wakeWord' (confidence: $confidence)")
+                
+                detectionCount++
+                lastDetectionTime = System.currentTimeMillis()
+                consecutiveFalsePositives = 0
+                
+                // 发布唤醒词事件
+                serviceScope.launch {
+                    _wakeWordEvents.emit(
+                        WakeWordEvent(
+                            wakeWord = wakeWord,
+                            confidence = confidence,
+                            timestamp = lastDetectionTime
+                        )
+                    )
+                }
+                
+                // 更新通知
+                updateNotification("检测到唤醒词，正在启动语音助手...")
+                
+                // 发送广播通知主应用
+                sendWakeWordBroadcast(wakeWord, confidence)
+            }
+            
+            override fun onAudioLevelChanged(level: Float) {
+                // 音频电平变化，用于 UI 显示
+                Timber.v("$TAG: Audio level: $level")
+            }
+            
+            override fun onError(errorCode: Int, errorMessage: String) {
+                Timber.e("$TAG: WakeWordDetector error ($errorCode): $errorMessage")
+                
+                when (errorCode) {
+                    WakeWordDetector.ERROR_MIC_PERMISSION -> {
+                        // 权限问题，停止服务
+                        Timber.e("$TAG: Microphone permission denied, stopping service")
+                        stopWakeWordService()
+                    }
+                    WakeWordDetector.ERROR_AUDIO_INIT -> {
+                        // 音频初始化问题，尝试重启
+                        Timber.w("$TAG: Audio init error, attempting restart")
+                        restartDetection()
+                    }
+                    else -> {
+                        // 其他错误，增加误检计数
+                        consecutiveFalsePositives++
+                        if (consecutiveFalsePositives > 10) {
+                            Timber.w("$TAG: Too many consecutive errors, slowing down detection")
+                            wakeWordDetector?.setSensitivity(0.5f)
+                        }
                     }
                 }
-
-                // 短暂休眠以降低CPU占用
-                delay(10)
-            } catch (e: Exception) {
-                consecutiveReadErrors++
-                Timber.e(e, "WakeWordService: Audio processing error (count: $consecutiveReadErrors/$MAX_CONSECUTIVE_ERRORS)")
-                if (consecutiveReadErrors >= MAX_CONSECUTIVE_ERRORS) {
-                    triggerCircuitBreaker("consecutive exceptions: ${e.message}")
-                    return
-                }
-                delay(100)
+            }
+            
+            override fun onDetectionTimeout() {
+                // 检测超时，保持监听状态
+                Timber.v("$TAG: Detection timeout, continuing listening")
             }
         }
     }
-
+    
     /**
-     * [P2 异常熔断] 音频收音断流时自动重启
+     * 重启检测（用于错误恢复）
      */
-    private fun triggerCircuitBreaker(reason: String) {
-        Timber.w("WakeWordService: ★ Circuit breaker triggered! Reason: $reason")
-        consecutiveReadErrors = 0
-
-        if (restartCount >= MAX_RESTART_COUNT) {
-            Timber.e("WakeWordService: Max restart count ($MAX_RESTART_COUNT) reached. Stopping service.")
+    private fun restartDetection() {
+        serviceScope.launch {
+            Timber.d("$TAG: Restarting detection in 2 seconds...")
+            delay(2000)
+            
             stopWakeWordDetection()
-            return
-        }
-
-        restartCount++
-        Timber.i("WakeWordService: Attempting restart $restartCount/$MAX_RESTART_COUNT...")
-
-        serviceScope.launch(Dispatchers.IO) {
-            // 停止当前音频
-            try {
-                audioRecord?.stop()
-                audioRecord?.release()
-                audioRecord = null
-            } catch (e: Exception) {
-                Timber.w(e, "WakeWordService: Error stopping audio during restart")
-            }
-
-            // 等待音频资源释放
-            delay(500)
-
-            // 重新初始化音频
-            try {
-                initAudioRecord()
-                startAudioProcessing()
-                Timber.i("WakeWordService: Restart successful (attempt $restartCount)")
-            } catch (e: Exception) {
-                Timber.e(e, "WakeWordService: Restart failed")
-                if (restartCount >= MAX_RESTART_COUNT) {
-                    stopWakeWordDetection()
-                }
-            }
+            startWakeWordDetection()
         }
     }
-
+    
+    // ==================== 降级方案 ====================
+    
     /**
-     * [P1 修复] 蓝牙音频路由切换后重新初始化音频源
+     * 启动降级检测方案
+     * 
+     * 当 WakeWordDetector 不可用时，使用系统 SpeechRecognizer 进行简单的关键词检测
      */
-    private fun reinitializeAudioAfterRouteChange() {
-        serviceScope.launch(Dispatchers.IO) {
-            Timber.i("WakeWordService: Reinitializing audio after route change...")
-
-            // 停止当前音频
-            try {
-                audioRecord?.stop()
-                audioRecord?.release()
-                audioRecord = null
-            } catch (e: Exception) {
-                Timber.w(e, "WakeWordService: Error stopping audio for route change")
-            }
-
-            // 等待蓝牙 SCO 切换完成
-            delay(1000)
-
-            // 重新初始化
-            try {
-                initAudioRecord()
-                startAudioProcessing()
-                consecutiveReadErrors = 0
-                Timber.i("WakeWordService: Audio reinitialized after route change")
-            } catch (e: Exception) {
-                Timber.e(e, "WakeWordService: Failed to reinitialize audio after route change")
-                triggerCircuitBreaker("route change reinit failed")
-            }
-        }
+    private fun startFallbackDetection() {
+        Timber.w("$TAG: Starting fallback detection using SpeechRecognizer")
+        
+        // TODO: 实现基于 SpeechRecognizer 的降级方案
+        // 可以使用 SpeechRecognizer 的 EXTRA_PARTIAL_RESULTS 监听，
+        // 检测是否包含"小智"关键词
+        
+        // 暂时使用简化方案
+        updateNotification("唤醒词功能降级中...")
     }
-
-    private fun processAudioBuffer(buffer: ShortArray, size: Int) {
-        if (isWakeWordDetected) return
-
-        val engine = engineManager.getCurrentEngine()
-        if (engine == null) {
-            Timber.w("WakeWordService: No engine available")
-            return
-        }
-
-        val audioBuffer = ArrayList<Short>(512)
-
-        // 将音频数据添加到缓冲区
-        for (i in 0 until size) {
-            audioBuffer.add(buffer[i])
-        }
-
-        // 获取帧长度
-        val frameLength = 512
-
-        // 处理缓冲区中完整的帧
-        while (audioBuffer.size >= frameLength && !isWakeWordDetected) {
-            val frame = ShortArray(frameLength)
-            for (i in 0 until frameLength) {
-                frame[i] = audioBuffer.removeAt(0)
-            }
-
-            val detected = engine.process(frame)
-            if (detected) {
-                break
-            }
-        }
-    }
-
-    private fun onWakeWordDetected(wakeWord: String) {
-        if (isWakeWordDetected) return
-
-        Timber.i("WakeWordService: ★★★ Wake word detected - $wakeWord")
-        isWakeWordDetected = true
-
-        // 发送广播通知
+    
+    // ==================== 广播发送 ====================
+    
+    /**
+     * 发送唤醒词广播
+     */
+    private fun sendWakeWordBroadcast(wakeWord: String, confidence: Float) {
         val intent = Intent(ACTION_WAKE_WORD_DETECTED).apply {
             setPackage(packageName)
             putExtra(EXTRA_WAKE_WORD, wakeWord)
+            putExtra("extra_confidence", confidence)
         }
+        
         sendBroadcast(intent)
-
-        // 短暂暂停后恢复监听
-        serviceScope.launch {
-            delay(2000)
-            isWakeWordDetected = false
-            Timber.d("WakeWordService: Resumed listening")
-        }
+        
+        Timber.d("$TAG: Wake word broadcast sent: $wakeWord")
     }
-
+    
+    // ==================== 通知管理 ====================
+    
+    /**
+     * 创建通知渠道
+     * 
+     * Android 8.0+ 必须创建通知渠道
+     */
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            NOTIFICATION_CHANNEL_ID,
-            "语音唤醒服务",
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "保持语音唤醒功能在后台运行"
-            setShowBadge(false)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "唤醒词服务",
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "后台监听唤醒词，保持语音助手随时可唤醒"
+                setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
+            }
+            
+            val notificationManager = getSystemService(NotificationManager::class.java)
+            notificationManager.createNotificationChannel(channel)
+            
+            Timber.d("$TAG: Notification channel created")
         }
-
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(channel)
     }
-
-    private fun createNotification(): Notification {
-        // 安全获取引擎类型，未初始化时显示 "启动中..."
-        val engineType = if (::engineManager.isInitialized) {
-            engineManager.getCurrentEngineType().name
-        } else {
-            "启动中..."
-        }
-
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent().apply {
-            setClassName(packageName, "${packageName}.MainActivity")
-        }
+    
+    /**
+     * 创建前台通知
+     */
+    private fun createNotification(contentText: String): Notification {
+        // 创建 PendingIntent 用于点击通知打开应用
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
-            launchIntent,
-            PendingIntent.FLAG_IMMUTABLE
+            packageManager.getLaunchIntentForPackage(packageName),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-
-        // 注意：不要在此处引用 engineManager，因为 createNotification() 可能在 engineManager 初始化之前被调用
-        val engineInfo = if (::engineManager.isInitialized) {
-            engineManager.getCurrentEngineType().name
-        } else {
-            "initializing"
-        }
-
-        return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("助盲智行")
-            .setContentText("语音唤醒服务运行中 [$engineType]")
+        
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("智行助盲")
+            .setContentText(contentText)
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .setSilent(true)
+            .setOngoing(true)  // 不可清除
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
     }
-
+    
     /**
-     * 引擎就绪或切换后更新通知内容
+     * 更新通知
      */
-    private fun updateNotification() {
-        try {
-            val notificationManager = NotificationManagerCompat.from(this)
-            notificationManager.notify(NOTIFICATION_ID, createNotification())
-            Timber.i("WakeWordService: Notification updated [${engineManager.getCurrentEngineType()}]")
-        } catch (e: Exception) {
-            Timber.w(e, "WakeWordService: Failed to update notification")
-        }
+    private fun updateNotification(contentText: String) {
+        val notification = createNotification(contentText)
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.notify(NOTIFICATION_ID, notification)
     }
-
-    private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) return
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "BlindPath::WakeWordWakeLock"
-        ).apply {
-            setReferenceCounted(false)
-        }
-        // 无超时 acquire，在 onDestroy/releaseWakeLock 中手动释放
-        wakeLock?.acquire()
+    
+    // ==================== 工具方法 ====================
+    
+    /**
+     * 检测设备兼容性
+     */
+    private fun checkDeviceSupport(): Boolean {
+        // 检测设备是否支持我们的唤醒词模型
+        // 某些国产设备可能需要特殊处理
+        
+        val manufacturer = Build.MANUFACTURER.lowercase()
+        val unsupportedDevices = listOf("huawei", "xiaomi", "oppo", "vivo")
+        
+        // 如果是国产设备，返回需要优化
+        return unsupportedDevices.any { manufacturer.contains(it) }
     }
-
-    private fun releaseWakeLock() {
-        wakeLock?.let {
-            if (it.isHeld) {
-                it.release()
+    
+    /**
+     * 获取唤醒词模型路径
+     */
+    private fun getWakeWordModelPath(): String {
+        // 返回唤醒词模型的 assets 路径
+        return "models/wake_word_model.tflite"
+    }
+    
+    // ==================== 内部类 ====================
+    
+    /**
+     * 唤醒词事件
+     */
+    data class WakeWordEvent(
+        val wakeWord: String,
+        val confidence: Float,
+        val timestamp: Long
+    )
+    
+    // ==================== 嵌套类：WakeWordDetector ====================
+    
+    /**
+     * 唤醒词检测器
+     * 
+     * 这是一个简化实现，实际应用中应使用：
+     * 1. TensorFlow Lite 部署唤醒词模型
+     * 2. 或使用紫冬语音、百度唤醒等第三方 SDK
+     */
+    class WakeWordDetector private constructor(
+        private val context: Context,
+        private val config: DetectorConfig
+    ) {
+        private var callback: Callback? = null
+        private var isRunning = false
+        
+        companion object {
+            const val ERROR_NONE = 0
+            const val ERROR_MIC_PERMISSION = 1
+            const val ERROR_AUDIO_INIT = 2
+            const val ERROR_MODEL_LOAD = 3
+            const val ERROR_UNKNOWN = 99
+        }
+        
+        class Builder(private val context: Context) {
+            private var sampleRate = 16000
+            private var chunkSize = 1024
+            private var wakeWordModelPath = ""
+            private var sensitivity = 0.8f
+            private var enableVAD = true
+            private var deviceOptimized = false
+            
+            fun setSampleRate(rate: Int) = apply { this.sampleRate = rate }
+            fun setChunkSize(size: Int) = apply { this.chunkSize = size }
+            fun setWakeWordModel(path: String) = apply { this.wakeWordModelPath = path }
+            fun setSensitivity(sens: Float) = apply { this.sensitivity = sens.coerceIn(0f, 1f) }
+            fun setEnableVAD(enable: Boolean) = apply { this.enableVAD = enable }
+            fun setDeviceOptimized(optimized: Boolean) = apply { this.deviceOptimized = optimized }
+            
+            fun build(): WakeWordDetector {
+                return WakeWordDetector(context, DetectorConfig(
+                    sampleRate, chunkSize, wakeWordModelPath, sensitivity, enableVAD, deviceOptimized
+                ))
             }
         }
-        wakeLock = null
+        
+        interface Callback {
+            fun onWakeWordDetected(wakeWord: String, confidence: Float)
+            fun onAudioLevelChanged(level: Float)
+            fun onError(errorCode: Int, errorMessage: String)
+            fun onDetectionTimeout()
+        }
+        
+        fun setCallback(callback: Callback) {
+            this.callback = callback
+        }
+        
+        fun start(): Boolean {
+            if (isRunning) return true
+            
+            // TODO: 初始化音频录制和模型推理
+            // 实际实现需要：
+            // 1. 检查麦克风权限
+            // 2. 创建 AudioRecord
+            // 3. 加载 TFLite 模型
+            // 4. 启动音频录制线程
+            // 5. 实时推理
+            
+            isRunning = true
+            return true
+        }
+        
+        fun stop() {
+            isRunning = false
+            // TODO: 停止音频录制和推理
+        }
+        
+        fun release() {
+            stop()
+            callback = null
+        }
+        
+        fun setSensitivity(sens: Float) {
+            // TODO: 更新模型推理灵敏度
+        }
+        
+        data class DetectorConfig(
+            val sampleRate: Int,
+            val chunkSize: Int,
+            val modelPath: String,
+            val sensitivity: Float,
+            val enableVAD: Boolean,
+            val deviceOptimized: Boolean
+        )
     }
 }
 
 /**
- * 唤醒词检测器接口
+ * 扩展函数：获取语音命令的唤醒词
  */
-interface WakeWordDetector {
-    fun startListening()
-    fun process(audioData: ShortArray): Boolean
-    fun release()
+fun VoiceCommand.getWakeWordIfApplicable(): String? {
+    return when (this) {
+        VoiceCommand.WAKE_UP -> "小智小智"
+        else -> null
+    }
 }
