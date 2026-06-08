@@ -1,4 +1,4 @@
-package com.blindpath.module_obstacle.service
+﻿package com.blindpath.module_obstacle.service
 
 import android.app.Notification
 import android.app.PendingIntent
@@ -181,8 +181,7 @@ class ObstacleService : LifecycleService() {
         val voiceType = when (alert.level) {
             AlertLevel.DANGER -> VoiceType.OBSTACLE_DANGER    // 危险：立即打断
             AlertLevel.WARNING -> VoiceType.OBSTACLE_NORMAL   // 警告：等待当前播报
-            AlertLevel.SAFE -> VoiceType.OBSTACLE_LOW        // 安全：低优先级
-        }
+            AlertLevel.SAFE -> VoiceType.OBSTACLE_LOW        // 安全：低优先级`r`n            AlertLevel.UNKNOWN -> VoiceType.SYSTEM_STATUS     // 未知：系统状态播报`r`n        }
 
         // 使用 voiceRepository.announce() 触发语音播报
         serviceScope.launch {
@@ -260,3 +259,4 @@ class ObstacleService : LifecycleService() {
         VibrationHelper.cancel(this)
     }
 }
+
