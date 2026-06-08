@@ -1,4 +1,4 @@
-package com.blindpath.module_obstacle.data.detection
+﻿package com.blindpath.module_obstacle.data.detection
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -639,7 +639,7 @@ class AIDetector @Inject constructor(
      * ML Kit Object Detection 回退检测
      * 当 TFLite 模型不可用时，使用 ML Kit 作为补充检测手段
      */
-    private suspend fun detectWithMLKit(bitmap: Bitmap): List<DetectedObstacle> {
+    private fun detectWithMLKit(bitmap: Bitmap): List<DetectedObstacle> {
         return try {
             val image = InputImage.fromBitmap(bitmap, 0)
             val options = ObjectDetectorOptions.Builder()
@@ -717,6 +717,7 @@ class AIDetector @Inject constructor(
         calibratedFocalLength = focalLength
     }
 }
+
 
 
 
