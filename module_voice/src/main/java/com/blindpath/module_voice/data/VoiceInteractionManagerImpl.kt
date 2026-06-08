@@ -32,7 +32,7 @@ class VoiceInteractionManagerImpl @Inject constructor(
             val ttsResult = voiceRepository.initialize()
             if (ttsResult is Result.Error) return ttsResult
             _isInitialized = true
-            _interactionState.value = _interactionState.value.copy(isInitialized = true, status = VoiceInteractionStatus.READY)
+            _interactionState.value = _interactionState.value.copy(isInitialized = true)
             Result.Success(true)
         } catch (e: Exception) {
             Result.Error(message = e.message ?: "初始化失败")
@@ -55,12 +55,12 @@ class VoiceInteractionManagerImpl @Inject constructor(
     }
 
     override suspend fun startListening(): Result<Boolean> {
-        _interactionState.value = _interactionState.value.copy(status = VoiceInteractionStatus.LISTENING)
+        _interactionState.value = _interactionState.value.copy(isListening = true)
         return Result.Success(true)
     }
 
     override suspend fun stopListening(): Result<Boolean> {
-        _interactionState.value = _interactionState.value.copy(status = VoiceInteractionStatus.READY)
+        _interactionState.value = _interactionState.value.copy(isListening = false)
         return Result.Success(true)
     }
 
