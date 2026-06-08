@@ -648,43 +648,44 @@ class AIDetector @Inject constructor(
                 .build()
 
             val detector = ObjectDetection.getClient(options)
-            val mlKitObstacles = suspendCancellableCoroutine { cont ->
-                detector.process(image)
-                    .addOnSuccessListener { detectedObjects ->
-                        val results = mutableListOf<DetectedObstacle>()
-                        for (obj in detectedObjects) {
-                            val obstacleType = when (obj.classificationCategory) {
-                                com.google.mlkit.vision.objects.DetectedObject.FOOD -> ObstacleType.OBSTACLE
-                                com.google.mlkit.vision.objects.DetectedObject.PERSON -> ObstacleType.PERSON
-                                else -> ObstacleType.OBSTACLE
-                            }
-                            val bounds = obj.boundingBox
-                            val cx = (bounds.left + bounds.right) / 2f
-                            val cy = (bounds.top + bounds.bottom) / 2f
-                            val distance = estimateDistanceFromPosition(cx, cy, bitmap.width, bitmap.height)
-                            results.add(DetectedObstacle(
-                                type = obstacleType,
-                                confidence = if (obj.labels.isNotEmpty()) obj.labels[0].confidence else 0.5f,
-                                distance = distance,
-                                direction = calculateDirection(cx, bitmap.width.toFloat()),
-                                boundingBox = BoundingBox(
-                                    bounds.left.toFloat() / bitmap.width,
-                                    bounds.top.toFloat() / bitmap.height,
-                                    bounds.right.toFloat() / bitmap.width,
-                                    bounds.bottom.toFloat() / bitmap.height
-                                )
-                            ))
+            val results = mutableListOf<DetectedObstacle>()
+            val latch = java.util.concurrent.CountDownLatch(1)
+
+            detector.process(image)
+                .addOnSuccessListener { detectedObjects ->
+                    for (obj in detectedObjects) {
+                        val labels = obj.labels
+                        val category = if (labels.isNotEmpty()) labels[0].text ?: "" else ""
+                        val obstacleType = when {
+                            category.contains("Person", ignoreCase = true) -> ObstacleType.PERSON
+                            else -> ObstacleType.OBSTACLE
                         }
-                        @Suppress("UNCHECKED_CAST")
-                        (cont as kotlinx.coroutines.CancellableContinuation<List<DetectedObstacle>>).resume(results) {}
+                        val bounds = obj.boundingBox
+                        val cx = (bounds.left + bounds.right) / 2f
+                        val cy = (bounds.top + bounds.bottom) / 2f
+                        val distance = estimateDistanceFromPosition(cx, cy, bitmap.width, bitmap.height)
+                        results.add(DetectedObstacle(
+                            type = obstacleType,
+                            confidence = if (labels.isNotEmpty()) labels[0].confidence else 0.5f,
+                            distance = distance,
+                            direction = estimateDirection(cx, bitmap.width),
+                            boundingBox = BoundingBox(
+                                bounds.left.toFloat() / bitmap.width,
+                                bounds.top.toFloat() / bitmap.height,
+                                bounds.right.toFloat() / bitmap.width,
+                                bounds.bottom.toFloat() / bitmap.height
+                            )
+                        ))
                     }
-                    .addOnFailureListener { e ->
-                        Timber.w(e, "ML Kit detection failed")
-                        @Suppress("UNCHECKED_CAST")
-                        (cont as kotlinx.coroutines.CancellableContinuation<List<DetectedObstacle>>).resume(emptyList()) {}
-                    }
-            }
-            mlKitObstacles
+                    latch.countDown()
+                }
+                .addOnFailureListener { e ->
+                    Timber.w(e, "ML Kit detection failed")
+                    latch.countDown()
+                }
+
+            latch.await(3, java.util.concurrent.TimeUnit.SECONDS)
+            results
         } catch (e: Exception) {
             Timber.w(e, "ML Kit detection error")
             emptyList()
