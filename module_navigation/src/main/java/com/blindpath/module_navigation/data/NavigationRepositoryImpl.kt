@@ -1,4 +1,4 @@
-package com.blindpath.module_navigation.data
+﻿package com.blindpath.module_navigation.data
 
 import android.Manifest
 import android.content.Context
@@ -14,6 +14,7 @@ import com.blindpath.base.common.Result
 import com.blindpath.base.config.AppConfig
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.LatLonPoint
+import com.blindpath.module_navigation.domain.model.RouteStep
 import com.blindpath.module_navigation.domain.model.NavigationState
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -329,4 +330,55 @@ class NavigationRepositoryImpl @Inject constructor(
             else -> "左转后直行"
         }
     }
+
+    override suspend fun planRoute(originLat: Double, originLon: Double, destLat: Double, destLon: Double): Result<Boolean> {
+        return try {
+            // TODO: 集成高德 RouteSearch API 进行真正的步行路线规划
+            // 当前使用直线距离作为临时方案
+            val results = FloatArray(2)
+            Location.distanceBetween(originLat, originLon, destLat, destLon, results)
+            val distance = results[0].toInt()
+            val duration = (distance / 1.2f).toInt() // 假设步行速度 1.2m/s
+
+            val steps = listOf(
+                RouteStep(
+                    instruction = "向目的地出发",
+                    distance = "${distance}米",
+                    duration = formatDuration(duration),
+                    type = "walk",
+                    road = ""
+                )
+            )
+
+            _state.update {
+                it.copy(
+                    routeSteps = steps,
+                    currentStepIndex = 0,
+                    isRoutePlanned = true,
+                    totalDistance = "${distance}米",
+                    totalDuration = formatDuration(duration)
+                )
+            }
+            Result.Success(true)
+        } catch (e: Exception) {
+            Timber.e(e, "路线规划失败")
+            Result.Error(message = e.message ?: "路线规划失败")
+        }
+    }
+
+    override suspend fun geocodeDestination(text: String): Result<LatLonPoint> {
+        return try {
+            // TODO: 集成高德 GeocodeSearch API
+            // 当前返回默认坐标（天安门广场）
+            Result.Success(LatLonPoint(39.9042, 116.3974))
+        } catch (e: Exception) {
+            Result.Error(message = e.message ?: "地理编码失败")
+        }
+    }
+
+    private fun formatDuration(seconds: Int): String {
+        val minutes = seconds / 60
+        return if (minutes > 0) "${minutes}分钟" else "${seconds}秒"
+    }
 }
+

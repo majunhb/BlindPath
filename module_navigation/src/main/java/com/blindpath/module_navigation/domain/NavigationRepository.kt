@@ -1,7 +1,8 @@
-package com.blindpath.module_navigation.domain
+﻿package com.blindpath.module_navigation.domain
 
 import android.location.Location
 import com.blindpath.base.common.Result
+import com.blindpath.module_navigation.domain.model.LatLonPoint
 import com.blindpath.module_navigation.domain.model.NavigationState
 import kotlinx.coroutines.flow.Flow
 
@@ -14,4 +15,8 @@ interface NavigationRepository {
     suspend fun clearDestination(): Result<Boolean>
     fun getCurrentLocation(): Location?
     fun isLocationAvailable(): Boolean
+
+    // 路线规划
+    suspend fun planRoute(originLat: Double, originLon: Double, destLat: Double, destLon: Double): Result<Boolean>
+    suspend fun geocodeDestination(text: String): Result<LatLonPoint>
 }

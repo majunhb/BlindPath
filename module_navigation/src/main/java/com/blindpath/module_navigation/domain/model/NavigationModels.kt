@@ -1,4 +1,4 @@
-package com.blindpath.module_navigation.domain.model
+﻿package com.blindpath.module_navigation.domain.model
 
 import com.blindpath.base.common.NavigationInfo
 
@@ -24,8 +24,29 @@ data class NavigationState(
     val isLocationAvailable: Boolean = false,
     val currentLocation: LocationInfo? = null,
     val destinationName: String? = null,
+    val destinationPoint: LatLonPoint? = null,
     val currentInfo: NavigationInfo? = null,
-    val lastError: String? = null
+    val lastError: String? = null,
+    // 路线规划相关
+    val routeSteps: List<RouteStep> = emptyList(),
+    val currentStepIndex: Int = 0,
+    val routePolylines: List<List<LatLonPoint>> = emptyList(),
+    val isOffRoute: Boolean = false,
+    val totalDistance: String = "",
+    val totalDuration: String = "",
+    val isRoutePlanned: Boolean = false
+)
+
+/**
+ * 路线步骤
+ */
+data class RouteStep(
+    val instruction: String,
+    val distance: String,
+    val duration: String,
+    val type: String = "",
+    val road: String = "",
+    val polyline: List<LatLonPoint> = emptyList()
 )
 
 /**
@@ -82,3 +103,4 @@ enum class OfflineMapDownloadStatus {
  * 经纬度坐标点
  */
 data class LatLonPoint(val latitude: Double, val longitude: Double)
+
