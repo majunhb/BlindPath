@@ -480,7 +480,7 @@ class ObstacleRepositoryImpl @Inject constructor(
             // 更新 FPS
             updateFps()
 
-                        // 核心修复：将检测结果转换为 ObstacleAlert 并触发语音播报
+            // 核心修复：将检测结果转换为 ObstacleAlert 并触发语音播报
             processDetections(obstacles)
 
             // 场景识别：检测斑马线、信号灯、路口、积水、道牙等
@@ -658,11 +658,8 @@ class ObstacleRepositoryImpl @Inject constructor(
             .sortedByDescending { it.confidence }
             .take(config.maxDetections)
 
-        // 播报去重过滤：仅保留冷却期外的新障碍物用于生成预警
-        val announceableObstacles = filteredObstacles.filter { shouldAnnounce(it) }
-
-        // 计算预警级别 - 关键修复：生成 ObstacleAlert 触发语音播报
-        val alert = calculateAlertLevel(announceableObstacles)
+        // 关键修复：基于所有检测到的障碍物计算预警，而不是去重后的
+        val alert = calculateAlertLevel(filteredObstacles)
 
         // 更新状态 - ObstacleService 会监听这个状态变化来触发语音播报
         _obstacleState.value = _obstacleState.value.copy(
@@ -687,9 +684,10 @@ class ObstacleRepositoryImpl @Inject constructor(
      */
     private fun calculateAlertLevel(obstacles: List<DetectedObstacle>): ObstacleAlert? {
         if (obstacles.isEmpty()) {
+            // 关键修复：空列表返回 SAFE，而不是 UNKNOWN
             return ObstacleAlert(
-                level = AlertLevel.UNKNOWN,
-                description = "检测能力有限，请谨慎通行",
+                level = AlertLevel.SAFE,
+                description = "前方道路畅通，未检测到障碍物",
                 distance = Float.MAX_VALUE,
                 direction = ""
             )
@@ -766,12 +764,3 @@ data class DetectionConfig(
     // 检测帧率限制（目标 FPS）
     val targetFps: Int = AppConfig.FrameRate.MEDIUM_FPS
 )
-
-
-
-
-
-
-
-
-

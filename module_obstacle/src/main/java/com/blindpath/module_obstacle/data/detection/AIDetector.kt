@@ -1,4 +1,4 @@
-package com.blindpath.module_obstacle.data.detection
+﻿package com.blindpath.module_obstacle.data.detection
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -200,11 +200,14 @@ class AIDetector @Inject constructor(
             // 2. 更新模式
             currentMode = mode
             currentWhitelist = when (mode) {
-    PerceptionMode.INDOOR -> INDOOR_WHITELIST
-    PerceptionMode.NAVIGATION -> NAVIGATION_WHITELIST
-    PerceptionMode.SCENE -> SCENE_WHITELIST
-    PerceptionMode.AUTO -> null
-}
+                PerceptionMode.INDOOR -> INDOOR_WHITELIST
+                PerceptionMode.NAVIGATION -> NAVIGATION_WHITELIST
+                PerceptionMode.SCENE -> SCENE_WHITELIST
+                PerceptionMode.AUTO -> null
+            }
+
+            // 关键修复：重置加载尝试标志，允许重新加载
+            isLoadAttempted = false
 
             Timber.d("Switched to mode: $mode, model: ${mode.modelFileName}")
         }
@@ -455,7 +458,10 @@ class AIDetector @Inject constructor(
                 else -> CONF_IGNORE
             }
             if (maxScore < confThreshold) continue
-            if (distance > WARNING_DISTANCE) continue
+
+            // 关键修复：放宽距离过滤，使用最大检测距离而非警告距离
+            val maxDetectionDistance = 15f  // 最大检测距离 15 米
+            if (distance > maxDetectionDistance) continue
 
             results.add(DetectedObstacle(
                 type = obstacleType,
@@ -724,15 +730,14 @@ class AIDetector @Inject constructor(
     fun isModelLoaded(): Boolean = lock.read { isLoaded && interpreter != null }
 
     fun isAssistedDetectionEnabled(): Boolean = useAssistedDetection
+
+    /**
+     * 重置加载尝试标志，允许重新尝试加载模型
+     */
+    fun resetLoadAttempt() {
+        isLoadAttempted = false
+    }
     fun setCalibratedFocalLength(focalLength: Float) {
         calibratedFocalLength = focalLength
     }
 }
-
-
-
-
-
-
-
-
