@@ -35,7 +35,7 @@ import com.amap.api.maps.model.*
 import com.amap.api.services.core.LatLonPoint
 import com.blindpath.app.ui.viewmodel.NavigationViewModel
 import com.blindpath.module_navigation.domain.model.RouteStep
-import dagger.hilt.android.compose.hiltViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 
 /**
  * 智能导航界面 - 实景应用级（含高德地图）
