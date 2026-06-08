@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BlindPath - 视障人士出行辅助应用
  * 
  * 文件：MainScreen.kt
@@ -163,6 +163,10 @@ fun MainScreen(
                 VoiceCommand.START_NAVIGATION -> {
                     showNavigation = true
                     viewModel.speak("正在为您打开导航")
+                    // 切换到导航感知模式，启用交通信号检测
+                    kotlinx.coroutines.runBlocking {
+                        obstacleRepository.setPerceptionMode(com.blindpath.module_obstacle.domain.model.PerceptionMode.NAVIGATION)
+                    }
                     true
                 }
                 VoiceCommand.STOP_NAVIGATION -> {
@@ -395,14 +399,28 @@ private fun SmartDashboard(
         }
     }
     
-    // 环境感知自动启停
+        // 环境感知自动启停 + 语音播报联动
     LaunchedEffect(showObstacleDetection) {
         if (showObstacleDetection) {
             Timber.d("环境感知启动：调用 obstacleRepository.startDetection()")
             obstacleRepository.startDetection()
+            viewModel.speak("环境感知已启动，正在检测周围障碍物")
         } else {
             Timber.d("环境感知停止：调用 obstacleRepository.stopDetection()")
             obstacleRepository.stopDetection()
+            viewModel.speak("环境感知已停止")
+        }
+    }
+
+    // 障碍物检测语音播报联动
+    var lastAlertDescription by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(obstacleState.currentAlert) {
+        val alert = obstacleState.currentAlert
+        if (alert != null && alert.description != lastAlertDescription && obstacleState.isRunning) {
+            lastAlertDescription = alert.description
+            if (alert.level != AlertLevel.SAFE && alert.level != AlertLevel.UNKNOWN) {
+                viewModel.speak(alert.description)
+            }
         }
     }
     
@@ -913,3 +931,5 @@ object NearbyPoiService {
         return "附近暂无可播报的地点"
     }
 }
+
+

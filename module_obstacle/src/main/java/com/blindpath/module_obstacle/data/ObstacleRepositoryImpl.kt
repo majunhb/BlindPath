@@ -473,8 +473,28 @@ class ObstacleRepositoryImpl @Inject constructor(
             // 更新 FPS
             updateFps()
 
-            // 核心修复：将检测结果转换为 ObstacleAlert 并触发语音播报
+                        // 核心修复：将检测结果转换为 ObstacleAlert 并触发语音播报
             processDetections(obstacles)
+
+            // 场景识别：检测斑马线、信号灯、路口等场景
+            val sceneResult = sceneClassifier.recognizeScene(bitmap, obstacles)
+            if (sceneResult != null) {
+                _obstacleState.value = _obstacleState.value.copy(
+                    sceneRecognition = sceneResult
+                )
+                // 场景识别结果也触发语音播报
+                if (sceneResult.confidence > 0.6f) {
+                    val sceneAlert = ObstacleAlert(
+                        level = AlertLevel.SAFE,
+                        description = sceneResult.sceneType.getEntryAnnouncement(),
+                        distance = Float.MAX_VALUE,
+                        direction = ""
+                    )
+                    _obstacleState.value = _obstacleState.value.copy(
+                        currentAlert = sceneAlert
+                    )
+                }
+            }
 
             // 保存当前帧用于运动检测（可选）
             synchronized(this@ObstacleRepositoryImpl) {
@@ -733,6 +753,7 @@ data class DetectionConfig(
     // 检测帧率限制（目标 FPS）
     val targetFps: Int = AppConfig.FrameRate.MEDIUM_FPS
 )
+
 
 
 
