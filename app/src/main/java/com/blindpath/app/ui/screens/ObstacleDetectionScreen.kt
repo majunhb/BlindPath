@@ -472,12 +472,6 @@ fun ObstacleDetectionScreen(
                                     AlertLevel.SAFE -> Color.Green
                                     AlertLevel.UNKNOWN -> Color.Gray
                                 }
-                                color = when (alertLevel) {
-                                    AlertLevel.DANGER -> Color.Red
-                                    AlertLevel.WARNING -> Color(0xFFFFA500)
-                                    AlertLevel.SAFE -> Color.Green
-                                    AlertLevel.UNKNOWN -> Color.Gray
-                                }
                             )
                         }
                         Spacer(modifier = Modifier.height(8.dp))
