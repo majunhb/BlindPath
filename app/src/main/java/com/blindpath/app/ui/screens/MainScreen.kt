@@ -418,7 +418,7 @@ private fun SmartDashboard(
         val alert = obstacleState.currentAlert
         if (alert != null && alert.description != lastAlertDescription && obstacleState.isRunning) {
             lastAlertDescription = alert.description
-            if (alert.level != AlertLevel.SAFE && alert.level != AlertLevel.UNKNOWN) {
+            if (alert.level != AlertLevel.SAFE) {
                 viewModel.speak(alert.description)
             }
         }
@@ -931,5 +931,6 @@ object NearbyPoiService {
         return "附近暂无可播报的地点"
     }
 }
+
 
 
