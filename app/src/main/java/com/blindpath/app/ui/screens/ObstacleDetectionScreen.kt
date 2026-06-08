@@ -1,4 +1,4 @@
-package com.blindpath.app.ui.screens
+﻿package com.blindpath.app.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -472,7 +472,6 @@ fun ObstacleDetectionScreen(
                                     AlertLevel.SAFE -> Color.Green
                                     AlertLevel.UNKNOWN -> Color.Gray
                                 }
-                                style = MaterialTheme.typography.labelMedium,
                                 color = when (alertLevel) {
                                     AlertLevel.DANGER -> Color.Red
                                     AlertLevel.WARNING -> Color(0xFFFFA500)
