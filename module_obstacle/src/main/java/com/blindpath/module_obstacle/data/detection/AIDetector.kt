@@ -1,4 +1,4 @@
-package com.blindpath.module_obstacle.data.detection
+﻿package com.blindpath.module_obstacle.data.detection
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -624,6 +624,7 @@ class AIDetector @Inject constructor(
             normalizedY > 0.5f -> 1.5f + (0.8f - normalizedY) * 10f  // 中距离
             else -> 4f + (0.5f - normalizedY) * 20f  // 远距离
         }
+    }
 
     private fun estimateDirection(x: Float, width: Int): Direction {
         val centerX = width / 2f
@@ -641,6 +642,7 @@ class AIDetector @Inject constructor(
         calibratedFocalLength = focalLength
     }
 }
+
 
 
 
