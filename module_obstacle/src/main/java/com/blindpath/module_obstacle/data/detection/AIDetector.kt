@@ -1,4 +1,4 @@
-﻿package com.blindpath.module_obstacle.data.detection
+package com.blindpath.module_obstacle.data.detection
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -135,8 +135,8 @@ class AIDetector @Inject constructor(
     private var calibratedFocalLength: Float? = null
 
     companion object {
-        const val DANGER_DISTANCE = 1.5f
-        const val WARNING_DISTANCE = 3.0f
+        val DANGER_DISTANCE = AppConfig.ObstacleAlert.DANGER_DISTANCE  // 0.5f
+        val WARNING_DISTANCE = AppConfig.ObstacleAlert.WARNING_DISTANCE  // 2.0f
         const val CONF_DANGER = 0.28f
         const val CONF_WARNING = 0.45f
         const val CONF_IGNORE = 0.7f
@@ -243,6 +243,10 @@ class AIDetector @Inject constructor(
             false
         } catch (e: Exception) {
             Timber.e(e, "Failed to load model")
+            lock.write {
+                isLoaded = false
+                useAssistedDetection = true
+            }
             false
         }
     }
@@ -359,8 +363,6 @@ class AIDetector @Inject constructor(
             return if (useAssistedDetection) assistedDetect(bitmap) else emptyList()
         }
 
-        // 跳帧处理
-        if (frameCounter % ASSIST_FRAME_SKIP != 0) return emptyList()
 
         return try {
             val inputBuffer = preprocessImage(bitmap)
@@ -522,16 +524,119 @@ class AIDetector @Inject constructor(
     }
 
     private fun detectMotion(prev: Bitmap, curr: Bitmap): List<DetectedObstacle> {
-        // 简化版运动检测
-        return emptyList()
+        val results = mutableListOf<DetectedObstacle>()
+        try {
+            val width = minOf(prev.width, curr.width)
+            val height = minOf(prev.height, curr.height)
+            val blockSize = 40  // 检测块大小
+            val threshold = 30   // 像素差异阈值
+            var motionBlocks = 0
+            val motionRegions = mutableListOf<Pair<Int, Int>>() // x, y of block center
+
+            for (by in 0 until height step blockSize) {
+                for (bx in 0 until width step blockSize) {
+                    var diff = 0
+                    var count = 0
+                    for (y in by until minOf(by + blockSize, height) step 4) {
+                        for (x in bx until minOf(bx + blockSize, width) step 4) {
+                            val p1 = prev.getPixel(x, y)
+                            val p2 = curr.getPixel(x, y)
+                            val dr = kotlin.math.abs(((p1 shr 16) and 0xFF) - ((p2 shr 16) and 0xFF))
+                            val dg = kotlin.math.abs(((p1 shr 8) and 0xFF) - ((p2 shr 8) and 0xFF))
+                            val db = kotlin.math.abs((p1 and 0xFF) - (p2 and 0xFF))
+                            if (dr + dg + db > threshold * 3) diff++
+                            count++
+                        }
+                    }
+                    if (count > 0 && diff.toFloat() / count > 0.15f) {
+                        motionBlocks++
+                        motionRegions.add(Pair(bx + blockSize / 2, by + blockSize / 2))
+                    }
+                }
+            }
+
+            if (motionBlocks >= 3) {  // 至少3个运动块才认为有障碍物
+                // 将运动区域合并为一个大致的障碍物
+                val avgX = motionRegions.map { it.first }.average().toFloat()
+                val avgY = motionRegions.map { it.second }.average().toFloat()
+                val distance = estimateDistanceFromPosition(avgX, avgY, width, height)
+
+                results.add(DetectedObstacle(
+                    type = ObstacleType.OBSTACLE,
+                    confidence = minOf(0.5f, 0.3f + motionBlocks * 0.05f),
+                    boundingBox = null,
+                    distance = distance,
+                    direction = estimateDirection(avgX, width)
+                ))
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "Motion detection error")
+        }
+        return results
     }
 
     private fun detectEdges(bitmap: Bitmap): List<DetectedObstacle> {
-        // 简化版边缘检测
-        return emptyList()
+        val results = mutableListOf<DetectedObstacle>()
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+            // 检测图像底部1/3区域的显著边缘（如台阶、道牙）
+            val scanHeight = height / 3
+            val scanY = height * 2 / 3
+
+            var edgeCount = 0
+            var edgeY = 0
+            for (y in scanY until height - 10 step 2) {
+                for (x in 0 until width step 8) {
+                    val p1 = bitmap.getPixel(x, y)
+                    val p2 = bitmap.getPixel(x, y + 10)
+                    val diff = kotlin.math.abs(((p1 shr 16) and 0xFF) - ((p2 shr 16) and 0xFF)) +
+                              kotlin.math.abs(((p1 shr 8) and 0xFF) - ((p2 shr 8) and 0xFF)) +
+                              kotlin.math.abs((p1 and 0xFF) - (p2 and 0xFF))
+                    if (diff > 80) {
+                        edgeCount++
+                        edgeY = y
+                    }
+                }
+            }
+
+            if (edgeCount > width / 8) {  // 显著水平边缘
+                val distance = estimateDistanceFromPosition(width / 2f, edgeY.toFloat(), width, height)
+                results.add(DetectedObstacle(
+                    type = ObstacleType.STEP_DOWN,
+                    confidence = minOf(0.45f, 0.25f + edgeCount * 0.01f),
+                    boundingBox = null,
+                    distance = distance,
+                    direction = Direction.FRONT
+                ))
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "Edge detection error")
+        }
+        return results
+    }
+
+    private fun estimateDistanceFromPosition(x: Float, y: Float, width: Int, height: Int): Float {
+        // 基于物体在图像中的位置估算距离
+        val normalizedY = y / height
+        return when {
+            normalizedY > 0.8f -> 0.5f + (1f - normalizedY) * 5f  // 近距离
+            normalizedY > 0.5f -> 1.5f + (0.8f - normalizedY) * 10f  // 中距离
+            else -> 4f + (0.5f - normalizedY) * 20f  // 远距离
+        }
+
+    private fun estimateDirection(x: Float, width: Int): Direction {
+        val centerX = width / 2f
+        return when {
+            x < centerX - width * 0.2f -> Direction.LEFT
+            x > centerX + width * 0.2f -> Direction.RIGHT
+            else -> Direction.FRONT
+        }
     }
 
     fun isModelLoaded(): Boolean = lock.read { isLoaded && interpreter != null }
+
+    fun isAssistedDetectionEnabled(): Boolean = useAssistedDetection
     fun setCalibratedFocalLength(focalLength: Float) {
         calibratedFocalLength = focalLength
     }

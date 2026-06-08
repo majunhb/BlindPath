@@ -154,12 +154,12 @@ class ObstacleRepositoryImpl @Inject constructor(
             // 初始化 AI 检测器 - 关键修复：真正加载模型
             val loadResult = aiDetector.loadModel()
             if (!loadResult) {
-                Timber.e("ObstacleRepository: Failed to load AI model")
+                Timber.w("ObstacleRepository: AI model not available, using assisted detection")
                 _obstacleState.value = _obstacleState.value.copy(
                     isModelLoaded = false,
-                    lastError = "AI 模型加载失败"
+                    lastError = null  // 不视为错误，辅助检测仍可用
                 )
-                return@withContext Result.Error(message = "AI 模型加载失败")
+                // 不返回 Error，允许继续使用辅助检测
             }
 
             _obstacleState.value = _obstacleState.value.copy(
@@ -456,9 +456,9 @@ class ObstacleRepositoryImpl @Inject constructor(
             }
             frameSkipCounter = 0
 
-            // 检查模型是否加载
-            if (!aiDetector.isModelLoaded()) {
-                Timber.w("ObstacleRepository: Model not loaded, skipping frame")
+            // 检查是否有任何检测能力可用
+            if (!aiDetector.isModelLoaded() && !aiDetector.isAssistedDetectionEnabled()) {
+                Timber.w("ObstacleRepository: No detection available, skipping frame")
                 imageProxy.close()
                 return
             }
@@ -744,6 +744,7 @@ data class DetectionConfig(
     // 检测帧率限制（目标 FPS）
     val targetFps: Int = AppConfig.FrameRate.MEDIUM_FPS
 )
+
 
 
 
