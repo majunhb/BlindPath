@@ -1,4 +1,4 @@
-﻿package com.blindpath.module_obstacle.data.detection
+package com.blindpath.module_obstacle.data.detection
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -58,6 +58,9 @@ class AIDetector @Inject constructor(
     private var lastFrame: Bitmap? = null
     private var frameCounter = 0
     private val ASSIST_FRAME_SKIP = 2
+
+    // 防止重复下载尝试标志位
+    private var isLoadAttempted = false
 
     // 模型配置
     private val inputSize = AppConfig.AIDetection.INPUT_SIZE
@@ -214,6 +217,11 @@ class AIDetector @Inject constructor(
      * 加载模型（根据当前模式）
      */
     suspend fun loadModel(): Boolean {
+        // 防止重复下载尝试
+        if (isLoadAttempted) {
+            return lock.read { isLoaded }
+        }
+
         return try {
             val options = Interpreter.Options().apply {
                 numThreads = numThreads
@@ -244,6 +252,7 @@ class AIDetector @Inject constructor(
                 useAssistedDetection = true
             }
             Timber.w("Model $modelFileName load failed, using assisted detection")
+            isLoadAttempted = true
             false
         } catch (e: Exception) {
             Timber.e(e, "Failed to load model")
@@ -251,6 +260,7 @@ class AIDetector @Inject constructor(
                 isLoaded = false
                 useAssistedDetection = true
             }
+            isLoadAttempted = true
             false
         }
     }
@@ -557,18 +567,18 @@ class AIDetector @Inject constructor(
                             val dr = kotlin.math.abs(((p1 shr 16) and 0xFF) - ((p2 shr 16) and 0xFF))
                             val dg = kotlin.math.abs(((p1 shr 8) and 0xFF) - ((p2 shr 8) and 0xFF))
                             val db = kotlin.math.abs((p1 and 0xFF) - (p2 and 0xFF))
-                            if (dr + dg + db > threshold * 3) diff++
+                            if (dr + dg + db > threshold * 2) diff++
                             count++
                         }
                     }
-                    if (count > 0 && diff.toFloat() / count > 0.15f) {
+                    if (count > 0 && diff.toFloat() / count > 0.10f) {
                         motionBlocks++
                         motionRegions.add(Pair(bx + blockSize / 2, by + blockSize / 2))
                     }
                 }
             }
 
-            if (motionBlocks >= 3) {  // 至少3个运动块才认为有障碍物
+            if (motionBlocks >= 2) {  // 至少2个运动块即认为有障碍物（灵敏度提升）
                 // 将运动区域合并为一个大致的障碍物
                 val avgX = motionRegions.map { it.first }.average().toFloat()
                 val avgY = motionRegions.map { it.second }.average().toFloat()

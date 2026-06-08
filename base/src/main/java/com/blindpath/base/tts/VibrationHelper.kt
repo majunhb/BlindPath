@@ -28,6 +28,7 @@ object VibrationHelper {
             AlertLevel.DANGER -> DANGER_PATTERN
             AlertLevel.WARNING -> WARNING_PATTERN
             AlertLevel.SAFE -> SAFE_PATTERN
+            AlertLevel.UNKNOWN -> SAFE_PATTERN
         }
 
         vibrate(context, pattern, level != AlertLevel.SAFE)

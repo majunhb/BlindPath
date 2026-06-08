@@ -6,7 +6,8 @@ package com.blindpath.base.common
 enum class AlertLevel(val displayName: String) {
     DANGER("危险"),
     WARNING("提醒"),
-    SAFE("安全")
+    SAFE("安全"),
+    UNKNOWN("未知")
 }
 
 /**

@@ -100,6 +100,9 @@ fun ObstacleDetectionScreen(
     var frameCount by remember { mutableStateOf(0) }
     var lastAlertTime by remember { mutableStateOf(0L) }
 
+    // 播报去重：记录每个障碍物的最后播报时间，10秒内不重复
+    val lastAnnouncedObstacles = remember { mutableMapOf<String, Long>() }
+
     // 跳帧处理：每3帧处理1帧，降低CPU负载
     var frameSkipCounter by remember { mutableStateOf(0) }
     val processEveryNFrames = 3
@@ -178,30 +181,32 @@ fun ObstacleDetectionScreen(
                                 nearest.direction
                             )
 
-                            // 危险/提醒级别立即语音播报（去重：3秒内不重复）
+                            // 仅播报 WARNING 和 DANGER 级别（去重：同一障碍物10秒内不重复）
                             val now = System.currentTimeMillis()
-                            if (level != AlertLevel.SAFE && now - lastAlertTime > 3000) {
-                                lastAlertTime = now
-                                lastAnnouncement = alertMsg
-                                
-                                // 使用分级播报系统
-                                val voiceType = when (level) {
-                                    AlertLevel.DANGER -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_DANGER
-                                    AlertLevel.WARNING -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_NORMAL
-                                    else -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_LOW
+                            if (level == AlertLevel.DANGER || level == AlertLevel.WARNING) {
+                                val dedupKey = nearest.type.getDeduplicationKey(nearest.direction)
+                                val lastAnnounceTime = lastAnnouncedObstacles[dedupKey] ?: 0L
+                                if (now - lastAnnounceTime > 10000) {
+                                    lastAnnouncedObstacles[dedupKey] = now
+                                    lastAlertTime = now
+                                    lastAnnouncement = alertMsg
+
+                                    // 使用分级播报系统
+                                    val voiceType = when (level) {
+                                        AlertLevel.DANGER -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_DANGER
+                                        AlertLevel.WARNING -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_NORMAL
+                                        else -> com.blindpath.module_voice.domain.model.VoiceType.OBSTACLE_LOW
+                                    }
+
+                                    scope.launch {
+                                        val request = com.blindpath.module_voice.domain.model.VoiceRequest(
+                                            text = alertMsg,
+                                            type = voiceType,
+                                            deduplicationKey = dedupKey
+                                        )
+                                        voiceRepository.announce(request)
+                                    }
                                 }
-                                
-                                scope.launch {
-                                    // 创建播报请求，包含去重键
-                                    val request = com.blindpath.module_voice.domain.model.VoiceRequest(
-                                        text = alertMsg,
-                                        type = voiceType,
-                                        deduplicationKey = nearest.type.getDeduplicationKey(nearest.direction)
-                                    )
-                                    voiceRepository.announce(request)
-                                }
-                            } else if (level == AlertLevel.SAFE) {
-                                lastAnnouncement = "前方道路畅通，未检测到障碍物"
                             }
                         } else {
                             // 无障碍物
@@ -375,6 +380,7 @@ fun ObstacleDetectionScreen(
                                             AlertLevel.DANGER -> Color.Red.copy(alpha = 0.9f)
                                             AlertLevel.WARNING -> Color(0xFFFFA500).copy(alpha = 0.9f)
                                             AlertLevel.SAFE -> Color.Green.copy(alpha = 0.8f)
+                                            AlertLevel.UNKNOWN -> Color.Gray.copy(alpha = 0.8f)
                                         },
                                         RoundedCornerShape(8.dp)
                                     )
@@ -385,6 +391,7 @@ fun ObstacleDetectionScreen(
                                         AlertLevel.DANGER -> "⚠ 危险！前方有障碍物"
                                         AlertLevel.WARNING -> "⚡ 注意！前方有障碍物"
                                         AlertLevel.SAFE -> "● 安全，前方畅通"
+                                        AlertLevel.UNKNOWN -> "○ 检测能力有限，请谨慎通行"
                                     },
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold,
@@ -440,6 +447,7 @@ fun ObstacleDetectionScreen(
                             AlertLevel.DANGER -> Color.Red.copy(alpha = 0.15f)
                             AlertLevel.WARNING -> Color(0xFFFFA500).copy(alpha = 0.15f)
                             AlertLevel.SAFE -> MaterialTheme.colorScheme.primaryContainer
+                            AlertLevel.UNKNOWN -> MaterialTheme.colorScheme.surfaceVariant
                         }
                     )
                 ) {
@@ -456,12 +464,20 @@ fun ObstacleDetectionScreen(
                                     AlertLevel.DANGER -> "危险"
                                     AlertLevel.WARNING -> "提醒"
                                     AlertLevel.SAFE -> "安全"
+                                    AlertLevel.UNKNOWN -> "未知"
                                 },
+                                color = when (alertLevel) {
+                                    AlertLevel.DANGER -> Color.Red
+                                    AlertLevel.WARNING -> Color(0xFFFFA500)
+                                    AlertLevel.SAFE -> Color.Green
+                                    AlertLevel.UNKNOWN -> Color.Gray
+                                }
                                 style = MaterialTheme.typography.labelMedium,
                                 color = when (alertLevel) {
                                     AlertLevel.DANGER -> Color.Red
                                     AlertLevel.WARNING -> Color(0xFFFFA500)
                                     AlertLevel.SAFE -> Color.Green
+                                    AlertLevel.UNKNOWN -> Color.Gray
                                 }
                             )
                         }

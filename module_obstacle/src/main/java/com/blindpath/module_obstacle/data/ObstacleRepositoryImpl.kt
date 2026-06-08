@@ -167,7 +167,7 @@ class ObstacleRepositoryImpl @Inject constructor(
             }
 
             _obstacleState.value = _obstacleState.value.copy(
-                isModelLoaded = true,
+                isModelLoaded = aiDetector.isModelLoaded(),
                 isCameraReady = false,
                 lastError = null
             )
@@ -688,8 +688,8 @@ class ObstacleRepositoryImpl @Inject constructor(
     private fun calculateAlertLevel(obstacles: List<DetectedObstacle>): ObstacleAlert? {
         if (obstacles.isEmpty()) {
             return ObstacleAlert(
-                level = AlertLevel.SAFE,
-                description = "安全",
+                level = AlertLevel.UNKNOWN,
+                description = "检测能力有限，请谨慎通行",
                 distance = Float.MAX_VALUE,
                 direction = ""
             )
