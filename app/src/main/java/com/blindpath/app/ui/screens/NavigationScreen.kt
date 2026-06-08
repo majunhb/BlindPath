@@ -115,7 +115,6 @@ fun NavigationScreen(
                     factory = { ctx ->
                         MapView(ctx).apply {
                             mapViewRef = this
-                            onCreate(null)
                             val aMap = this.map
                             aMapRef = aMap
                             aMap.uiSettings.apply {
@@ -128,6 +127,10 @@ fun NavigationScreen(
                                 interval(3000)
                             }
                             aMap.isMyLocationEnabled = true
+                            // 地图加载完成回调
+                            aMap.setOnMapLoadedListener {
+                                Timber.i("高德地图加载完成")
+                            }
                             // 默认视角：中国
                             aMap.moveCamera(CameraUpdateFactory.newLatLngZoom(LatLng(39.9042, 116.4074), 15f))
                         }
@@ -295,10 +298,22 @@ fun NavigationScreen(
         }
     }
 
+    // 保存 Bundle 用于 MapView 生命周期
+    val savedState = remember { android.os.Bundle() }
+
     DisposableEffect(lifecycleOwner) {
         val observer = object : DefaultLifecycleObserver {
+            override fun onCreate(owner: LifecycleOwner) {
+                mapViewRef?.onCreate(savedState)
+            }
             override fun onResume(owner: LifecycleOwner) { mapViewRef?.onResume() }
             override fun onPause(owner: LifecycleOwner) { mapViewRef?.onPause() }
+            override fun onSaveInstanceState(outState: android.os.Bundle) {
+                mapViewRef?.onSaveInstanceState(outState)
+            }
+            override fun onDestroy(owner: LifecycleOwner) {
+                mapViewRef?.onDestroy()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
@@ -329,3 +344,5 @@ fun NavigationScreen(
         else if (isCompleted) Text("done", color = ComposeColor.Green, fontSize = 18.sp)
     }
 }
+
+
