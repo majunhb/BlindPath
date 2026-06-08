@@ -41,6 +41,7 @@ import com.blindpath.base.common.ObstacleAlert
 import com.blindpath.base.common.Result
 import com.blindpath.base.config.AppConfig
 import com.blindpath.module_obstacle.data.detection.AIDetector
+import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_obstacle.domain.model.ObstacleType
@@ -77,7 +78,8 @@ import javax.inject.Singleton
 @Singleton
 class ObstacleRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val aiDetector: AIDetector
+    private val aiDetector: AIDetector,
+    private val sceneClassifier: SceneClassifier
 ) : ObstacleRepository {
 
     // ==================== 状态管理 ====================
@@ -477,20 +479,11 @@ class ObstacleRepositoryImpl @Inject constructor(
                         // 核心修复：将检测结果转换为 ObstacleAlert 并触发语音播报
             processDetections(obstacles)
 
-                                    // 场景识别：检测斑马线、信号灯、路口等场景
-            // TODO: 注入 SceneClassifier 后启用完整场景识别
-            val trafficObstacles = obstacles.filter { 
-                it.type == ObstacleType.TRAFFIC_LIGHT || it.type == ObstacleType.TRAFFIC_SIGN 
-            }
-            if (trafficObstacles.isNotEmpty()) {
-                val first = trafficObstacles.first()
+            // 场景识别：检测斑马线、信号灯、路口、积水、道牙等
+            val sceneResult = sceneClassifier.recognizeScene(bitmap, obstacles)
+            if (sceneResult != null) {
                 _obstacleState.value = _obstacleState.value.copy(
-                    currentAlert = ObstacleAlert(
-                        level = AlertLevel.SAFE,
-                        description = "检测到交通信号，请注意",
-                        distance = first.distance,
-                        direction = first.direction.name
-                    )
+                    sceneRecognition = sceneResult
                 )
             }
 
@@ -751,6 +744,8 @@ data class DetectionConfig(
     // 检测帧率限制（目标 FPS）
     val targetFps: Int = AppConfig.FrameRate.MEDIUM_FPS
 )
+
+
 
 
 
