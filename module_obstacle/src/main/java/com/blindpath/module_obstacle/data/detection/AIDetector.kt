@@ -564,7 +564,7 @@ class AIDetector @Inject constructor(
                 results.add(DetectedObstacle(
                     type = ObstacleType.OBSTACLE,
                     confidence = minOf(0.5f, 0.3f + motionBlocks * 0.05f),
-                    boundingBox = null,
+                    boundingBox = BoundingBox(0f, 0f, 0f, 0f),
                     distance = distance,
                     direction = estimateDirection(avgX, width)
                 ))
@@ -605,9 +605,9 @@ class AIDetector @Inject constructor(
                 results.add(DetectedObstacle(
                     type = ObstacleType.STEP_DOWN,
                     confidence = minOf(0.45f, 0.25f + edgeCount * 0.01f),
-                    boundingBox = null,
+                    boundingBox = BoundingBox(0f, 0f, 0f, 0f),
                     distance = distance,
-                    direction = Direction.FRONT
+                    direction = Direction.CENTER
                 ))
             }
         } catch (e: Exception) {
@@ -631,7 +631,7 @@ class AIDetector @Inject constructor(
         return when {
             x < centerX - width * 0.2f -> Direction.LEFT
             x > centerX + width * 0.2f -> Direction.RIGHT
-            else -> Direction.FRONT
+            else -> Direction.CENTER
         }
     }
 
@@ -642,6 +642,8 @@ class AIDetector @Inject constructor(
         calibratedFocalLength = focalLength
     }
 }
+
+
 
 
 
