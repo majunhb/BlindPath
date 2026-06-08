@@ -36,6 +36,7 @@ import com.amap.api.services.core.LatLonPoint
 import com.blindpath.app.ui.viewmodel.NavigationViewModel
 import com.blindpath.module_navigation.domain.model.RouteStep
 import androidx.hilt.navigation.compose.hiltViewModel
+import timber.log.Timber
 
 /**
  * 智能导航界面 - 实景应用级（含高德地图）
@@ -308,9 +309,6 @@ fun NavigationScreen(
             }
             override fun onResume(owner: LifecycleOwner) { mapViewRef?.onResume() }
             override fun onPause(owner: LifecycleOwner) { mapViewRef?.onPause() }
-            override fun onSaveInstanceState(outState: android.os.Bundle) {
-                mapViewRef?.onSaveInstanceState(outState)
-            }
             override fun onDestroy(owner: LifecycleOwner) {
                 mapViewRef?.onDestroy()
             }
@@ -344,5 +342,6 @@ fun NavigationScreen(
         else if (isCompleted) Text("done", color = ComposeColor.Green, fontSize = 18.sp)
     }
 }
+
 
 
