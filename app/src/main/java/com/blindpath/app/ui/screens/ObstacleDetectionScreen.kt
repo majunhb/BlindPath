@@ -1,5 +1,7 @@
 ﻿package com.blindpath.app.ui.screens
 
+import com.blindpath.module_obstacle.domain.model.ObstacleState
+
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -72,7 +74,7 @@ fun ObstacleDetectionScreen(
     }
 
     // 关键修复：通过 Repository 的 StateFlow 监听检测结果
-    val obstacleState by obstacleRepository.obstacleState.collectAsState()
+    val obstacleState by obstacleRepository.obstacleState.collectAsState(initial = ObstacleState())
 
     var hasCameraPermission by remember {
         mutableStateOf(
@@ -450,3 +452,5 @@ interface ObstacleDetectionEntryPoint {
     fun voiceRepository(): VoiceRepository
     fun obstacleRepository(): ObstacleRepository
 }
+
+
