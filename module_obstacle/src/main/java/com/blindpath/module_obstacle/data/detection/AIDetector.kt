@@ -1,4 +1,4 @@
-﻿package com.blindpath.module_obstacle.data.detection
+package com.blindpath.module_obstacle.data.detection
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -25,6 +25,10 @@ import kotlin.concurrent.read
 import kotlin.concurrent.write
 import kotlin.math.max
 import kotlin.math.min
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.objects.ObjectDetection
+import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
  * 多模型AI目标检测器 - 支持室内/导航/场景三模式动态切换
@@ -62,9 +66,9 @@ class AIDetector @Inject constructor(
 
     // 模型下载镜像
     private val modelBaseUrls = listOf(
-        "https://github.com/majunhb/BlindPath/releases/download/models/",
-        "https://ghfast.top/https://github.com/majunhb/BlindPath/releases/download/models/",
-        "https://mirror.ghproxy.com/https://github.com/majunhb/BlindPath/releases/download/models/",
+        "https://github.com/majunhb/BlindPath/releases/download/models-v1/",
+        "https://ghfast.top/https://github.com/majunhb/BlindPath/releases/download/models-v1/",
+        "https://mirror.ghproxy.com/https://github.com/majunhb/BlindPath/releases/download/models-v1/",
     )
 
     // ============ COCO 80类映射到障碍物类型 ============
@@ -516,6 +520,8 @@ class AIDetector @Inject constructor(
                 }
             }
             results.addAll(detectEdges(bitmap))
+            // ML Kit 回退检测
+            results.addAll(detectWithMLKit(bitmap))
             lastFrame = bitmap.copy(Bitmap.Config.ARGB_8888, false)
         } catch (e: Exception) {
             Timber.w(e, "Assisted detection failed")
@@ -533,14 +539,21 @@ class AIDetector @Inject constructor(
             var motionBlocks = 0
             val motionRegions = mutableListOf<Pair<Int, Int>>() // x, y of block center
 
+            // 批量读取像素数据，避免逐像素 getPixel() 调用的开销
+            val prevPixels = IntArray(width * height)
+            val currPixels = IntArray(width * height)
+            prev.getPixels(prevPixels, width, 0, 0, 0, width, height)
+            curr.getPixels(currPixels, width, 0, 0, 0, width, height)
+
             for (by in 0 until height step blockSize) {
                 for (bx in 0 until width step blockSize) {
                     var diff = 0
                     var count = 0
                     for (y in by until minOf(by + blockSize, height) step 4) {
                         for (x in bx until minOf(bx + blockSize, width) step 4) {
-                            val p1 = prev.getPixel(x, y)
-                            val p2 = curr.getPixel(x, y)
+                            val idx = y * width + x
+                            val p1 = prevPixels[idx]
+                            val p2 = currPixels[idx]
                             val dr = kotlin.math.abs(((p1 shr 16) and 0xFF) - ((p2 shr 16) and 0xFF))
                             val dg = kotlin.math.abs(((p1 shr 8) and 0xFF) - ((p2 shr 8) and 0xFF))
                             val db = kotlin.math.abs((p1 and 0xFF) - (p2 and 0xFF))
@@ -584,12 +597,18 @@ class AIDetector @Inject constructor(
             val scanHeight = height / 3
             val scanY = height * 2 / 3
 
+            // 批量读取像素数据，避免逐像素 getPixel() 调用的开销
+            val pixels = IntArray(width * height)
+            bitmap.getPixels(pixels, width, 0, 0, 0, width, height)
+
             var edgeCount = 0
             var edgeY = 0
             for (y in scanY until height - 10 step 2) {
                 for (x in 0 until width step 8) {
-                    val p1 = bitmap.getPixel(x, y)
-                    val p2 = bitmap.getPixel(x, y + 10)
+                    val idx1 = y * width + x
+                    val idx2 = (y + 10) * width + x
+                    val p1 = pixels[idx1]
+                    val p2 = pixels[idx2]
                     val diff = kotlin.math.abs(((p1 shr 16) and 0xFF) - ((p2 shr 16) and 0xFF)) +
                               kotlin.math.abs(((p1 shr 8) and 0xFF) - ((p2 shr 8) and 0xFF)) +
                               kotlin.math.abs((p1 and 0xFF) - (p2 and 0xFF))
@@ -614,6 +633,62 @@ class AIDetector @Inject constructor(
             Timber.w(e, "Edge detection error")
         }
         return results
+    }
+
+    /**
+     * ML Kit Object Detection 回退检测
+     * 当 TFLite 模型不可用时，使用 ML Kit 作为补充检测手段
+     */
+    private suspend fun detectWithMLKit(bitmap: Bitmap): List<DetectedObstacle> {
+        return try {
+            val image = InputImage.fromBitmap(bitmap, 0)
+            val options = ObjectDetectorOptions.Builder()
+                .setDetectorMode(ObjectDetectorOptions.SINGLE_IMAGE_MODE)
+                .enableMultipleObjects()
+                .build()
+
+            val detector = ObjectDetection.getClient(options)
+            val mlKitObstacles = suspendCancellableCoroutine { cont ->
+                detector.process(image)
+                    .addOnSuccessListener { detectedObjects ->
+                        val results = mutableListOf<DetectedObstacle>()
+                        for (obj in detectedObjects) {
+                            val obstacleType = when (obj.classificationCategory) {
+                                com.google.mlkit.vision.objects.DetectedObject.FOOD -> ObstacleType.OBSTACLE
+                                com.google.mlkit.vision.objects.DetectedObject.PERSON -> ObstacleType.PERSON
+                                else -> ObstacleType.OBSTACLE
+                            }
+                            val bounds = obj.boundingBox
+                            val cx = (bounds.left + bounds.right) / 2f
+                            val cy = (bounds.top + bounds.bottom) / 2f
+                            val distance = estimateDistanceFromPosition(cx, cy, bitmap.width, bitmap.height)
+                            results.add(DetectedObstacle(
+                                type = obstacleType,
+                                confidence = if (obj.labels.isNotEmpty()) obj.labels[0].confidence else 0.5f,
+                                distance = distance,
+                                direction = calculateDirection(cx, bitmap.width.toFloat()),
+                                boundingBox = BoundingBox(
+                                    bounds.left.toFloat() / bitmap.width,
+                                    bounds.top.toFloat() / bitmap.height,
+                                    bounds.right.toFloat() / bitmap.width,
+                                    bounds.bottom.toFloat() / bitmap.height
+                                )
+                            ))
+                        }
+                        @Suppress("UNCHECKED_CAST")
+                        (cont as kotlinx.coroutines.CancellableContinuation<List<DetectedObstacle>>).resume(results) {}
+                    }
+                    .addOnFailureListener { e ->
+                        Timber.w(e, "ML Kit detection failed")
+                        @Suppress("UNCHECKED_CAST")
+                        (cont as kotlinx.coroutines.CancellableContinuation<List<DetectedObstacle>>).resume(emptyList()) {}
+                    }
+            }
+            mlKitObstacles
+        } catch (e: Exception) {
+            Timber.w(e, "ML Kit detection error")
+            emptyList()
+        }
     }
 
     private fun estimateDistanceFromPosition(x: Float, y: Float, width: Int, height: Int): Float {
@@ -642,6 +717,7 @@ class AIDetector @Inject constructor(
         calibratedFocalLength = focalLength
     }
 }
+
 
 
 

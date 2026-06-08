@@ -1,4 +1,4 @@
-﻿/**
+/**
  * BlindPath - 视障人士出行辅助应用
  *
  * 文件：ObstacleRepositoryImpl.kt
@@ -117,6 +117,10 @@ class ObstacleRepositoryImpl @Inject constructor(
 
     // 上一帧用于运动检测
     private var previousBitmap: Bitmap? = null
+
+    // 播报去重：记录最近播报的障碍物，避免短时间内重复播报
+    private val lastAnnouncedObstacles = mutableMapOf<String, Long>()  // dedupKey -> lastAnnounceTime
+    private val announceCooldownMs = 10_000L  // 10秒冷却
 
     // 阈值配置
     private val config = DetectionConfig()
@@ -625,6 +629,21 @@ class ObstacleRepositoryImpl @Inject constructor(
     // ==================== 检测结果处理和语音播报 ====================
 
     /**
+     * 判断障碍物是否应该播报（去重+冷却时间）
+     * 相同类型和方向的障碍物在冷却时间内不会重复播报
+     */
+    private fun shouldAnnounce(obstacle: DetectedObstacle): Boolean {
+        val key = obstacle.type.getDeduplicationKey(obstacle.direction)
+        val now = System.currentTimeMillis()
+        val lastTime = lastAnnouncedObstacles[key] ?: 0L
+        if (now - lastTime < announceCooldownMs) return false
+        lastAnnouncedObstacles[key] = now
+        // 清理过期记录（超过30秒的记录）
+        lastAnnouncedObstacles.entries.removeIf { now - it.value > 30_000L }
+        return true
+    }
+
+    /**
      * 处理检测结果
      *
      * 关键修复：
@@ -639,8 +658,11 @@ class ObstacleRepositoryImpl @Inject constructor(
             .sortedByDescending { it.confidence }
             .take(config.maxDetections)
 
+        // 播报去重过滤：仅保留冷却期外的新障碍物用于生成预警
+        val announceableObstacles = filteredObstacles.filter { shouldAnnounce(it) }
+
         // 计算预警级别 - 关键修复：生成 ObstacleAlert 触发语音播报
-        val alert = calculateAlertLevel(filteredObstacles)
+        val alert = calculateAlertLevel(announceableObstacles)
 
         // 更新状态 - ObstacleService 会监听这个状态变化来触发语音播报
         _obstacleState.value = _obstacleState.value.copy(
