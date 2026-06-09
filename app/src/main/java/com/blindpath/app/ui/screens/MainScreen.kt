@@ -651,7 +651,7 @@ private fun PulseVoiceStatus(isListening: Boolean, modifier: Modifier = Modifier
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = if (isListening) Icons.Default.Mic else Icons.Default.SmartToy,
+                imageVector = if (isListening) Icons.Default.Call else Icons.Default.Settings,
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(16.dp)
@@ -691,7 +691,7 @@ private fun DashboardBottomBar(
                 containerColor = if (isObstacleActive) Color(0xFF1E90FF) else Color(0xFF2A2A3E)
             )
         ) {
-            Icon(Icons.Default.Visibility, null, tint = Color.White)
+            Icon(Icons.Default.Home, null, tint = Color.White)
             Spacer(Modifier.width(6.dp))
             Text("环境感知", color = Color.White)
         }
@@ -708,7 +708,7 @@ private fun DashboardBottomBar(
             )
         ) {
             Icon(
-                if (isListening) Icons.Default.Mic else Icons.Default.SmartToy,
+                if (isListening) Icons.Default.Call else Icons.Default.Settings,
                 null,
                 tint = Color.White
             )
@@ -725,7 +725,7 @@ private fun DashboardBottomBar(
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
         ) {
-            Icon(Icons.Default.Emergency, null, tint = Color.White)
+            Icon(Icons.Default.Warning, null, tint = Color.White)
             Spacer(Modifier.width(4.dp))
             Text("SOS", color = Color.White)
         }
@@ -772,7 +772,7 @@ private fun SmartTopBar(
         actions = {
             if (navState.isLocationAvailable) {
                 Icon(
-                    Icons.Default.GpsFixed,
+                    Icons.Default.LocationOn,
                     contentDescription = "GPS信号正常",
                     tint = Color(0xFF4CAF50),
                     modifier = Modifier.size(20.dp).padding(end = 4.dp)
@@ -821,7 +821,7 @@ private fun ObstacleDetectionContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Videocam, null, tint = Color(0xFF1E90FF), modifier = Modifier.size(24.dp))
+                Icon(Icons.Default.Call, null, tint = Color(0xFF1E90FF), modifier = Modifier.size(24.dp))
                 Spacer(Modifier.width(8.dp))
                 Text("环境感知", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
             }
@@ -879,7 +879,7 @@ private fun ObstacleDetectionContent(
                 }
             } else {
                 Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.CameraAlt, null, tint = Color(0xFF666666), modifier = Modifier.size(48.dp))
+                    Icon(Icons.Default.Settings, null, tint = Color(0xFF666666), modifier = Modifier.size(48.dp))
                     Spacer(Modifier.height(8.dp))
                     Text("需要摄像头权限", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF666666))
                     Spacer(Modifier.height(8.dp))
@@ -907,7 +907,7 @@ private fun ObstacleDetectionContent(
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
                 ) {
-                    Icon(Icons.Default.Stop, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("停止环境感知", color = Color.White, fontWeight = FontWeight.Bold)
                 }

@@ -11,7 +11,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Navigation
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -181,7 +182,7 @@ fun NavigationScreen(
                                 modifier = Modifier.fillMaxWidth().height(52.dp),
                                 enabled = destinationText.isNotBlank()
                             ) {
-                                Icon(Icons.Default.Navigation, contentDescription = null)
+                                Icon(Icons.Default.Menu, contentDescription = null)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("开始导航", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                             }
@@ -220,7 +221,7 @@ fun NavigationScreen(
                     Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Navigation, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
+                                Icon(Icons.Default.Menu, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text("第 ${uiState.currentStepIndex + 1}/${uiState.routeSteps.size} 步", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -60,10 +60,10 @@ class MainViewModelTest {
     @Test
     fun `performAction should clear pending action after execution`() = runTest {
         // Given
-        viewModel.setPendingAction("start_obstacle")
+        viewModel.setPendingAction(AppActions.START_OBSTACLE)
 
         // When
-        viewModel.performAction("start_obstacle")
+        viewModel.performAction(AppActions.START_OBSTACLE)
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Then
@@ -73,7 +73,7 @@ class MainViewModelTest {
     @Test
     fun `performAction start_obstacle should set obstacle running`() = runTest {
         // When
-        viewModel.performAction("start_obstacle")
+        viewModel.performAction(AppActions.START_OBSTACLE)
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Then
@@ -83,11 +83,11 @@ class MainViewModelTest {
     @Test
     fun `performAction stop_obstacle should clear obstacle running`() = runTest {
         // Given - 先启动
-        viewModel.performAction("start_obstacle")
+        viewModel.performAction(AppActions.START_OBSTACLE)
         testDispatcher.scheduler.advanceUntilIdle()
 
         // When - 再停止
-        viewModel.performAction("stop_obstacle")
+        viewModel.performAction(AppActions.STOP_OBSTACLE)
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Then
@@ -97,7 +97,7 @@ class MainViewModelTest {
     @Test
     fun `performAction start_navigation should set navigation running`() = runTest {
         // When
-        viewModel.performAction("start_navigation")
+        viewModel.performAction(AppActions.START_NAVIGATION)
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Then
@@ -107,11 +107,11 @@ class MainViewModelTest {
     @Test
     fun `performAction stop_navigation should clear navigation running`() = runTest {
         // Given
-        viewModel.performAction("start_navigation")
+        viewModel.performAction(AppActions.START_NAVIGATION)
         testDispatcher.scheduler.advanceUntilIdle()
 
         // When
-        viewModel.performAction("stop_navigation")
+        viewModel.performAction(AppActions.STOP_NAVIGATION)
         testDispatcher.scheduler.advanceUntilIdle()
 
         // Then

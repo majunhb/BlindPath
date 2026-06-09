@@ -1,22 +1,28 @@
 pluginManagement {
     repositories {
+        mavenLocal()
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
+        maven { url = uri("https://dl.google.com/dl/android/maven2/") }
         google()
         mavenCentral()
         gradlePluginPortal()
+        maven { url = uri("https://maven.aliyun.com/repository/gradle-plugin") }
+        maven { url = uri("https://maven.aliyun.com/repository/google") }
+        maven { url = uri("https://maven.aliyun.com/repository/central") }
     }
 }
 
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        mavenLocal()
+        maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
         google()
         mavenCentral()
-        // 高德地图 SDK Maven 仓库（阿里云镜像）
         maven { url = uri("https://maven.aliyun.com/repository/public") }
         maven { url = uri("https://maven.aliyun.com/repository/google") }
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://jitpack.io") }
-        // 百度语音 SDK Maven 仓库
         maven { url = uri("https://maven.baidu.com/content/repositories/public/") }
     }
 }

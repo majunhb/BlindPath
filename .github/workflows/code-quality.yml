@@ -155,10 +155,8 @@ jobs:
 
       - name: Build for CodeQL
         run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
-        continue-on-error: true
 
       - uses: github/codeql-action/analyze@v3
-        continue-on-error: true
 
   # ============================================================
   # 5. 质量汇总报告 — 所有检查通过后输出摘要
@@ -176,6 +174,6 @@ jobs:
           echo "  Detekt:  ${{ needs.detekt.result }}"
           echo "  ktlint:  ${{ needs.ktlint.result }}"
           echo ""
-          echo "ℹ️ Detekt/Lint/ktlint run in report-only mode."
-          echo "   Download artifacts to review detailed reports."
-          echo "✅ Quality Gate: checks completed (violations logged as artifacts)"
+          echo "ℹ️ Lint/Detekt/ktlint run in report-only mode."
+          echo "   CodeQL security scan runs in blocking mode."
+          echo "✅ Quality Gate: checks completed"

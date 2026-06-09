@@ -11,7 +11,7 @@ kotlin-compiler-extension = "1.5.5"
 
 # Hilt
 hilt = "2.48"
-hilt-navigation-compose = "1.1.0"
+hilt-navigation-compose = "1.2.0"
 
 # KSP
 ksp = "1.9.20-1.0.14"
@@ -27,15 +27,28 @@ lifecycle = "2.6.2"
 # Compose
 compose-bom = "2023.10.01"
 material-icons-extended = "1.5.4"
+material-icons-core = "1.5.4"
 
 # Coroutines
 coroutines = "1.7.3"
 
 # CameraX
-camerax = "1.3.0"
+camerax = "1.3.1"
+
+# AMap (高德地图)
+amap-location-search = "10.1.700_loc6.5.1_sea9.7.4"
+
+# Network
+okhttp = "4.12.0"
+retrofit = "2.9.0"
+gson = "2.10.1"
+
+# Picovoice
+porcupine-android = "3.0.1"
 
 # ML Kit
 mlkit-obj-detection = "17.0.0"
+mlkit-image-labeling = "17.0.7"
 
 # TensorFlow
 tensorflow-lite = "2.13.0"
@@ -83,15 +96,23 @@ lifecycle-service = { group = "androidx.lifecycle", name = "lifecycle-service", 
 lifecycle-process = { group = "androidx.lifecycle", name = "lifecycle-process", version.ref = "lifecycle" }
 lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
+lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
 lifecycle-runtime-testing = { group = "androidx.lifecycle", name = "lifecycle-runtime-testing", version.ref = "lifecycle" }
 
 # Compose
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+compose-ui-geometry = { group = "androidx.compose.ui", name = "ui-geometry" }
+compose-ui-unit = { group = "androidx.compose.ui", name = "ui-unit" }
 compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
 compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "material-icons-extended" }
+compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core", version.ref = "material-icons-core" }
+compose-animation = { group = "androidx.compose.animation", name = "animation" }
+compose-animation-core = { group = "androidx.compose.animation", name = "animation-core" }
+compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
+compose-foundation-layout = { group = "androidx.compose.foundation", name = "foundation-layout" }
 compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
@@ -109,10 +130,12 @@ camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = 
 
 # ML Kit
 mlkit-obj-detection = { group = "com.google.mlkit", name = "object-detection", version.ref = "mlkit-obj-detection" }
+mlkit-image-labeling = { group = "com.google.mlkit", name = "image-labeling", version.ref = "mlkit-image-labeling" }
 
 # TensorFlow
 tensorflow-lite = { group = "org.tensorflow", name = "tensorflow-lite", version.ref = "tensorflow-lite" }
 tensorflow-lite-support = { group = "org.tensorflow", name = "tensorflow-lite-support", version.ref = "tensorflow-lite-support" }
+tensorflow-lite-gpu = { group = "org.tensorflow", name = "tensorflow-lite-gpu", version.ref = "tensorflow-lite" }
 
 # Location
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "play-services-location" }
@@ -133,6 +156,21 @@ hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "hilt-w
 
 # Logging
 timber = { group = "com.jakewharton.timber", name = "timber", version.ref = "timber" }
+
+# AMap (高德地图)
+amap-location-search = { group = "com.amap.api", name = "3dmap-location-search", version.ref = "amap-location-search" }
+
+# Network
+okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }
+retrofit = { group = "com.squareup.retrofit2", name = "retrofit", version.ref = "retrofit" }
+retrofit-converter-gson = { group = "com.squareup.retrofit2", name = "converter-gson", version.ref = "retrofit" }
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+
+# Picovoice
+porcupine-android = { group = "ai.picovoice", name = "porcupine-android", version.ref = "porcupine-android" }
+
+# Coroutines extra
+coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutines" }
 
 # Test
 junit = { group = "junit", name = "junit", version.ref = "junit" }

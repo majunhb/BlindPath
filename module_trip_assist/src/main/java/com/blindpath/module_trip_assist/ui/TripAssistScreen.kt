@@ -16,13 +16,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.VolumeUp
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Directions
-import androidx.compose.material.icons.filled.Accessible
+import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.NavigateBefore
-import androidx.compose.material.icons.filled.NavigateNext
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
@@ -265,7 +263,7 @@ private fun WeatherTabContent(viewModel: TripAssistViewModel) {
                     },
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Icon(Icons.Filled.VolumeUp, contentDescription = null)
+                Icon(Icons.Filled.Notifications, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("获取当前位置天气", fontSize = 16.sp)
             }
@@ -317,7 +315,7 @@ private fun WeatherInfoCard(
                         contentDescription = "重新播报天气"
                     }
                 ) {
-                    Icon(Icons.Filled.VolumeUp, contentDescription = null)
+                    Icon(Icons.Filled.Notifications, contentDescription = null)
                 }
             }
 
@@ -487,7 +485,7 @@ private fun RouteTabContent(viewModel: TripAssistViewModel) {
                     containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
-                Icon(Icons.Default.Directions, contentDescription = null)
+                Icon(Icons.Default.List, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("规划路线", fontSize = 16.sp)
             }
@@ -577,7 +575,7 @@ private fun RouteOverviewCard(
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
                 IconButton(onClick = onReplayClick) {
-                    Icon(Icons.Filled.VolumeUp, contentDescription = "重新播报")
+                    Icon(Icons.Filled.Notifications, contentDescription = "重新播报")
                 }
             }
 
@@ -635,7 +633,7 @@ private fun StepNavigationCard(
             enabled = currentStepIndex > 0,
             modifier = Modifier.semantics { contentDescription = "上一步" }
         ) {
-            Icon(Icons.Default.NavigateBefore, contentDescription = null)
+            Icon(Icons.Default.ArrowBack, contentDescription = null)
             Spacer(modifier = Modifier.width(4.dp))
             Text("上一步")
         }
@@ -653,7 +651,7 @@ private fun StepNavigationCard(
         ) {
             Text("下一步")
             Spacer(modifier = Modifier.width(4.dp))
-            Icon(Icons.Default.NavigateNext, contentDescription = null)
+            Icon(Icons.Default.ArrowForward, contentDescription = null)
         }
     }
 }
@@ -754,7 +752,7 @@ private fun FacilityTabContent(viewModel: TripAssistViewModel) {
                     containerColor = MaterialTheme.colorScheme.secondary
                 )
             ) {
-                Icon(Icons.Default.Accessible, contentDescription = null)
+                Icon(Icons.Default.Person, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("搜索附近设施", fontSize = 16.sp)
             }

@@ -54,3 +54,7 @@ lint/tmp/
 
 # Mac
 .DS_Store
+
+# API credentials (use local.properties or CI secrets instead)
+**/credentials.properties
+credentials.properties

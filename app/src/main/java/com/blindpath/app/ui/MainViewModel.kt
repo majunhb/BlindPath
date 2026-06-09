@@ -51,10 +51,10 @@ class MainViewModel @Inject constructor(
     fun performAction(action: String) {
         viewModelScope.launch {
             when (action) {
-                "start_obstacle" -> startObstacleService()
-                "start_navigation" -> startNavigationService()
-                "stop_obstacle" -> stopObstacleService()
-                "stop_navigation" -> stopNavigationService()
+                AppActions.START_OBSTACLE -> startObstacleService()
+                AppActions.START_NAVIGATION -> startNavigationService()
+                AppActions.STOP_OBSTACLE -> stopObstacleService()
+                AppActions.STOP_NAVIGATION -> stopNavigationService()
             }
             _uiState.value = _uiState.value.copy(pendingAction = null)
         }

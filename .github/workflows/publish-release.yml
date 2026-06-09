@@ -53,6 +53,14 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
+      - name: Build Release APK (signed)
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
       - name: Get version name
         id: version
         run: |
@@ -89,6 +97,7 @@ jobs:
           prerelease: ${{ github.event.inputs.prerelease || false }}
           files: |
             app/build/outputs/apk/debug/BlindPath-v${{ steps.version.outputs.version }}-debug.apk
+            app/build/outputs/apk/release/BlindPath-v${{ steps.version.outputs.version }}-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

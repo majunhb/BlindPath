@@ -46,6 +46,7 @@ dependencies {
     
     // Core
     implementation(libs.core.ktx)
+    implementation("androidx.annotation:annotation:1.7.0")
     implementation(libs.lifecycle.runtime.ktx)
 
     // Coroutines
@@ -56,7 +57,13 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.ui.graphics)
+    implementation(libs.compose.ui.geometry)
+    implementation(libs.compose.foundation)
+    implementation(libs.compose.foundation.layout)
+    implementation(libs.compose.animation)
+    implementation(libs.compose.animation.core)
     implementation(libs.compose.material3)
+    implementation(libs.compose.ui.unit)
     
     // Logging
     implementation(libs.timber)
