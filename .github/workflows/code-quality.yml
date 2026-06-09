@@ -169,6 +169,8 @@ jobs:
         run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
 
       - uses: github/codeql-action/analyze@v3
+        with:
+          token: ${{ secrets.GH_PAT }}
 
   # ============================================================
   # 5. 质量汇总报告 — 所有检查通过后输出摘要
