@@ -164,13 +164,15 @@ class ObstacleRepositoryImpl @Inject constructor(
                 Timber.w("ObstacleRepository: AI model not available, using assisted detection")
                 _obstacleState.value = _obstacleState.value.copy(
                     isModelLoaded = false,
-                    lastError = null  // 不视为错误，辅助检测仍可用
+                    isModelInitComplete = false,  // 未完成，等后面的 copy 统一设置
+                    lastError = null
                 )
                 // 不返回 Error，允许继续使用辅助检测
             }
 
             _obstacleState.value = _obstacleState.value.copy(
                 isModelLoaded = aiDetector.isModelLoaded(),
+                isModelInitComplete = true,
                 isCameraReady = false,
                 lastError = null
             )
@@ -181,6 +183,7 @@ class ObstacleRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             Timber.e(e, "ObstacleRepository: Initialization failed")
             _obstacleState.value = _obstacleState.value.copy(
+                isModelInitComplete = true,
                 lastError = "初始化失败: ${e.message}"
             )
             Result.Error(message = e.message ?: "初始化失败")
@@ -257,6 +260,7 @@ class ObstacleRepositoryImpl @Inject constructor(
                 _obstacleState.value = ObstacleState(
                     isRunning = false,
                     isModelLoaded = _obstacleState.value.isModelLoaded,
+                    isModelInitComplete = _obstacleState.value.isModelInitComplete,
                     fps = 0
                 )
 
@@ -517,56 +521,46 @@ class ObstacleRepositoryImpl @Inject constructor(
         }
     }
 
-    /**
-     * 将 ImageProxy 转换为 Bitmap
-     */
     private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
         return try {
+            // 使用更快的 Bitmap 创建方式，避免 JPEG 压缩/解压的往返开销
+            val width = imageProxy.width
+            val height = imageProxy.height
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
             val yBuffer = imageProxy.planes[0].buffer
             val uBuffer = imageProxy.planes[1].buffer
             val vBuffer = imageProxy.planes[2].buffer
 
-            val ySize = yBuffer.remaining()
-            val uSize = uBuffer.remaining()
-            val vSize = vBuffer.remaining()
+            val yRowStride = imageProxy.planes[0].rowStride
+            val uvRowStride = imageProxy.planes[1].rowStride
+            val uvPixelStride = imageProxy.planes[1].pixelStride
 
-            val nv21 = ByteArray(ySize + uSize + vSize)
+            val pixels = IntArray(width * height)
+            for (y in 0 until height) {
+                val yRow = y * yRowStride
+                val uvRow = (y / 2) * uvRowStride
+                for (x in 0 until width) {
+                    val yVal = (yBuffer[yRow + x].toInt() and 0xFF)
+                    val uvPos = uvRow + (x / 2) * uvPixelStride
+                    val uVal = (uBuffer[uvPos].toInt() and 0xFF) - 128
+                    val vVal = (vBuffer[uvPos].toInt() and 0xFF) - 128
 
-            yBuffer.get(nv21, 0, ySize)
-            vBuffer.get(nv21, ySize, vSize)
-            uBuffer.get(nv21, ySize + vSize, uSize)
+                    // YUV to RGB
+                    var r = yVal + (1.402 * vVal)
+                    var g = yVal - (0.344 * uVal) - (0.714 * vVal)
+                    var b = yVal + (1.772 * uVal)
+                    r = r.coerceIn(0.0, 255.0)
+                    g = g.coerceIn(0.0, 255.0)
+                    b = b.coerceIn(0.0, 255.0)
 
-            val yuvImage = YuvImage(
-                nv21,
-                ImageFormat.NV21,
-                imageProxy.width,
-                imageProxy.height,
-                null
-            )
-
-            val out = ByteArrayOutputStream()
-            yuvImage.compressToJpeg(
-                Rect(0, 0, imageProxy.width, imageProxy.height),
-                85, // JPEG 质量
-                out
-            )
-
-            val imageBytes = out.toByteArray()
-            val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-                ?: return null
-
-            // 旋转 Bitmap 以匹配图像旋转
-            val rotationDegrees = imageProxy.imageInfo.rotationDegrees
-            if (rotationDegrees != 0) {
-                val matrix = Matrix()
-                matrix.postRotate(rotationDegrees.toFloat())
-                Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-            } else {
-                bitmap
+                    pixels[y * width + x] = (0xFF shl 24) or (r.toInt() shl 16) or (g.toInt() shl 8) or b.toInt()
+                }
             }
-
+            bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+            bitmap
         } catch (e: Exception) {
-            Timber.e(e, "ObstacleRepository: Failed to convert image to bitmap")
+            Timber.e(e, "Failed to convert image to bitmap")
             null
         }
     }
@@ -703,7 +697,15 @@ class ObstacleRepositoryImpl @Inject constructor(
      */
     private fun calculateAlertLevel(obstacles: List<DetectedObstacle>): ObstacleAlert? {
         if (obstacles.isEmpty()) {
-            // 关键修复：空列表返回 SAFE，而不是 UNKNOWN
+            // 模型未加载时，不应报告"安全"（虚假安全感）
+            if (!_obstacleState.value.isModelLoaded) {
+                return ObstacleAlert(
+                    level = AlertLevel.UNKNOWN,
+                    description = "AI模型未加载，检测能力有限，请谨慎通行",
+                    distance = Float.MAX_VALUE,
+                    direction = ""
+                )
+            }
             return ObstacleAlert(
                 level = AlertLevel.SAFE,
                 description = "前方道路畅通，未检测到障碍物",

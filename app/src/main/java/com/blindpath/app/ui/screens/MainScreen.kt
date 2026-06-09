@@ -896,7 +896,15 @@ private fun ObstacleDetectionContent(
             Column(Modifier.padding(12.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     InfoChip("状态", if (obstacleState.isRunning) "检测中" else "待机", if (obstacleState.isRunning) Color(0xFF4CAF50) else Color(0xFF666666))
-                    InfoChip("模型", if (obstacleState.isModelLoaded) "已加载" else "加载中...", if (obstacleState.isModelLoaded) Color(0xFF4CAF50) else Color(0xFFFFB347))
+                    InfoChip("模型", when {
+                        obstacleState.isModelLoaded -> "已加载"
+                        !obstacleState.isModelInitComplete -> "加载中..."
+                        else -> "未加载"
+                    }, when {
+                        obstacleState.isModelLoaded -> Color(0xFF4CAF50)
+                        !obstacleState.isModelInitComplete -> Color(0xFFFFB347)
+                        else -> Color(0xFFFF5252)
+                    })
                     InfoChip("障碍物", if (obstacleCount > 0) "$obstacleCount 个" else "无", if (obstacleCount > 0) Color(0xFFFF9800) else Color(0xFF4CAF50))
                     InfoChip("FPS", "${obstacleState.fps}", Color(0xFF1E90FF))
                 }

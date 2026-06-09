@@ -487,6 +487,7 @@ data class ObstacleState(
     val isRunning: Boolean = false,
     val isCameraReady: Boolean = false,
     val isModelLoaded: Boolean = false,
+    val isModelInitComplete: Boolean = false,  // 初始化完成（模型加载成功或失败后都为 true）
     val currentAlert: com.blindpath.base.common.ObstacleAlert? = null,
     val detectedObstacles: List<DetectedObstacle> = emptyList(),
     val sceneRecognition: SceneRecognitionResult? = null,
