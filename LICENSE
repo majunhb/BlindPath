@@ -1,0 +1,31 @@
+BlindPath Software License
+
+Copyright (c) 2026 BlindPath Team. All rights reserved.
+
+1. SOURCE CODE
+   The source code in this repository is proprietary and confidential.
+   Unauthorized access, copying, distribution, or modification is strictly
+   prohibited. This repository is private and accessible only to authorized
+   team members.
+
+2. APPLICATION DISTRIBUTION
+   The compiled application (APK) may be distributed through official channels
+   (app stores, official website) for end-user download and use. End users
+   are granted a limited, non-exclusive, non-transferable license to use the
+   application for personal, non-commercial purposes.
+
+3. THIRD-PARTY COMPONENTS
+   This software incorporates third-party libraries and SDKs subject to their
+   respective licenses. Notable components include:
+   - YOLOv8 object detection model (AGPL-3.0)
+   - Baidu Speech SDK (proprietary, used under license)
+   - iFLYTEK AIKit (proprietary, used under license)
+   - AndroidX / Jetpack libraries (Apache-2.0)
+
+4. DISCLAIMER
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+5. CONTACT
+   For licensing inquiries: legal@blindpath.app
