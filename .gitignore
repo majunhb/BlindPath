@@ -65,3 +65,12 @@ secrets.properties
 
 # 高德地图 API Key（在 AndroidManifest.xml 中）
 # 注意：AndroidManifest.xml 中的 API Key 也需要通过 CI Secrets 注入
+
+# CI 触发标记
+.trigger_marker
+
+# 二进制文档
+*.docx
+
+# OS files
+Thumbs.db
