@@ -1,8 +1,8 @@
 plugins {
-    id("com.android.library")
+    alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt.android)
-    id("com.google.devtools.ksp")
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -43,7 +43,7 @@ dependencies {
     
     // Location
     implementation(libs.play.services.location)
-    implementation("com.amap.api:3dmap-location-search:10.1.700_loc6.5.1_sea9.7.4")
+    implementation(libs.amap.location.search)
 
     // Timber
     implementation(libs.timber)

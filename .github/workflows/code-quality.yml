@@ -1,4 +1,4 @@
-name: Code Quality
+﻿name: Code Quality
 
 on:
   push:
@@ -35,7 +35,7 @@ jobs:
 
       - name: Run Android Lint
         run: ./gradlew lintDebug --no-daemon --continue
-        continue-on-error: true  # 历史遗留 lint 警告较多，报告模式，不阻断 CI
+        # 移除容错模式：Lint 检查已收紧，违规必须修复
 
       - name: Upload Lint Reports
         uses: actions/upload-artifact@v4
@@ -68,7 +68,7 @@ jobs:
         run: |
           ./gradlew detekt --no-daemon --continue
           echo "Detekt analysis completed"
-        continue-on-error: true  # 历史遗留违规较多，报告模式运行，不阻断 CI
+        # 移除容错模式：Detekt 检查已收紧，违规必须修复
 
       - name: Upload Detekt Reports
         uses: actions/upload-artifact@v4
@@ -109,7 +109,7 @@ jobs:
 
       - name: Run ktlint Check
         run: ./gradlew ktlintCheck --no-daemon --continue
-        continue-on-error: true  # 历史遗留格式问题较多，报告模式，不阻断 CI
+        # 移除容错模式：ktlint 检查已收紧，格式问题必须修复
 
       - name: Upload ktlint Reports
         uses: actions/upload-artifact@v4
