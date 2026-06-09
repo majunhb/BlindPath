@@ -26,26 +26,58 @@ jobs:
           
       - name: Download YOLOv8n
         run: |
+          echo "Downloading YOLOv8n..."
           wget -q https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt -O yolov8n.pt
+          ls -la yolov8n.pt
           
       - name: Convert to TFLite
         run: |
+          echo "Converting to TFLite..."
           python << 'PYEOF'
+          import os
+          os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+          
           from ultralytics import YOLO
+          import torch
+          
+          print(f"Torch version: {torch.__version__}")
+          print(f"Loading model...")
+          
           model = YOLO('yolov8n.pt')
-          model.export(format='tflite')
+          print("Model loaded, exporting...")
+          
+          # Export to TFLite
+          result = model.export(format='tflite')
+          print(f"Export result: {result}")
+          
+          # Rename if needed
+          if os.path.exists('yolov8n.tflite'):
+              print(f"Model size: {os.path.getsize('yolov8n.tflite') / 1024 / 1024:.2f} MB")
+          else:
+              print("Warning: yolov8n.tflite not found!")
+              import glob
+              print("Files:", glob.glob('*.tflite'))
           PYEOF
           
+      - name: Check model
+        run: |
+          ls -la *.tflite 2>/dev/null || echo "No tflite file found"
+          
       - name: Upload model artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: yolov8n-tflite
-          path: yolov8n.tflite
+          path: |
+            yolov8n.tflite
+            yolov8n.pt
+          retention-days: 1
           
       - name: Upload to Release
-        if: github.ref == 'refs/heads/main'
+        if: success() && github.ref == 'refs/heads/main'
         run: |
-          gh release view models || gh release create models --title "AI Models" --notes "YOLOv8n TFLite model"
-          gh release upload models yolov8n.tflite --clobber
+          # Create or update release
+          gh release view models 2>/dev/null || gh release create models --title "AI Models" --notes "YOLOv8n TFLite model"
+          gh release upload models yolov8n.tflite --clobber || echo "Upload skipped"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
