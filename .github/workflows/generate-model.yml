@@ -2,11 +2,6 @@ name: Generate TFLite Model
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - '.github/workflows/generate-model.yml'
 
 jobs:
   generate:
@@ -24,7 +19,7 @@ jobs:
           
       - name: Install dependencies
         run: |
-          pip install ultralytics torch --quiet
+          pip install ultralytics torch tensorflow-cpu --quiet
           
       - name: Download YOLOv8n
         run: |
