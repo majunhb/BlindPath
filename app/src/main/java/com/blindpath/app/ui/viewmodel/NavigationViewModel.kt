@@ -1,4 +1,4 @@
-﻿package com.blindpath.app.ui.viewmodel
+package com.blindpath.app.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -66,10 +66,26 @@ class NavigationViewModel @Inject constructor(
                     }
                 }
 
-                // 偏航检测时播报
+                // 偏航检测时播报并重新规划
                 if (state.isOffRoute && !prevState.isOffRoute) {
                     _announcement.value = "您已偏离路线，正在重新规划..."
                     voiceRepository.announce("您已偏离路线，正在重新规划", VoiceType.SYSTEM_STATUS)
+                    // 真正重新规划路线
+                    viewModelScope.launch {
+                        val currentLocation = navigationRepository.getCurrentLocation()
+                        val destination = state.destinationPoint
+                        if (currentLocation != null && destination != null) {
+                            val result = navigationRepository.planRoute(
+                                currentLocation.latitude, currentLocation.longitude,
+                                destination.latitude, destination.longitude
+                            )
+                            if (result is Result.Success) {
+                                voiceRepository.announce("路线已重新规划，请按新路线行走", VoiceType.NAVIGATION_PROGRESS)
+                            } else {
+                                voiceRepository.announce("重新规划失败，请检查网络或位置", VoiceType.SYSTEM_STATUS)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -139,6 +155,12 @@ class NavigationViewModel @Inject constructor(
             navigationRepository.stopNavigation()
             navigationRepository.clearDestination()
             voiceRepository.announce("导航已取消", VoiceType.SYSTEM_STATUS)
+        }
+    }
+
+    fun nextStep() {
+        viewModelScope.launch {
+            navigationRepository.advanceToNextStep()
         }
     }
 

@@ -1,16 +1,16 @@
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.android")
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.hilt.android)
-    id("com.google.devtools.ksp")
+    alias(libs.plugins.ksp)
 }
 
 android {
     namespace = "com.blindpath.module_trip_assist"
-    compileSdk = 34
+    compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        minSdk = 26
+        minSdk = libs.versions.minSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
 
@@ -70,6 +70,8 @@ dependencies {
     implementation(libs.timber)
 
     // 高德地图 SDK（组合包，已包含定位+搜索，Maven Central 可用）
+
+    // 稳定版本 10.1.700，对应定位SDK 6.5.1 + 搜索SDK 9.7.4
     implementation(libs.amap.location.search)
 
     // CameraX - 真实相机预览
@@ -103,10 +105,8 @@ dependencies {
     implementation(libs.compose.ui.graphics)
     implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
-    implementation(libs.compose.material.icons.core)
-    implementation(libs.compose.foundation)
-    implementation(libs.compose.foundation.layout)
-    implementation(libs.compose.ui.unit)
+
+    implementation(libs.compose.material.icons.extended)
 
     // Debug
     debugImplementation(libs.compose.ui.tooling)
@@ -117,6 +117,8 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.coroutines.test)
     testImplementation(libs.arch.core.testing)
+
+    testImplementation(libs.lifecycle.runtime.testing)
 
     // Android Test
     androidTestImplementation(libs.androidx.test.ext.junit)

@@ -1,4 +1,4 @@
-﻿package com.blindpath.module_navigation.domain
+package com.blindpath.module_navigation.domain
 
 import android.location.Location
 import com.blindpath.base.common.Result
@@ -19,4 +19,7 @@ interface NavigationRepository {
     // 路线规划
     suspend fun planRoute(originLat: Double, originLon: Double, destLat: Double, destLon: Double): Result<Boolean>
     suspend fun geocodeDestination(text: String): Result<LatLonPoint>
+
+    // 步进导航
+    suspend fun advanceToNextStep(): Result<Boolean>
 }

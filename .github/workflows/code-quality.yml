@@ -1,4 +1,4 @@
-name: Code Quality
+﻿name: Code Quality
 
 on:
   push:
@@ -34,8 +34,9 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Android Lint
+        continue-on-error: true
         run: ./gradlew lintDebug --no-daemon --continue
-        continue-on-error: true  # 历史遗留 lint 警告较多，报告模式，不阻断 CI
+        # continue-on-error: 项目已有历史lint违规，先报告后逐步修复
 
       - name: Upload Lint Reports
         uses: actions/upload-artifact@v4
@@ -65,10 +66,11 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run Detekt
+        continue-on-error: true
         run: |
           ./gradlew detekt --no-daemon --continue
           echo "Detekt analysis completed"
-        continue-on-error: true  # 历史遗留违规较多，报告模式运行，不阻断 CI
+        # continue-on-error: Detekt未在项目中配置，仅作为报告工具
 
       - name: Upload Detekt Reports
         uses: actions/upload-artifact@v4
@@ -108,8 +110,9 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run ktlint Check
+        continue-on-error: true
         run: ./gradlew ktlintCheck --no-daemon --continue
-        continue-on-error: true  # 历史遗留格式问题较多，报告模式，不阻断 CI
+        # continue-on-error: ktlint未在项目中配置，仅作为报告工具
 
       - name: Upload ktlint Reports
         uses: actions/upload-artifact@v4
@@ -176,4 +179,5 @@ jobs:
           echo ""
           echo "ℹ️ Lint/Detekt/ktlint run in report-only mode."
           echo "   CodeQL security scan runs in blocking mode."
-          echo "✅ Quality Gate: checks completed"
+          echo "   Download artifacts to review detailed reports."
+          echo "✅ Quality Gate: checks completed (violations logged as artifacts)"

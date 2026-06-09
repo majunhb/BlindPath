@@ -1,4 +1,4 @@
-﻿package com.blindpath.module_navigation.data
+package com.blindpath.module_navigation.data
 
 import android.Manifest
 import android.content.Context
@@ -322,30 +322,39 @@ class NavigationRepositoryImpl @Inject constructor(
         val distance = haversineDistance(userLat, userLon, endPoint.latitude, endPoint.longitude)
 
         if (distance < AUTO_ADVANCE_THRESHOLD_METERS) {
-            advanceToNextStep()
+            doAdvanceStep()
             return true
         }
         return false
     }
 
     /**
-     * 推进到下一步
+     * 推进到下一步（内部辅助）
      */
-    private fun advanceToNextStep() {
+    private fun doAdvanceStep(): Boolean {
         val state = _state.value
         if (state.currentStepIndex < state.routeSteps.size - 1) {
             _state.update { it.copy(currentStepIndex = it.currentStepIndex + 1) }
-            Timber.d("Auto advanced to step ${state.currentStepIndex + 1}/${state.routeSteps.size}")
+            Timber.d("Advanced to step ${state.currentStepIndex + 1}/${state.routeSteps.size}")
+            return true
         } else {
-            // 已到达最后一步，导航完成
             _state.update {
-                it.copy(
-                    isRunning = false,
-                    currentStepIndex = it.routeSteps.size
-                )
+                it.copy(isRunning = false, currentStepIndex = it.routeSteps.size)
             }
             Timber.d("Navigation completed - reached destination")
+            return false
         }
+    }
+
+    /**
+     * 推进到下一步（手动步进，接口方法）
+     */
+    override suspend fun advanceToNextStep(): Result<Boolean> {
+        val state = _state.value
+        if (!state.isRunning || !state.isRoutePlanned) {
+            return Result.Error(message = "导航未运行")
+        }
+        return Result.Success(doAdvanceStep())
     }
 
     // ==================== 定位相关 ====================
@@ -607,4 +616,3 @@ class NavigationRepositoryImpl @Inject constructor(
         private const val AUTO_ADVANCE_THRESHOLD_METERS = 20f
     }
 }
-
