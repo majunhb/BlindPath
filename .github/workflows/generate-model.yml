@@ -1,0 +1,51 @@
+name: Generate TFLite Model
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/generate-model.yml'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install dependencies
+        run: |
+          pip install ultralytics torch --quiet
+          
+      - name: Download YOLOv8n
+        run: |
+          wget -q https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt -O yolov8n.pt
+          
+      - name: Convert to TFLite
+        run: |
+          python << 'PYEOF'
+          from ultralytics import YOLO
+          model = YOLO('yolov8n.pt')
+          model.export(format='tflite')
+          PYEOF
+          
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: yolov8n-tflite
+          path: yolov8n.tflite
+          
+      - name: Upload to Release
+        if: github.ref == 'refs/heads/main'
+        run: |
+          gh release view models || gh release create models --title "AI Models" --notes "YOLOv8n TFLite model"
+          gh release upload models yolov8n.tflite --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
