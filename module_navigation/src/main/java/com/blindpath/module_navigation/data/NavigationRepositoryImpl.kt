@@ -352,9 +352,9 @@ class NavigationRepositoryImpl @Inject constructor(
     override suspend fun advanceToNextStep(): Result<Boolean> {
         val state = _state.value
         if (!state.isRunning || !state.isRoutePlanned) {
-            return Result.failure(IllegalStateException("导航未运行"))
+            return Result.Error(message = "导航未运行")
         }
-        return Result.success(doAdvanceStep())
+        return Result.Success(doAdvanceStep())
     }
 
     // ==================== 定位相关 ====================
