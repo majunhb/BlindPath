@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
 
       - uses: actions/setup-java@v4
         with:
@@ -55,6 +57,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
 
       - uses: actions/setup-java@v4
         with:
@@ -99,6 +103,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
 
       - uses: actions/setup-java@v4
         with:
@@ -133,6 +139,8 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
 
       - uses: github/codeql-action/init@v3
         with:
@@ -155,6 +163,7 @@ jobs:
           echo "IFLYTEK_APP_ID=" >> local.properties
           echo "IFLYTEK_API_KEY=" >> local.properties
           echo "IFLYTEK_API_SECRET=" >> local.properties
+          echo "AMAP_API_KEY=" >> local.properties
 
       - name: Build for CodeQL
         run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon

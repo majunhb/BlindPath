@@ -32,6 +32,8 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GH_PAT }}
 
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v4
@@ -50,21 +52,20 @@ jobs:
 
     - name: Setup Android SDK
       if: matrix.language == 'java-kotlin'
-      uses: android-actions/setup-android@v3
+      run: |
+        export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+        echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+        echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
 
-    - name: Create local.properties
+    - name: Grant execute permission
+      if: matrix.language == 'java-kotlin'
+      run: chmod +x gradlew
+
+    - name: Build for CodeQL
       if: matrix.language == 'java-kotlin'
       run: |
-        echo "BAIDU_APP_ID=" > local.properties
-        echo "BAIDU_API_KEY=" >> local.properties
-        echo "BAIDU_SECRET_KEY=" >> local.properties
-        echo "IFLYTEK_APP_ID=" >> local.properties
-        echo "IFLYTEK_API_KEY=" >> local.properties
-        echo "IFLYTEK_API_SECRET=" >> local.properties
-
-    - name: Build for CodeQL (java-kotlin)
-      if: matrix.language == 'java-kotlin'
-      run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+        ./gradlew assembleDebug --no-daemon \
+          -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=512m"
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v4

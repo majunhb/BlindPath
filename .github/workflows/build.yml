@@ -18,6 +18,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.GH_PAT }}
           fetch-depth: 1
           lfs: false
 
@@ -48,33 +49,15 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Inject API credentials
-        run: |
-          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-          echo "BAIDU_APP_ID=${{ secrets.BAIDU_APP_ID }}" >> ~/.gradle/gradle.properties
-          echo "BAIDU_API_KEY=${{ secrets.BAIDU_API_KEY }}" >> ~/.gradle/gradle.properties
-          echo "BAIDU_SECRET_KEY=${{ secrets.BAIDU_SECRET_KEY }}" >> ~/.gradle/gradle.properties
-          echo "IFLYTEK_APP_ID=${{ secrets.IFLYTEK_APP_ID }}" >> ~/.gradle/gradle.properties
-          echo "IFLYTEK_API_KEY=${{ secrets.IFLYTEK_API_KEY }}" >> ~/.gradle/gradle.properties
-          echo "IFLYTEK_API_SECRET=${{ secrets.IFLYTEK_API_SECRET }}" >> ~/.gradle/gradle.properties
-
-      - name: Check AI model
-        run: |
-          MODEL_FILE="app/src/main/assets/yolov8n.tflite"
-          if [ -f "$MODEL_FILE" ]; then
-            FILE_SIZE=$(wc -c < "$MODEL_FILE")
-            echo "Model file size: $FILE_SIZE bytes"
-            if [ "$FILE_SIZE" -lt 1024 ]; then
-              echo "::warning::Model is a Git LFS placeholder."
-            fi
-          fi
-
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --rerun-tasks
+        run: |
+          ./gradlew assembleDebug --no-daemon --rerun-tasks \
+            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=512m"
 
-      - name: Upload Debug APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
-        if: success()
         with:
-          name: app-debug
+          name: debug-apk
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
+          retention-days: 7
