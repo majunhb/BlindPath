@@ -106,6 +106,9 @@ class ObstacleRepositoryImpl @Inject constructor(
     // 检测状态标志
     private val isDetecting = AtomicBoolean(false)
 
+    // 所有输入帧的计数器（用于 FPS 显示）
+    private var totalInputFrames = 0
+
     // 统计
     private var frameCount = 0
     private var lastFpsUpdate = System.currentTimeMillis()
@@ -453,6 +456,7 @@ class ObstacleRepositoryImpl @Inject constructor(
             }
 
             // 跳帧处理 - 关键优化
+            totalInputFrames++  // 统计所有输入帧
             frameSkipCounter++
             if (frameSkipCounter < frameSkipRatio) {
                 imageProxy.close()
@@ -462,9 +466,10 @@ class ObstacleRepositoryImpl @Inject constructor(
 
             // 检查是否有任何检测能力可用
             if (!aiDetector.isModelLoaded() && !aiDetector.isAssistedDetectionEnabled()) {
-                Timber.w("ObstacleRepository: No detection available, skipping frame")
-                imageProxy.close()
-                return
+                // 【修复】强制重试加载/启用辅助检测
+                Timber.w("ObstacleRepository: No model loaded, retrying assisted detection")
+                aiDetector.resetLoadAttempt()
+                // 即使失败，也继续处理（辅助检测应该返回基础结果）
             }
 
             // 转换图像
@@ -584,6 +589,7 @@ class ObstacleRepositoryImpl @Inject constructor(
 
     /**
      * 更新 FPS 计数
+     * 【修复】使用 totalInputFrames 统计输入帧率，更准确地反映摄像头帧率
      */
     private fun updateFps() {
         frameCount++
@@ -591,14 +597,20 @@ class ObstacleRepositoryImpl @Inject constructor(
         val elapsed = now - lastFpsUpdate
 
         if (elapsed >= 1000) {
+            // 显示的是实际处理的帧率，而不是输入帧率
             currentFps = (frameCount * 1000 / elapsed).toInt()
             frameCount = 0
+            
+            // 同时统计输入帧率
+            val inputFps = (totalInputFrames * 1000 / elapsed).toInt()
+            totalInputFrames = 0
+            
             lastFpsUpdate = now
 
             // 动态调整跳帧比以保证 FPS >= 15
             adjustFrameSkip()
 
-            _obstacleState.value = _obstacleState.value.copy(fps = currentFps)
+            _obstacleState.value = _obstacleState.value.copy(fps = if (currentFps > 0) currentFps else inputFps)
         }
     }
 
