@@ -277,6 +277,8 @@ class AIDetector @Inject constructor(
 
             // 距离分段置信度过滤
             val confThreshold = when {
+                // [修复] 墙壁类使用更低阈值
+                obstacleType == ObstacleType.WALL || obstacleType == ObstacleType.GLASS_WALL -> 0.20f
                 distance < ObstacleClassifier.DANGER_DISTANCE -> ObstacleClassifier.CONF_DANGER
                 distance < ObstacleClassifier.WARNING_DISTANCE -> ObstacleClassifier.CONF_WARNING
                 else -> ObstacleClassifier.CONF_IGNORE

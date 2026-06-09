@@ -670,6 +670,13 @@ class ObstacleRepositoryImpl @Inject constructor(
             .sortedByDescending { it.confidence }
             .take(config.maxDetections)
 
+        // [修复] 危险时减少跳帧，避免漏检突发危险
+        val hasDanger = filteredObstacles.any { it.distance < config.dangerDistance }
+        if (hasDanger && frameSkipRatio > 1) {
+            frameSkipRatio = 1
+            Timber.d("ObstacleRepository: Danger detected, reducing frame skip to 1")
+        }
+
         // 关键修复：基于所有检测到的障碍物计算预警，而不是去重后的
         val alert = calculateAlertLevel(filteredObstacles)
 

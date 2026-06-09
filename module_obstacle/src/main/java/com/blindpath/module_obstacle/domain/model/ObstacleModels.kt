@@ -119,6 +119,14 @@ enum class ObstacleType(
     SINK("水槽", 1, 9),
     REFRIGERATOR("冰箱", 1, 9),
 
+    // ============ 建筑结构（对视障人员至关重要） ============
+    WALL("墙壁", 3, 1),
+    GLASS_WALL("玻璃墙", 3, 1),
+    DOOR("门", 2, 3),
+    WINDOW("窗户", 2, 5),
+    RAILING("栏杆", 2, 4),
+    FENCE("围栏", 2, 4),
+
     // ============ 通用障碍物 ============
     OBSTACLE("障碍物", 3, 2),
     UNKNOWN("未知物体", 1, 9);
@@ -265,6 +273,21 @@ enum class ObstacleType(
             TOASTER -> "前方${distanceInt}米有烤面包机"
             SINK -> "前方${distanceInt}米有水槽"
             REFRIGERATOR -> "注意，前方${distanceInt}米有冰箱"
+
+            // 建筑结构
+            WALL -> when {
+                distance < 0.5f -> "危险，前方有墙壁，请立即停下"
+                distance < 1f -> "注意，前方${distanceInt}米有墙壁"
+                else -> "前方${distanceInt}米有墙壁，请绕行"
+            }
+            GLASS_WALL -> when {
+                distance < 1f -> "危险，前方有玻璃墙，请小心"
+                else -> "前方${distanceInt}米有玻璃墙，请注意"
+            }
+            DOOR -> "前方${distanceInt}米有门"
+            WINDOW -> "前方${distanceInt}米有窗户"
+            RAILING -> "前方${distanceInt}米有栏杆"
+            FENCE -> "前方${distanceInt}米有围栏"
 
             // 通用
             OBSTACLE -> "注意，前方${distanceInt}米有障碍物"

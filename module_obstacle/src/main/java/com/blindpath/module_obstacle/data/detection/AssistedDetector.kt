@@ -67,6 +67,8 @@ class AssistedDetector @Inject constructor(
                 }
             }
             results.addAll(detectEdges(bitmap))
+            // [修复] 墙壁检测
+            results.addAll(detectWalls(bitmap))
             // ML Kit 回退检测在单独线程中运行，避免阻塞主流程
             val mlKitLatch = CountDownLatch(1)
             val mlKitResults = mutableListOf<DetectedObstacle>()
@@ -309,6 +311,62 @@ class AssistedDetector @Inject constructor(
             x > centerX + width * 0.2f -> Direction.RIGHT
             else -> Direction.CENTER
         }
+    }
+
+    /**
+     * [修复] 墙壁/垂直平面检测
+     * 检测图像中央区域的垂直边缘密集区（墙壁特征）
+     */
+    fun detectWalls(bitmap: Bitmap): List<DetectedObstacle> {
+        val results = mutableListOf<DetectedObstacle>()
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+            val centerX = width / 2
+            val centerY = height / 2
+            var verticalEdgeCount = 0
+
+            // 批量读取像素数据
+            val pixels = IntArray(width * height)
+            bitmap.getPixels(pixels, width, 0, 0, 0, width, height)
+
+            // 检测中央区域的垂直边缘密度
+            for (x in (centerX - width / 4)..(centerX + width / 4) step 4) {
+                var prevBrightness = -1
+                var colEdges = 0
+                for (y in (centerY - height / 3)..(centerY + height / 3) step 4) {
+                    val idx = y.coerceIn(0, height - 1) * width + x.coerceIn(0, width - 1)
+                    val pixel = pixels[idx]
+                    val brightness = ((pixel shr 16) and 0xFF + (pixel shr 8) and 0xFF + pixel and 0xFF) / 3
+                    if (prevBrightness >= 0 && abs(brightness - prevBrightness) > 25) {
+                        colEdges++
+                    }
+                    prevBrightness = brightness
+                }
+                if (colEdges >= 3) verticalEdgeCount++
+            }
+
+            // 中央区域有大量垂直边缘 → 可能是墙壁
+            if (verticalEdgeCount > width / 16) {
+                val coverageRatio = verticalEdgeCount.toFloat() / (width / 2)
+                val distance = when {
+                    coverageRatio > 0.8f -> 0.3f
+                    coverageRatio > 0.5f -> 1.0f
+                    else -> 2.5f
+                }
+
+                results.add(DetectedObstacle(
+                    type = ObstacleType.WALL,
+                    confidence = minOf(0.6f, 0.3f + coverageRatio * 0.3f),
+                    distance = distance,
+                    direction = Direction.CENTER,
+                    boundingBox = BoundingBox(0.2f, 0.1f, 0.8f, 0.9f)
+                ))
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "Wall detection error")
+        }
+        return results
     }
 
     /**

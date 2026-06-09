@@ -56,6 +56,11 @@ class NavigationService : LifecycleService() {
     private var lastInstructionAnnounceTime = 0L
     private val INSTRUCTION_MIN_INTERVAL_MS = AppConfig.Navigation.INSTRUCTION_MIN_INTERVAL_MS
 
+    // [修复] 位置地址播报节流
+    private var lastLocationAddress: String? = null
+    private var lastAddressAnnounceTime = 0L
+    private val ADDRESS_ANNOUNCE_INTERVAL_MS = 30000L // 30秒
+
     companion object {
         const val ACTION_START = "com.blindpath.action.START_NAVIGATION"
         const val ACTION_STOP = "com.blindpath.action.STOP_NAVIGATION"
@@ -143,6 +148,11 @@ class NavigationService : LifecycleService() {
                             // 信号弱时主动提醒
                             if (quality == GpsQuality.POOR) {
                                 announceWeakSignal()
+                            }
+
+                            // [修复] 播报当前位置街道名称（带节流）
+                            state.currentLocation?.let { location ->
+                                announceLocationAddressIfNeeded(location)
                             }
                         }
                     } catch (e: Exception) {
@@ -245,6 +255,32 @@ class NavigationService : LifecycleService() {
             lifecycleScope.launch {
                 voiceRepository.speakNavigation(instruction)
             }
+        }
+    }
+
+    /**
+     * [修复] 播报当前位置地址信息（街道名称，带节流）
+     */
+    private fun announceLocationAddressIfNeeded(location: com.blindpath.module_navigation.domain.model.LocationInfo) {
+        val now = System.currentTimeMillis()
+        if (now - lastAddressAnnounceTime < ADDRESS_ANNOUNCE_INTERVAL_MS) return
+
+        val addressText = buildString {
+            append("当前位置：")
+            when {
+                location.address.isNotBlank() -> append(location.address)
+                location.poiName.isNotBlank() -> append("附近${location.poiName}")
+                else -> append("未知位置")
+            }
+        }
+
+        if (addressText != lastLocationAddress) {
+            lastLocationAddress = addressText
+            lastAddressAnnounceTime = now
+            lifecycleScope.launch {
+                voiceRepository.speak(addressText, queueMode = true)
+            }
+            Timber.d("Location address announced: $addressText")
         }
     }
 
