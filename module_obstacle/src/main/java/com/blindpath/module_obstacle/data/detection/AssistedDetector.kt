@@ -17,7 +17,6 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.concurrent.thread
 import kotlin.math.abs
-import kotlin.math.minOf
 
 /**
  * 辅助检测器 - 当TFLite模型不可用时提供回退检测能力
