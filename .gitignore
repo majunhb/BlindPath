@@ -54,3 +54,14 @@ lint/tmp/
 
 # Mac
 .DS_Store
+
+# 真实凭证文件（包含敏感密钥）
+**/credentials.properties
+!**/credentials.properties.template
+
+# 本地配置文件
+local.properties
+secrets.properties
+
+# 高德地图 API Key（在 AndroidManifest.xml 中）
+# 注意：AndroidManifest.xml 中的 API Key 也需要通过 CI Secrets 注入

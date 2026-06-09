@@ -342,6 +342,3 @@ fun NavigationScreen(
         else if (isCompleted) Text("done", color = ComposeColor.Green, fontSize = 18.sp)
     }
 }
-
-
-
