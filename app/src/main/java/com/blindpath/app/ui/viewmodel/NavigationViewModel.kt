@@ -1,4 +1,4 @@
-﻿package com.blindpath.app.ui.viewmodel
+package com.blindpath.app.ui.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -73,7 +73,7 @@ class NavigationViewModel @Inject constructor(
                     // 真正重新规划路线
                     viewModelScope.launch {
                         val currentLocation = navigationRepository.getCurrentLocation()
-                        val destination = state.destinationLatLng
+                        val destination = state.destinationPoint
                         if (currentLocation != null && destination != null) {
                             val result = navigationRepository.planRoute(
                                 currentLocation.latitude, currentLocation.longitude,
