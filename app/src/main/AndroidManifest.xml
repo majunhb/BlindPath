@@ -63,10 +63,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.BlindPath">
 
-        <!-- 高德地图 API Key -->
+        <!-- 高德地图 API Key（通过 local.properties 注入） -->
         <meta-data
             android:name="com.amap.api.v2.apikey"
-            android:value="02d60524af990e3835f0b835ab5403e9" />
+            android:value="${AMAP_API_KEY}" />
 
         <!-- 百度语音 SDK 配置 -->
         <meta-data

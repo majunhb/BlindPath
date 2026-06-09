@@ -25,6 +25,9 @@ android {
         manifestPlaceholders["BAIDU_APP_ID"] = project.findProperty("BAIDU_APP_ID") as String? ?: ""
         manifestPlaceholders["BAIDU_API_KEY"] = project.findProperty("BAIDU_API_KEY") as String? ?: ""
         manifestPlaceholders["BAIDU_SECRET_KEY"] = project.findProperty("BAIDU_SECRET_KEY") as String? ?: ""
+
+        // 高德地图 API Key（CI 使用空值，真实环境通过 local.properties 覆盖）
+        manifestPlaceholders["AMAP_API_KEY"] = project.findProperty("AMAP_API_KEY") as String? ?: ""
     }
 
     buildTypes {
