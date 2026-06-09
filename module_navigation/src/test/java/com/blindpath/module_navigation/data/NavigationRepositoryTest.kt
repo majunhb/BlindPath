@@ -1,4 +1,4 @@
-﻿package com.blindpath.module_navigation.data
+package com.blindpath.module_navigation.data
 
 import com.blindpath.base.common.Result
 import com.blindpath.module_navigation.domain.NavigationRepository
@@ -80,25 +80,16 @@ class NavigationRepositoryTest {
 
     @Test
     fun `RouteStep should store instruction correctly`() {
-        val step = RouteStep(
-            instruction = "前方100米左转进入复兴中路",
-            distance = 100,
-            duration = 120,
-            action = "左转"
-        )
+        val step = RouteStep(instruction = "前方100米左转进入复兴中路", distance = "100", duration = "120", type = "左转")
         assertEquals("前方100米左转进入复兴中路", step.instruction)
-        assertEquals(100, step.distance)
-        assertEquals(120, step.duration)
+        assertEquals("100", step.distance)
+        assertEquals("120", step.duration)
     }
 
     @Test
     fun `RouteStep polyline should be optional`() {
-        val step = RouteStep(
-            instruction = "直行",
-            distance = 50,
-            duration = 60
-        )
-        assertNull(step.polyline)
+        val step = RouteStep(instruction = "直行", distance = "50", duration = "60")
+        assertTrue(step.polyline.isEmpty())
         assertEquals("直行", step.instruction)
     }
 
