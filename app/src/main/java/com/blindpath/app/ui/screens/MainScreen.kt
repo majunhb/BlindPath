@@ -407,6 +407,11 @@ private fun SmartDashboard(
         initialValue = NavigationState()
     )
     
+    // 收集障碍物状态供UI使用
+    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
+        initialValue = ObstacleState()
+    )
+    
     var lastVibratedLevel by remember { mutableStateOf<AlertLevel?>(null) }
     LaunchedEffect(obstacleState.currentAlert?.level) {
         val currentLevel = obstacleState.currentAlert?.level ?: AlertLevel.SAFE
