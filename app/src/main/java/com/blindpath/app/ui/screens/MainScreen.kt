@@ -429,9 +429,12 @@ private fun SmartDashboard(
     var lastSceneDescription by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(obstacleState.sceneRecognition) {
         val scene = obstacleState.sceneRecognition
-        if (scene != null && scene.description != lastSceneDescription && obstacleState.isRunning) {
-            lastSceneDescription = scene.description
-            viewModel.speak(scene.description)
+        if (scene != null && obstacleState.isRunning) {
+            val desc = scene.sceneType.getEntryAnnouncement()
+            if (desc.isNotEmpty() && desc != lastSceneDescription) {
+                lastSceneDescription = desc
+                viewModel.speak(desc)
+            }
         }
     }
 
