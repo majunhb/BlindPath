@@ -439,7 +439,10 @@ private fun SmartDashboard(
     }
 
     // [新增] 物品查找语音播报联动
-    val itemSearchState by obstacleRepository.itemSearchState.collectAsStateWithLifecycle()
+    val itemSearchState by obstacleRepository.itemSearchState.collectAsStateWithLifecycle(
+        initialValue = ItemSearchManager.ItemSearchState(),
+        lifecycle = lifecycleOwner.lifecycle
+    )
     var lastItemSearchMsg by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(itemSearchState.searchState, itemSearchState.message) {
         val msg = itemSearchState.message
@@ -450,7 +453,10 @@ private fun SmartDashboard(
     }
 
     // [新增] 公交引导语音播报联动
-    val busGuideState by obstacleRepository.busGuideState.collectAsStateWithLifecycle()
+    val busGuideState by obstacleRepository.busGuideState.collectAsStateWithLifecycle(
+        initialValue = BusGuideManager.BusGuideState(),
+        lifecycle = lifecycleOwner.lifecycle
+    )
     var lastBusGuideMsg by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(busGuideState.guideState, busGuideState.message) {
         val msg = busGuideState.message
