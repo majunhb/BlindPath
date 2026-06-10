@@ -228,6 +228,38 @@ fun MainScreen(
                     viewModel.speak("已返回主界面")
                     true
                 }
+                // [新增] 物品查找指令
+                VoiceCommand.FIND_ITEM -> {
+                    obstacleRepository.startItemSearch()
+                    true
+                }
+                VoiceCommand.STOP_FINDING -> {
+                    obstacleRepository.stopItemSearch()
+                    true
+                }
+                // [新增] 公交引导指令
+                VoiceCommand.FIND_BUS_STOP -> {
+                    obstacleRepository.startBusGuide()
+                    true
+                }
+                VoiceCommand.TAKE_BUS -> {
+                    viewModel.speak("请告诉我您要乘坐的公交线路，或者搜索附近的公交站")
+                    true
+                }
+                VoiceCommand.NEXT_STOP -> {
+                    viewModel.speak("正在为您查询下一站信息")
+                    true
+                }
+                // [新增] 场景询问指令
+                VoiceCommand.WHAT_PLACE -> {
+                    val scene = obstacleState.sceneRecognition
+                    if (scene != null) {
+                        viewModel.speak(scene.sceneType.getEntryAnnouncement())
+                    } else {
+                        viewModel.speak("正在识别当前场所，请稍候")
+                    }
+                    true
+                }
             }
         }
         
