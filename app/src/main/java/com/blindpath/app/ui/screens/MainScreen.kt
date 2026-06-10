@@ -65,8 +65,8 @@ import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.tts.VibrationHelper
 import com.blindpath.base.power.DeviceOrientationCalculator
 import androidx.core.content.ContextCompat
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.ObstacleState
