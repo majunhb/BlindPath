@@ -4,8 +4,8 @@
     <!-- SOS 紧急求助自定义权限（signature 级保护） -->
     <permission
         android:name="com.blindpath.permission.TRIGGER_SOS"
-        android:label="Trigger SOS Emergency"
-        android:description="Allows triggering emergency SOS broadcasts"
+        android:label="@string/permission_trigger_sos_label"
+        android:description="@string/permission_trigger_sos_desc"
         android:protectionLevel="signature" />
 
         <!-- 前台服务权限 -->
