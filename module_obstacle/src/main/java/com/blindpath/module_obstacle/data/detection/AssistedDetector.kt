@@ -423,9 +423,12 @@ class AssistedDetector @Inject constructor(
                     val avgB = sumB / colors.size
                     var variance = 0f
                     for (c in colors) {
-                        val dr = (c shr 16) and 0xFF - avgR
-                        val dg = (c shr 8) and 0xFF - avgG
-                        val db = c and 0xFF - avgB
+                        val r = (c shr 16) and 0xFF
+                        val g = (c shr 8) and 0xFF
+                        val b = c and 0xFF
+                        val dr = r - avgR
+                        val dg = g - avgG
+                        val db = b - avgB
                         variance += dr * dr + dg * dg + db * db
                     }
                     cellVariances[gy][gx] = variance / colors.size
