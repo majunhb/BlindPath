@@ -36,6 +36,14 @@ object AppConfig {
         
         /** 跳帧处理：每 N 帧处理 1 帧 */
         const val FRAME_SKIP = 3
+
+        /** 模型文件 SHA-256 哈希校验（下载后验证完整性） */
+        val MODEL_SHA256: Map<String, String> = mapOf(
+            "yolov8n.tflite" to "",
+            "yolo_indoor.tflite" to "",
+            "yolo_traffic.tflite" to "",
+            "yolo_scene.tflite" to ""
+        )
     }
 
     // ============ 障碍物预警配置 ============
