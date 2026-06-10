@@ -73,6 +73,9 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
     
+    // SQLCipher - 数据库加密
+    implementation(libs.sqlcipher.android)
+    
     // WorkManager
     implementation(libs.work.runtime.ktx)
     implementation(libs.hilt.work)
