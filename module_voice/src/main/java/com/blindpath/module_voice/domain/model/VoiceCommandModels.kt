@@ -11,7 +11,11 @@ import java.text.Normalizer
  * - 紧急救援
  * - 系统设置
  */
-enum class VoiceCommand(val spokenText: String, val description: String) {
+enum class VoiceCommand(
+    val spokenText: String,
+    val description: String,
+    val keywords: List<String> = emptyList()
+) {
     // 障碍物检测
     START_OBSTACLE_DETECTION("开启障碍物检测", "启动障碍物检测功能"),
     STOP_OBSTACLE_DETECTION("关闭障碍物检测", "停止障碍物检测功能"),
@@ -41,7 +45,19 @@ enum class VoiceCommand(val spokenText: String, val description: String) {
     HELP("帮助", "播报帮助信息"),
     REPEAT("重复", "重复上一条播报"),
     CANCEL("取消", "取消当前操作"),
-    BACK("返回", "返回上一界面");
+    BACK("返回", "返回上一界面"),
+
+    // 物品查找
+    FIND_ITEM("找东西", "查找指定物品", listOf("找", "寻找", "帮我找", "在哪里", "在哪")),
+    STOP_FINDING("停止查找", "停止物品查找", listOf("不找了", "停止查找", "取消查找")),
+
+    // 公交引导
+    FIND_BUS_STOP("找公交站", "查找附近公交站", listOf("公交站", "公交车站", "车站在哪")),
+    TAKE_BUS("坐公交", "查询公交线路", listOf("坐几路", "坐公交", "乘公交", "怎么坐车")),
+    NEXT_STOP("下一站", "播报下一站信息", listOf("下一站", "还有几站", "到站了没")),
+
+    // 场景询问
+    WHAT_PLACE("这是什么地方", "识别当前场所", listOf("这是什么地方", "我在哪", "什么地方", "哪里"));
     
     companion object {
         /**
@@ -60,12 +76,27 @@ enum class VoiceCommand(val spokenText: String, val description: String) {
         /**
          * 从语音文本解析指令
          * 
+         * 匹配优先级：
+         * 1. spokenText 精确包含匹配（原有逻辑）
+         * 2. keywords 关键词匹配（新增指令使用）
+         * 
          * 使用 Unicode NFC 规范化确保不同设备的识别结果一致性匹配
          */
         fun fromSpokenText(text: String): VoiceCommand? {
             val normalizedText = normalizeText(text)
             return values().find { command ->
-                normalizedText.contains(normalizeText(command.spokenText))
+                // 优先匹配 spokenText
+                if (normalizedText.contains(normalizeText(command.spokenText))) {
+                    return@find true
+                }
+                // 其次匹配 keywords
+                if (command.keywords.isNotEmpty()) {
+                    command.keywords.any { keyword ->
+                        normalizedText.contains(normalizeText(keyword))
+                    }
+                } else {
+                    false
+                }
             }
         }
         
@@ -126,6 +157,9 @@ object VoiceGuidance {
         地图、关闭地图
         设置、关闭设置
         我在哪里、帮助、重复、取消、返回
+        找东西、停止查找
+        找公交站、坐公交、下一站
+        这是什么地方
     """.trimIndent()
     
     const val OBSTACLE_DETECTION_STARTED = "障碍物检测已开启，正在扫描前方环境"

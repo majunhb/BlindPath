@@ -403,6 +403,72 @@ class SceneClassifier @Inject constructor(
             return Pair(SceneType.KITCHEN_AREA, 0.65f)
         }
 
+        // ===== 增强公共场景识别规则 =====
+
+        // 医院场景：多长椅 + 多行人 + 交通标志
+        val benches = obstacles.count { it.type == ObstacleType.BENCH }
+        if (benches >= 3 && people >= 5) {
+            return Pair(SceneType.HOSPITAL, 0.5f)
+        }
+
+        // 银行场景：沙发 + 盆栽 + 柱子（典型银行大厅布局）
+        if (hasSofa && hasPlant && hasPillar) {
+            return Pair(SceneType.BANK, 0.5f)
+        }
+
+        // 公交站台：长椅 + 交通标志 + 行人
+        if (benches >= 2 && trafficSigns >= 1) {
+            return Pair(SceneType.BUS_STOP, 0.5f)
+        }
+
+        // 餐厅场景：多椅子 + 多桌子 + 杯子/碗
+        if (chairs >= 4 && tables >= 2) {
+            return Pair(SceneType.RESTAURANT_AREA, 0.5f)
+        }
+
+        // 超市场景：多桌子(货架) + 多行人
+        if (tables >= 3 && people >= 3) {
+            return Pair(SceneType.SUPERMARKET, 0.5f)
+        }
+
+        // 学校场景：多行人 + 交通标志 + 长椅
+        if (people >= 5 && trafficSigns >= 2 && benches >= 1) {
+            return Pair(SceneType.SCHOOL, 0.5f)
+        }
+
+        // 公交车内场景：扶手 + 行人（室内环境）
+        val handrails = obstacles.count { it.type == ObstacleType.HANDRAIL }
+        if (handrails >= 2 && people >= 2) {
+            return Pair(SceneType.BUS_INTERIOR, 0.5f)
+        }
+
+        // 电梯场景：门 + 扶手
+        val doors = obstacles.count { it.type == ObstacleType.DOOR }
+        if (doors >= 1 && handrails >= 1) {
+            return Pair(SceneType.ELEVATOR, 0.5f)
+        }
+
+        // ATM场景：电视屏幕(ATM显示屏) + 柱子
+        val tvs = obstacles.count { it.type == ObstacleType.TV }
+        if (tvs >= 1 && hasPillar) {
+            return Pair(SceneType.ATM, 0.5f)
+        }
+
+        // 机场场景：行李箱 + 长椅 + 行人
+        if (luggage >= 3 && benches >= 2 && people >= 3) {
+            return Pair(SceneType.AIRPORT, 0.5f)
+        }
+
+        // 火车站场景：行李箱 + 长椅 + 多行人
+        if (luggage >= 2 && benches >= 2 && people >= 5) {
+            return Pair(SceneType.TRAIN_STATION, 0.5f)
+        }
+
+        // 药店场景：桌子(柜台) + 交通标志(招牌)
+        if (tables >= 1 && trafficSigns >= 2) {
+            return Pair(SceneType.PHARMACY, 0.5f)
+        }
+
         return null
     }
 

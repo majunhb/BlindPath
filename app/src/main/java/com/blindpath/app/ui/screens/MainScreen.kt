@@ -70,6 +70,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.ObstacleState
+import com.blindpath.module_obstacle.domain.ItemSearchManager
+import com.blindpath.module_obstacle.domain.BusGuideManager
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.NavigationState
 import com.blindpath.module_navigation.domain.model.LocationInfo
@@ -430,6 +432,28 @@ private fun SmartDashboard(
         if (scene != null && scene.description != lastSceneDescription && obstacleState.isRunning) {
             lastSceneDescription = scene.description
             viewModel.speak(scene.description)
+        }
+    }
+
+    // [新增] 物品查找语音播报联动
+    val itemSearchState by obstacleRepository.itemSearchState.collectAsStateWithLifecycle()
+    var lastItemSearchMsg by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(itemSearchState.searchState, itemSearchState.message) {
+        val msg = itemSearchState.message
+        if (msg != null && msg != lastItemSearchMsg) {
+            lastItemSearchMsg = msg
+            viewModel.speak(msg)
+        }
+    }
+
+    // [新增] 公交引导语音播报联动
+    val busGuideState by obstacleRepository.busGuideState.collectAsStateWithLifecycle()
+    var lastBusGuideMsg by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(busGuideState.guideState, busGuideState.message) {
+        val msg = busGuideState.message
+        if (msg != null && msg != lastBusGuideMsg) {
+            lastBusGuideMsg = msg
+            viewModel.speak(msg)
         }
     }
     

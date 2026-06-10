@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.Flow
 
 interface ObstacleRepository {
     val obstacleState: Flow<ObstacleState>
+    val itemSearchState: Flow<com.blindpath.module_obstacle.domain.ItemSearchManager.ItemSearchState>
+    val busGuideState: Flow<com.blindpath.module_obstacle.domain.BusGuideManager.BusGuideState>
     suspend fun initialize(): Result<Boolean>
     suspend fun startDetection(): Result<Boolean>
     suspend fun stopDetection(): Result<Boolean>
@@ -23,6 +25,12 @@ interface ObstacleRepository {
     fun setLifecycleOwner(owner: LifecycleOwner)
     suspend fun setPerceptionMode(mode: PerceptionMode): Result<Boolean>
     fun getCurrentPerceptionMode(): PerceptionMode
+    fun startItemSearch()
+    fun setItemTarget(spokenName: String): Boolean
+    fun stopItemSearch()
+    fun continueItemSearch()
+    fun startBusGuide()
+    fun stopBusGuide()
     fun getAlertLevel(distance: Float): AlertLevel {
         return when {
             distance < 0.5f -> AlertLevel.DANGER

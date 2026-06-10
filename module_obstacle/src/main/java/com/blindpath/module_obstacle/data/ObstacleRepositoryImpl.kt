@@ -42,6 +42,8 @@ import com.blindpath.base.common.Result
 import com.blindpath.base.config.AppConfig
 import com.blindpath.module_obstacle.data.detection.AIDetector
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
+import com.blindpath.module_obstacle.domain.BusGuideManager
+import com.blindpath.module_obstacle.domain.ItemSearchManager
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_obstacle.domain.model.ObstacleType
@@ -79,13 +81,17 @@ import javax.inject.Singleton
 class ObstacleRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val aiDetector: AIDetector,
-    private val sceneClassifier: SceneClassifier
+    private val sceneClassifier: SceneClassifier,
+    private val itemSearchManager: ItemSearchManager,
+    private val busGuideManager: BusGuideManager
 ) : ObstacleRepository {
 
     // ==================== 状态管理 ====================
 
     private val _obstacleState = MutableStateFlow(ObstacleState())
     override val obstacleState: StateFlow<ObstacleState> = _obstacleState.asStateFlow()
+    override val itemSearchState = itemSearchManager.state
+    override val busGuideState = busGuideManager.state
 
     // 协程作用域
     private val repositoryScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -329,6 +335,16 @@ class ObstacleRepositoryImpl @Inject constructor(
     override fun getCurrentPerceptionMode(): PerceptionMode {
         return aiDetector.getCurrentMode()
     }
+
+    // ============ 物品查找委托方法 ============
+    override fun startItemSearch() = itemSearchManager.startSearch()
+    override fun setItemTarget(spokenName: String) = itemSearchManager.setTarget(spokenName)
+    override fun stopItemSearch() = itemSearchManager.stopSearch()
+    override fun continueItemSearch() = itemSearchManager.continueSearch()
+
+    // ============ 公交引导委托方法 ============
+    override fun startBusGuide() = busGuideManager.startSearchBusStop()
+    override fun stopBusGuide() = busGuideManager.stopGuide()
 
     /**
      * 处理单帧图像
@@ -679,6 +695,12 @@ class ObstacleRepositoryImpl @Inject constructor(
             detectedObstacles = filteredObstacles,
             currentAlert = alert
         )
+
+        // [集成] 物品查找检查
+        itemSearchManager.checkDetectionResult(filteredObstacles)
+
+        // [集成] 公交引导检查
+        busGuideManager.checkDetectionResult(filteredObstacles)
 
         // 日志输出（调试用）
         if (filteredObstacles.isNotEmpty()) {

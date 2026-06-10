@@ -387,7 +387,8 @@ data class AlertInfo(
  */
 enum class SceneType(
     val chineseName: String,
-    val description: String
+    val description: String,
+    val indicatorTypes: Set<ObstacleType> = emptySet()
 ) {
     // ===== 室外场景 =====
     SIDEWALK("人行道", "人行道区域"),
@@ -429,6 +430,26 @@ enum class SceneType(
     LIBRARY_AREA("图书馆/书店", "图书馆或书店区域"),
     KITCHEN_AREA("厨房区域", "厨房或备餐区域"),
 
+    // ===== 大型公共场景（扩展）=====
+    HOSPITAL("医院", "医院区域，请注意无障碍通道", setOf(ObstacleType.BENCH, ObstacleType.TRAFFIC_SIGN, ObstacleType.OBSTACLE)),
+    BANK("银行", "银行区域，注意台阶和门", setOf(ObstacleType.BENCH, ObstacleType.TABLE, ObstacleType.PILLAR)),
+    AIRPORT("机场", "机场航站楼，注意行李和指示牌", setOf(ObstacleType.SUITCASE, ObstacleType.BENCH, ObstacleType.TRAFFIC_SIGN)),
+    TRAIN_STATION("火车站", "火车站区域，注意台阶和人群", setOf(ObstacleType.BENCH, ObstacleType.SUITCASE, ObstacleType.PERSON)),
+    BUS_TERMINAL("汽车客运站", "汽车客运站区域", setOf(ObstacleType.BENCH, ObstacleType.SUITCASE, ObstacleType.BUS)),
+    DOCK("码头", "码头区域，注意水边安全", setOf(ObstacleType.BENCH, ObstacleType.RAILING)),
+    SCHOOL("学校", "学校区域，注意学生和交通", setOf(ObstacleType.PERSON, ObstacleType.TRAFFIC_SIGN, ObstacleType.BENCH)),
+    SUPERMARKET("超市", "超市区域，注意货架和地面", setOf(ObstacleType.TABLE, ObstacleType.PERSON)),
+    PHARMACY("药店", "药店区域", setOf(ObstacleType.TABLE, ObstacleType.TRAFFIC_SIGN)),
+    RESTAURANT_AREA("餐厅", "餐厅区域，注意桌椅和地面", setOf(ObstacleType.CHAIR, ObstacleType.TABLE, ObstacleType.CUP)),
+
+    // ===== 公交相关场景 =====
+    BUS_STOP("公交站台", "公交站台，注意车辆和台阶", setOf(ObstacleType.BENCH, ObstacleType.TRAFFIC_SIGN, ObstacleType.PERSON)),
+    BUS_INTERIOR("公交车内", "公交车内，注意扶手和台阶", setOf(ObstacleType.HANDRAIL, ObstacleType.PERSON)),
+
+    // ===== 电梯/自助设备 =====
+    ELEVATOR("电梯", "电梯区域，注意门和地面高度差", setOf(ObstacleType.DOOR, ObstacleType.OBSTACLE)),
+    ATM("ATM机", "ATM机区域", setOf(ObstacleType.TV, ObstacleType.PILLAR)),
+
     UNKNOWN("未知", "未识别场景");
 
     /**
@@ -466,6 +487,20 @@ enum class SceneType(
             APPLIANCE_AREA -> "进入电器区域"
             LIBRARY_AREA -> "进入图书馆或书店"
             KITCHEN_AREA -> "进入厨房区域，注意尖锐物品"
+            HOSPITAL -> "进入医院区域，请注意无障碍通道"
+            BANK -> "进入银行区域，注意台阶和门"
+            AIRPORT -> "进入机场航站楼，注意行李和指示牌"
+            TRAIN_STATION -> "进入火车站区域，注意台阶和人群"
+            BUS_TERMINAL -> "进入汽车客运站区域"
+            DOCK -> "进入码头区域，注意水边安全"
+            SCHOOL -> "进入学校区域，注意学生和交通"
+            SUPERMARKET -> "进入超市区域，注意货架和地面"
+            PHARMACY -> "进入药店区域"
+            RESTAURANT_AREA -> "进入餐厅区域，注意桌椅和地面"
+            BUS_STOP -> "到达公交站台，注意车辆和台阶"
+            BUS_INTERIOR -> "在公交车内，注意扶手和台阶"
+            ELEVATOR -> "到达电梯区域，注意门和地面高度差"
+            ATM -> "到达ATM机区域"
             UNKNOWN -> ""
         }
     }
