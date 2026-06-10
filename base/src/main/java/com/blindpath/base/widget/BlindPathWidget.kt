@@ -109,9 +109,9 @@ class BlindPathWidget : AppWidgetProvider() {
     }
     
     private fun triggerSos(context: Context) {
-        // 发送 SOS 广播
+        // 发送 SOS 广播，要求接收者拥有 TRIGGER_SOS 权限
         val sosIntent = Intent("com.blindpath.action.TRIGGER_SOS")
-        context.sendBroadcast(sosIntent)
+        context.sendBroadcast(sosIntent, "com.blindpath.permission.TRIGGER_SOS")
     }
     
     private fun startNavigationActivity(context: Context) {

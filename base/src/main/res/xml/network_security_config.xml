@@ -1,19 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- 允许明文传输（用于开发环境） -->
-    <base-config cleartextTrafficPermitted="true">
+    <!-- P0-4 修复：禁用明文传输，所有网络请求必须使用 HTTPS -->
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>
     </base-config>
-    
-    <!-- 生产环境应使用更严格的配置 -->
-    <!--
-    <domain-config>
-        <domain includeSubdomains="true">your-api-domain.com</domain>
-        <trust-anchors>
-            <certificates src="system" />
-        </trust-anchors>
-    </domain-config>
-    -->
 </network-security-config>

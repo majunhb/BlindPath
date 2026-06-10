@@ -230,6 +230,21 @@ class ModelManager @Inject constructor(
     }
 
     /**
+     * 计算文件的SHA-256哈希
+     */
+    private fun calculateSha256(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(8192)
+            var read: Int
+            while (input.read(buffer).also { read = it } > 0) {
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
      * 下载单个模型文件
      */
     private suspend fun downloadModel(url: String, fileName: String): File? {
@@ -255,6 +270,21 @@ class ModelManager @Inject constructor(
                         input.copyTo(output)
                     }
                 }
+
+                // SHA-256 校验
+                val expectedHash = AppConfig.AIDetection.MODEL_SHA256[fileName]
+                if (!expectedHash.isNullOrBlank()) {
+                    val actualHash = calculateSha256(outputFile)
+                    if (actualHash != expectedHash) {
+                        Timber.e("SHA-256 mismatch for $fileName: expected=$expectedHash, actual=$actualHash")
+                        outputFile.delete()
+                        return@withContext null
+                    }
+                    Timber.d("SHA-256 verified for $fileName")
+                } else {
+                    Timber.w("No SHA-256 hash configured for $fileName, skipping verification")
+                }
+
                 outputFile
             } catch (e: Exception) {
                 Timber.e(e, "Download failed")

@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- SOS 紧急求助自定义权限（signature 级保护） -->
+    <permission
+        android:name="com.blindpath.permission.TRIGGER_SOS"
+        android:label="Trigger SOS Emergency"
+        android:description="Allows triggering emergency SOS broadcasts"
+        android:protectionLevel="signature" />
+
         <!-- 前台服务权限 -->
         <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
         <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
@@ -168,6 +175,22 @@
                 <action android:name="com.blindpath.wakeword.START" />
                 <action android:name="com.blindpath.wakeword.STOP" />
             </intent-filter>
+        </receiver>
+
+        <!-- BlindPath 小组件（含 SOS 广播接收） -->
+        <receiver
+            android:name="com.blindpath.base.widget.BlindPathWidget"
+            android:exported="true"
+            android:permission="com.blindpath.permission.TRIGGER_SOS">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.blindpath.action.SOS" />
+                <action android:name="com.blindpath.action.START_DETECTION" />
+                <action android:name="com.blindpath.action.START_NAVIGATION" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_blindpath_info" />
         </receiver>
 
     </application>

@@ -5,8 +5,10 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
 import android.telephony.SmsManager
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import timber.log.Timber
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * SOS 紧急求助工具
@@ -15,33 +17,76 @@ import timber.log.Timber
 object SosHelper {
 
     private const val TAG = "SosHelper"
+    private const val MAX_SOS_PER_HOUR = 3
+    private const val SOS_WINDOW_MS = 60 * 60 * 1000L // 1小时
 
     // 预设紧急联系人（可配置化）
-    private var emergencyContacts = emptyList<String>()
+    private val emergencyContacts = CopyOnWriteArrayList<String>()
+
+    private val sosHistory = CopyOnWriteArrayList<Long>()
+
+    /**
+     * SOS发送结果
+     */
+    enum class SosResult {
+        ALL_SENT,      // 全部发送成功
+        PARTIAL_SENT,  // 部分发送成功
+        ALL_FAILED,    // 全部发送失败
+        RATE_LIMITED   // 频率限制
+    }
+
+    /**
+     * 检查是否可以发送SOS
+     * @return Pair<Boolean, String> (是否允许, 提示消息)
+     */
+    private fun canSendSos(): Pair<Boolean, String> {
+        val now = System.currentTimeMillis()
+        // 清理过期记录
+        sosHistory.removeAll { now - it > SOS_WINDOW_MS }
+        return if (sosHistory.size >= MAX_SOS_PER_HOUR) {
+            Pair(false, "SOS发送频率已达上限，请1小时后再试")
+        } else {
+            Pair(true, "")
+        }
+    }
 
     /**
      * 设置紧急联系人
      */
     fun setEmergencyContacts(contacts: List<String>) {
-        emergencyContacts = contacts.filter { it.isNotBlank() }
+        emergencyContacts.clear()
+        emergencyContacts.addAll(contacts.filter { it.isNotBlank() })
     }
 
     /**
      * 发送 SOS 求救短信
      * @param context 上下文
      * @param location 当前 GPS 位置（可选）
-     * @param onSent 发送成功回调
-     * @param onError 发送失败回调
+     * @param onResult 发送结果回调
      */
-    fun sendSos(context: Context, location: Location? = null,
-                onSent: () -> Unit = {}, onError: (String) -> Unit = {}) {
-
-        val message = buildSosMessage(location)
-
-        if (emergencyContacts.isEmpty()) {
-            onError("未设置紧急联系人")
+    fun sendSos(
+        context: Context,
+        location: Location? = null,
+        onResult: (SosResult) -> Unit = {}
+    ) {
+        val (allowed, message) = canSendSos()
+        if (!allowed) {
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            onResult(SosResult.RATE_LIMITED)
             return
         }
+        // 记录发送时间
+        sosHistory.add(System.currentTimeMillis())
+
+        val sosMessage = buildSosMessage(location)
+
+        if (emergencyContacts.isEmpty()) {
+            onResult(SosResult.ALL_FAILED)
+            return
+        }
+
+        var successCount = 0
+        var failureCount = 0
 
         try {
             val smsManager = context.getSystemService(SmsManager::class.java)
@@ -49,25 +94,35 @@ object SosHelper {
             for (contact in emergencyContacts) {
                 try {
                     // 分拆长短信
-                    val parts = smsManager.divideMessage(message)
+                    val parts = smsManager.divideMessage(sosMessage)
                     if (parts.size == 1) {
-                        smsManager.sendTextMessage(contact, null, message, null, null)
+                        smsManager.sendTextMessage(contact, null, sosMessage, null, null)
                     } else {
                         smsManager.sendMultipartTextMessage(contact, null, parts, null, null)
                     }
+                    successCount++
                     Timber.tag(TAG).d("SOS sent to $contact")
                 } catch (e: Exception) {
+                    failureCount++
                     Timber.tag(TAG).e(e, "Failed to send SOS to $contact")
                 }
             }
 
-            onSent()
+            // 根据成功/失败数量返回结果
+            val result = when {
+                successCount > 0 && failureCount == 0 -> SosResult.ALL_SENT
+                successCount > 0 && failureCount > 0 -> SosResult.PARTIAL_SENT
+                else -> SosResult.ALL_FAILED
+            }
+            onResult(result)
         } catch (e: SecurityException) {
-            onError("缺少短信权限")
+            failureCount = emergencyContacts.size
             Timber.tag(TAG).e(e, "SMS permission denied")
+            onResult(SosResult.ALL_FAILED)
         } catch (e: Exception) {
-            onError("发送失败: ${e.message}")
+            failureCount = emergencyContacts.size
             Timber.tag(TAG).e(e, "SOS failed")
+            onResult(SosResult.ALL_FAILED)
         }
     }
 

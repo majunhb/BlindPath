@@ -82,7 +82,7 @@ import com.blindpath.module_voice.domain.model.VoiceCommand
 import com.blindpath.module_voice.domain.model.VoiceGuidance
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.util.concurrent.Executors
 import java.net.HttpURLConnection
@@ -138,7 +138,15 @@ fun MainScreen(
     var showLocation by remember { mutableStateOf(false) }
     var showNavigation by remember { mutableStateOf(false) }
     var showIndoorScreen by remember { mutableStateOf(false) }
-    
+
+    // 收集障碍物状态，供语音指令处理器直接使用
+    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
+        initialValue = ObstacleState(),
+        lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    )
+
+    val commandScope = rememberCoroutineScope()
+
     // 设置语音指令处理器
     LaunchedEffect(Unit) {
         viewModel.setCommandHandler { command ->
@@ -167,7 +175,7 @@ fun MainScreen(
                     showNavigation = true
                     viewModel.speak("正在为您打开导航")
                     // 切换到导航感知模式，启用交通信号检测
-                    kotlinx.coroutines.runBlocking {
+                    commandScope.launch {
                         obstacleRepository.setPerceptionMode(com.blindpath.module_obstacle.domain.model.PerceptionMode.NAVIGATION)
                     }
                     true
@@ -253,20 +261,17 @@ fun MainScreen(
                 }
                 // [新增] 场景询问指令
                 VoiceCommand.WHAT_PLACE -> {
-                    kotlinx.coroutines.runBlocking {
-                        val state = obstacleRepository.obstacleState.first()
-                        val scene = state.sceneRecognition
-                        if (scene != null) {
-                            viewModel.speak(scene.sceneType.getEntryAnnouncement())
-                        } else {
-                            viewModel.speak("正在识别当前场所，请稍候")
-                        }
+                    val scene = obstacleState.sceneRecognition
+                    if (scene != null) {
+                        viewModel.speak(scene.sceneType.getEntryAnnouncement())
+                    } else {
+                        viewModel.speak("正在识别当前场所，请稍候")
                     }
                     true
                 }
             }
         }
-        
+
         viewModel.initialize()
     }
     

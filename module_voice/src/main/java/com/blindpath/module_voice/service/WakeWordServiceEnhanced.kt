@@ -746,7 +746,8 @@ class WakeWordServiceEnhanced : Service() {
     }
 
     /**
-     * 从多个来源读取凭证
+     * 从安全来源读取凭证（仅 assets 和 BuildConfig）
+     * 已移除外部路径读取，防止凭证泄露
      */
     private fun readCredentialsFromAllSources(): Map<String, String> {
         val creds = mutableMapOf<String, String>()
@@ -762,31 +763,6 @@ class WakeWordServiceEnhanced : Service() {
             }
         } catch (e: Exception) {
             Timber.d("WakeWordServiceEnhanced: No credentials in assets")
-        }
-
-        if (creds.isEmpty()) {
-            try {
-                val paths = listOf(
-                    "/data/local/tmp/com.blindpath.app/local.properties",
-                    filesDir.absolutePath + "/../local.properties",
-                    "/sdcard/BlindPath/local.properties"
-                )
-
-                for (path in paths) {
-                    val file = File(path)
-                    if (file.exists()) {
-                        val props = Properties()
-                        file.inputStream().use { props.load(it) }
-                        props.forEach { key, value ->
-                            creds[key.toString()] = value.toString()
-                        }
-                        Timber.d("WakeWordServiceEnhanced: Loaded credentials from $path")
-                        break
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.w(e, "WakeWordServiceEnhanced: Failed to read external credentials")
-            }
         }
 
         return creds

@@ -1,5 +1,6 @@
 package com.blindpath.module_trip_assist.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -116,6 +117,22 @@ fun TripAssistScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            // 开发中提示横幅
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFFFA500))
+                    .padding(8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "开发中 - 数据仅供测试",
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
             // Tab 切换
             TabRow(
                 selectedTabIndex = uiState.activeTab.ordinal,
