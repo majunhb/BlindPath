@@ -409,11 +409,6 @@ private fun SmartDashboard(
         lifecycle = lifecycleOwner.lifecycle
     )
     
-    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
-        initialValue = ObstacleState(),
-        lifecycle = lifecycleOwner.lifecycle
-    )
-    
     var lastVibratedLevel by remember { mutableStateOf<AlertLevel?>(null) }
     LaunchedEffect(obstacleState.currentAlert?.level) {
         val currentLevel = obstacleState.currentAlert?.level ?: AlertLevel.SAFE
