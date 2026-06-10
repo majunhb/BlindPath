@@ -55,7 +55,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -67,6 +66,7 @@ import com.blindpath.base.tts.VibrationHelper
 import com.blindpath.base.power.DeviceOrientationCalculator
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.ObstacleState
@@ -140,9 +140,10 @@ fun MainScreen(
     var showIndoorScreen by remember { mutableStateOf(false) }
 
     // 收集障碍物状态，供语音指令处理器直接使用
+    val lifecycleOwner = LocalLifecycleOwner.current
     val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
         initialValue = ObstacleState(),
-        lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+        lifecycle = lifecycleOwner.lifecycle
     )
 
     val commandScope = rememberCoroutineScope()

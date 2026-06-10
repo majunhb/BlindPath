@@ -179,14 +179,15 @@ class MainActivity : ComponentActivity() {
             SosHelper.sendSos(
                 context = this@MainActivity,
                 location = location,
-                onSent = {
+                onResult = { result ->
                     runOnUiThread {
-                        Toast.makeText(this@MainActivity, "求助短信已发送", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                onError = { error ->
-                    runOnUiThread {
-                        Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
+                        val message = when (result) {
+                            SosHelper.SosResult.ALL_SENT -> "求助短信已全部发送"
+                            SosHelper.SosResult.PARTIAL_SENT -> "部分求助短信发送失败"
+                            SosHelper.SosResult.ALL_FAILED -> "求助短信发送失败，请检查权限"
+                            SosHelper.SosResult.RATE_LIMITED -> "SOS发送频率已达上限"
+                        }
+                        Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
                     }
                 }
             )
