@@ -62,7 +62,10 @@ class ObstacleService : LifecycleService() {
         const val CHANNEL_OBSTACLE = "channel_obstacle"
     }
 
-    override fun onBind(intent: Intent): IBinder? = null
+    override fun onBind(intent: Intent): IBinder {
+        super.onBind(intent)
+        return null!!
+    }
 
     override fun onCreate() {
         super.onCreate()

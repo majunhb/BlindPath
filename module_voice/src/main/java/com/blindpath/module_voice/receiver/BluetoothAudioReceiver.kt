@@ -34,13 +34,29 @@ class BluetoothAudioReceiver : BroadcastReceiver() {
 
                 when (state) {
                     BluetoothHeadset.STATE_CONNECTED -> {
-                        Timber.i("BluetoothAudio: Headset connected - ${device?.name}")
+                        // Android 12+ 需要 BLUETOOTH_CONNECT 权限才能获取设备名称
+                        val deviceName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            try {
+                                context.checkSelfPermission(android.Manifest.permission.BLUETOOTH_CONNECT)
+                                    .let { if (it == android.content.pm.PackageManager.PERMISSION_GRANTED) device?.name else "蓝牙设备" }
+                            } catch (e: SecurityException) {
+                                "蓝牙设备"
+                            }
+                        } else {
+                            device?.name
+                        }
+                        Timber.i("BluetoothAudio: Headset connected - $deviceName")
                         isBluetoothHeadsetConnected = true
                         // 切换到蓝牙耳机音频
                         switchToBluetoothAudio(context, true)
                     }
                     BluetoothHeadset.STATE_DISCONNECTED -> {
-                        Timber.i("BluetoothAudio: Headset disconnected - ${device?.name}")
+                        val deviceName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            "蓝牙设备"
+                        } else {
+                            device?.name
+                        }
+                        Timber.i("BluetoothAudio: Headset disconnected - $deviceName")
                         isBluetoothHeadsetConnected = false
                         // 切换回设备音频
                         switchToBluetoothAudio(context, false)

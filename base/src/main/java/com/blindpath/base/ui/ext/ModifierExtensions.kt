@@ -1,5 +1,6 @@
 package com.blindpath.base.ui.ext
 
+import android.os.Build
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -27,28 +28,34 @@ fun Modifier.shadow(
 ) = composed {
     val paint = remember { Paint() }
     
-    drawBehind {
-        drawIntoCanvas { canvas ->
-            paint.color = color
-            val frameworkPaint = paint.asFrameworkPaint()
-            
-            frameworkPaint.setShadowLayer(
-                blurRadius.toPx(),
-                offsetX.toPx(),
-                offsetY.toPx(),
-                color.value.toLong()
-            )
-            
-            canvas.drawRoundRect(
-                0f,
-                0f,
-                size.width,
-                size.height,
-                borderRadius.toPx(),
-                borderRadius.toPx(),
-                paint
-            )
+    // API 29 (Android 10) 及以上才支持 setShadowLayer
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        drawBehind {
+            drawIntoCanvas { canvas ->
+                paint.color = color
+                val frameworkPaint = paint.asFrameworkPaint()
+                
+                frameworkPaint.setShadowLayer(
+                    blurRadius.toPx(),
+                    offsetX.toPx(),
+                    offsetY.toPx(),
+                    color.value.toLong()
+                )
+                
+                canvas.drawRoundRect(
+                    0f,
+                    0f,
+                    size.width,
+                    size.height,
+                    borderRadius.toPx(),
+                    borderRadius.toPx(),
+                    paint
+                )
+            }
         }
+    } else {
+        // 低版本回退：不做阴影处理
+        this
     }
 }
 

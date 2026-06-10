@@ -69,7 +69,10 @@ class NavigationService : LifecycleService() {
         const val CHANNEL_NAVIGATION = "channel_navigation"
     }
 
-    override fun onBind(intent: Intent): IBinder? = null
+    override fun onBind(intent: Intent): IBinder {
+        super.onBind(intent)
+        return null!!
+    }
 
     override fun onCreate() {
         super.onCreate()
