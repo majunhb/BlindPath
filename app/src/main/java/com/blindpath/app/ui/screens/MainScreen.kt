@@ -140,10 +140,8 @@ fun MainScreen(
     var showIndoorScreen by remember { mutableStateOf(false) }
 
     // 收集障碍物状态，供语音指令处理器直接使用
-    val lifecycleOwner = LocalLifecycleOwner.current
     val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
-        initialValue = ObstacleState(),
-        lifecycle = lifecycleOwner.lifecycle
+        initialValue = ObstacleState()
     )
 
     val commandScope = rememberCoroutineScope()
@@ -406,8 +404,7 @@ private fun SmartDashboard(
     }
     
     val navState by navigationRepository.navigationState.collectAsStateWithLifecycle(
-        initialValue = NavigationState(),
-        lifecycle = lifecycleOwner.lifecycle
+        initialValue = NavigationState()
     )
     
     var lastVibratedLevel by remember { mutableStateOf<AlertLevel?>(null) }
@@ -477,8 +474,7 @@ private fun SmartDashboard(
 
     // [新增] 物品查找语音播报联动
     val itemSearchState by obstacleRepository.itemSearchState.collectAsStateWithLifecycle(
-        initialValue = ItemSearchManager.ItemSearchState(),
-        lifecycle = lifecycleOwner.lifecycle
+        initialValue = ItemSearchManager.ItemSearchState()
     )
     var lastItemSearchMsg by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(itemSearchState.searchState, itemSearchState.message) {
@@ -491,8 +487,7 @@ private fun SmartDashboard(
 
     // [新增] 公交引导语音播报联动
     val busGuideState by obstacleRepository.busGuideState.collectAsStateWithLifecycle(
-        initialValue = BusGuideManager.BusGuideState(),
-        lifecycle = lifecycleOwner.lifecycle
+        initialValue = BusGuideManager.BusGuideState()
     )
     var lastBusGuideMsg by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(busGuideState.guideState, busGuideState.message) {
@@ -875,8 +870,7 @@ private fun ObstacleDetectionContent(
     modifier: Modifier = Modifier
 ) {
     val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
-        initialValue = ObstacleState(),
-        lifecycle = lifecycleOwner.lifecycle
+        initialValue = ObstacleState()
     )
     
     val safetyStatus = when {
