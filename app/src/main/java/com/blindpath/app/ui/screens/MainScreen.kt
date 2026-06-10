@@ -418,9 +418,18 @@ private fun SmartDashboard(
         val alert = obstacleState.currentAlert
         if (alert != null && alert.description != lastAlertDescription && obstacleState.isRunning) {
             lastAlertDescription = alert.description
-            if (alert.level != AlertLevel.SAFE) {
-                viewModel.speak(alert.description)
-            }
+            // 修复：SAFE/UNKNOWN 状态也播报，让用户知道系统正在工作
+            viewModel.speak(alert.description)
+        }
+    }
+
+    // 场景识别语音播报联动
+    var lastSceneDescription by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(obstacleState.sceneRecognition) {
+        val scene = obstacleState.sceneRecognition
+        if (scene != null && scene.description != lastSceneDescription && obstacleState.isRunning) {
+            lastSceneDescription = scene.description
+            viewModel.speak(scene.description)
         }
     }
     

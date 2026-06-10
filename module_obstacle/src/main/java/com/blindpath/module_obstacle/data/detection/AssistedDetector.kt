@@ -52,7 +52,7 @@ class AssistedDetector @Inject constructor(
     }
 
     /**
-     * 辅助检测入口 - 聚合运动检测、边缘检测和ML Kit结果
+     * 辅助检测入口 - 聚合运动检测、边缘检测、墙壁检测、通用物体检测和ML Kit结果
      *
      * @param bitmap 当前帧
      * @return 检测到的障碍物列表
@@ -69,6 +69,8 @@ class AssistedDetector @Inject constructor(
             results.addAll(detectEdges(bitmap))
             // [修复] 墙壁检测
             results.addAll(detectWalls(bitmap))
+            // [增强] 通用物体检测（基于颜色/纹理聚类）
+            results.addAll(detectGenericObjects(bitmap))
             // ML Kit 回退检测在单独线程中运行，避免阻塞主流程
             val mlKitLatch = CountDownLatch(1)
             val mlKitResults = mutableListOf<DetectedObstacle>()
@@ -365,6 +367,100 @@ class AssistedDetector @Inject constructor(
             }
         } catch (e: Exception) {
             Timber.w(e, "Wall detection error")
+        }
+        return results
+    }
+
+    /**
+     * [增强] 通用物体检测 - 基于颜色聚类和区域分析检测静止物体
+     * 当AI模型不可用时，检测画面中显著的颜色区块作为潜在障碍物
+     */
+    fun detectGenericObjects(bitmap: Bitmap): List<DetectedObstacle> {
+        val results = mutableListOf<DetectedObstacle>()
+        try {
+            val width = bitmap.width
+            val height = bitmap.height
+
+            // 缩小图像加速处理
+            val scale = 4
+            val smallW = width / scale
+            val smallH = height / scale
+            val smallBitmap = Bitmap.createScaledBitmap(bitmap, smallW, smallH, true)
+            val pixels = IntArray(smallW * smallH)
+            smallBitmap.getPixels(pixels, 0, smallW, 0, 0, smallW, smallH)
+            smallBitmap.recycle()
+
+            // 将图像分为网格，检测显著颜色变化区域
+            val gridCols = 6
+            val gridRows = 4
+            val cellW = smallW / gridCols
+            val cellH = smallH / gridRows
+            val cellColors = Array(gridRows) { Array(gridCols) { mutableListOf<Int>() } }
+
+            // 收集每个网格的颜色
+            for (y in 0 until smallH) {
+                for (x in 0 until smallW) {
+                    val gx = (x * gridCols / smallW).coerceIn(0, gridCols - 1)
+                    val gy = (y * gridRows / smallH).coerceIn(0, gridRows - 1)
+                    cellColors[gy][gx].add(pixels[y * smallW + x])
+                }
+            }
+
+            // 计算每个网格的平均颜色和颜色方差
+            val cellVariances = Array(gridRows) { FloatArray(gridCols) }
+            for (gy in 0 until gridRows) {
+                for (gx in 0 until gridCols) {
+                    val colors = cellColors[gy][gx]
+                    if (colors.size < 10) continue
+                    var sumR = 0f; var sumG = 0f; var sumB = 0f
+                    for (c in colors) {
+                        sumR += (c shr 16) and 0xFF
+                        sumG += (c shr 8) and 0xFF
+                        sumB += c and 0xFF
+                    }
+                    val avgR = sumR / colors.size
+                    val avgG = sumG / colors.size
+                    val avgB = sumB / colors.size
+                    var variance = 0f
+                    for (c in colors) {
+                        val dr = (c shr 16) and 0xFF - avgR
+                        val dg = (c shr 8) and 0xFF - avgG
+                        val db = c and 0xFF - avgB
+                        variance += dr * dr + dg * dg + db * db
+                    }
+                    cellVariances[gy][gx] = variance / colors.size
+                }
+            }
+
+            // 检测高方差区域（可能有物体）
+            val varianceThreshold = 5000f
+            val detectedCells = mutableListOf<Pair<Int, Int>>()
+            for (gy in 0 until gridRows) {
+                for (gx in 0 until gridCols) {
+                    if (cellVariances[gy][gx] > varianceThreshold) {
+                        detectedCells.add(Pair(gx, gy))
+                    }
+                }
+            }
+
+            // 合并相邻的检测单元格
+            if (detectedCells.size >= 2) {
+                val avgGx = detectedCells.map { it.first }.average().toFloat()
+                val avgGy = detectedCells.map { it.second }.average().toFloat()
+                val centerX = (avgGx + 0.5f) * width / gridCols
+                val centerY = (avgGy + 0.5f) * height / gridRows
+                val distance = estimateDistanceFromPosition(centerX, centerY, width, height)
+
+                results.add(DetectedObstacle(
+                    type = ObstacleType.OBSTACLE,
+                    confidence = minOf(ASSIST_CONFIDENCE, 0.3f + detectedCells.size * 0.05f),
+                    boundingBox = BoundingBox(0f, 0f, 0f, 0f),
+                    distance = distance,
+                    direction = estimateDirection(centerX, width)
+                ))
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "Generic object detection error")
         }
         return results
     }
