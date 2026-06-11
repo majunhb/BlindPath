@@ -130,7 +130,7 @@ fun ScenePerceptionScreen(
                     detectedPeople = (0..3).random()
                     environmentType = listOf("城市人行道", "商场内部", "公园", "地铁站", "餐厅").random()
                     
-                    viewModel.speak(description, queueMode = false)
+                    viewModel.speak(description)
                 }
             }
         } else {
