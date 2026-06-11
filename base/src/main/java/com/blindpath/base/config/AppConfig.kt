@@ -35,7 +35,7 @@ object AppConfig {
         const val ENABLE_XNNPACK = true
         
         /** 跳帧处理：每 N 帧处理 1 帧 */
-        const val FRAME_SKIP = 3
+        const val FRAME_SKIP = 1
 
         /** 模型文件 SHA-256 哈希校验（下载后验证完整性） */
         val MODEL_SHA256: Map<String, String> = mapOf(

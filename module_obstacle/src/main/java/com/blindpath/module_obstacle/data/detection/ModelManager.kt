@@ -305,6 +305,22 @@ class ModelManager @Inject constructor(
     fun isAssistedDetectionEnabled(): Boolean = useAssistedDetection
 
     /**
+     * 强制启用辅助检测模式
+     *
+     * 在 TFLite 模型下载/加载期间，立即启用辅助检测作为后备方案，
+     * 确保摄像头帧能被处理并输出基础检测结果。
+     * 当 TFLite 模型加载成功后，自动切换回模型推理。
+     */
+    fun forceAssistedDetection() {
+        lock.write {
+            if (!isLoaded) {
+                useAssistedDetection = true
+                Timber.d("ModelManager: Assisted detection force enabled")
+            }
+        }
+    }
+
+    /**
      * 获取 TFLite 解释器（线程安全读取）
      */
     fun getInterpreter(): Interpreter? = lock.read { interpreter }

@@ -207,6 +207,21 @@ class ObstacleRepositoryImpl @Inject constructor(
             return Result.Success(true)
         }
 
+        // 【关键修复】立即启用辅助检测，确保摄像头帧能被处理
+        // TFLite 模型将在后台异步加载，成功后自动切换到模型推理
+        aiDetector.forceAssistedDetection()
+
+        // 后台异步加载 TFLite 模型（不阻塞摄像头启动）
+        repositoryScope.launch {
+            try {
+                val loaded = aiDetector.loadModel()
+                _obstacleState.value = _obstacleState.value.copy(isModelLoaded = loaded)
+                Timber.d("ObstacleRepository: Model load result: $loaded")
+            } catch (e: Exception) {
+                Timber.e(e, "ObstacleRepository: Model load failed, continuing with assisted detection")
+            }
+        }
+
         return withContext(Dispatchers.Main) {
             try {
                 // 获取 CameraProvider
@@ -483,14 +498,6 @@ class ObstacleRepositoryImpl @Inject constructor(
                 return
             }
             frameSkipCounter = 0
-
-            // 检查是否有任何检测能力可用
-            if (!aiDetector.isModelLoaded() && !aiDetector.isAssistedDetectionEnabled()) {
-                // 【修复】强制重试加载/启用辅助检测
-                Timber.w("ObstacleRepository: No model loaded, retrying assisted detection")
-                aiDetector.resetLoadAttempt()
-                // 即使失败，也继续处理（辅助检测应该返回基础结果）
-            }
 
             // 转换图像
             val bitmap = imageProxyToBitmap(imageProxy)

@@ -134,6 +134,12 @@ class AIDetector @Inject constructor(
     fun isAssistedDetectionEnabled(): Boolean = modelManager.isAssistedDetectionEnabled()
 
     /**
+     * 强制启用辅助检测模式（代理到 ModelManager）
+     * 在 TFLite 模型加载期间，确保摄像头帧能立即被处理
+     */
+    fun forceAssistedDetection() = modelManager.forceAssistedDetection()
+
+    /**
      * 设置标定焦距（代理到 ObstacleClassifier）
      */
     fun setCalibratedFocalLength(focalLength: Float) {
