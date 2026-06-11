@@ -6,7 +6,19 @@ import android.graphics.Color as AndroidColor
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -41,6 +53,7 @@ import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.MyLocationStyle
 import com.blindpath.app.ui.viewmodel.NavigationViewModel
 import com.blindpath.module_navigation.domain.NavigationRepository
+import com.blindpath.module_navigation.domain.model.NavigationState
 import com.blindpath.module_navigation.domain.model.RouteStep
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
@@ -325,8 +338,8 @@ enum class NavigationMode(val chineseName: String) {
  * 导航信息面板
  */
 @Composable
-private fun NavigationInfoPanel(
-    uiState: com.blindpath.app.ui.viewmodel.NavigationUiState,
+private fun ColumnScope.NavigationInfoPanel(
+    uiState: NavigationState,
     isPlanning: Boolean,
     destinationText: String,
     announcement: String,
@@ -537,18 +550,10 @@ private fun NavigationInfoPanel(
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(4.dp))
-            Column {
-                uiState.routeSteps.forEachIndexed { index, step ->
-                    RouteStepItem(
-                        step = step,
-                        isCurrent = index == uiState.currentStepIndex,
-                        isCompleted = index < uiState.currentStepIndex
-                    )
-                    if (index < uiState.routeSteps.size - 1) {
-                        Divider(modifier = Modifier.padding(start = 20.dp, end = 20.dp))
-                    }
-                }
-            }
+            RouteStepsList(
+                steps = uiState.routeSteps,
+                currentIndex = uiState.currentStepIndex
+            )
         }
     }
 }
@@ -610,6 +615,22 @@ private fun RouteStepItem(step: RouteStep, isCurrent: Boolean, isCompleted: Bool
             }
         } else if (isCompleted) {
             Text("done", color = Color(0xFF4CAF50), fontSize = 18.sp)
+        }
+    }
+}
+
+@Composable
+private fun RouteStepsList(steps: List<RouteStep>, currentIndex: Int) {
+    Column {
+        steps.forEachIndexed { index, step ->
+            RouteStepItem(
+                step = step,
+                isCurrent = index == currentIndex,
+                isCompleted = index < currentIndex
+            )
+            if (index < steps.size - 1) {
+                Divider(modifier = Modifier.padding(start = 20.dp, end = 20.dp))
+            }
         }
     }
 }
