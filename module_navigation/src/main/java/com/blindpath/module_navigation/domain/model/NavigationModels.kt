@@ -13,7 +13,9 @@ data class LocationInfo(
     val bearing: Float,     // 方向（度）
     val timestamp: Long,
     val address: String = "",   // 地址信息
-    val poiName: String = ""    // POI名称
+    val poiName: String = "",   // POI名称
+    val road: String = "",      // 道路名称
+    val street: String = ""     // 街道名称
 )
 
 /**
