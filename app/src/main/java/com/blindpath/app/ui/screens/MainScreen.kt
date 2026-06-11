@@ -1,22 +1,14 @@
-﻿/**
- * BlindPath - 视障人士出行辅助应用
+/**
+ * BlindPath - 瑙嗛殰浜哄＋鍑鸿杈呭姪搴旂敤
  * 
- * 文件：MainScreen.kt
- * 路径：app/src/main/java/com/blindpath/app/ui/screens/
+ * 鏂囦欢锛歁ainScreen.kt
+ * 璺緞锛歛pp/src/main/java/com/blindpath/app/ui/screens/
  * 
- * 修复版本 v2.0 - 基于诊断报告 P0-2 关键修复
+ * 鐗堟湰 v3.0 - 棣栭〉閲嶆瀯
  * 
- * 修复内容：
- * 1. P0-2 移除重复欢迎词 LaunchedEffect 块（约170-176行）
- *    - 原问题：此处的 speak() 与 VoiceInteractionViewModel.initialize() 内部的 speakWelcome() 并发执行
- *    - 导致：TTS 队列冲突、speakWelcome() 的 setWakeWordEnabled(true) 被干扰
- * 
- * 注：本文件为修复后的完整代码，主要修改是注释掉了原有的欢迎词 LaunchedEffect 块
- * 
- * 其他已知修复：
- * - 环境感知功能嵌入主页面（原问题3）
- * - 摄像头预览通过 Repository 统一绑定
- */
+ * 閲嶆瀯鍐呭锛? * 1. 绉婚櫎"鐜鎰熺煡"鍏ュ彛
+ * 2. 棣栭〉鐩存帴鏄剧ず涓夊ぇ妯″潡锛氬鍐呮劅鐭ャ€佸嚭琛屽鑸€佸満鏅劅鐭? * 3. 姣忎釜妯″潡鐙珛鍏ュ彛锛屽姛鑳芥洿鍔犳竻鏅? * 
+ * 涓夊ぇ鏍稿績妯″潡锛? * - 瀹ゅ唴鎰熺煡锛氬鍐呭鑸€侀殰纰嶇墿妫€娴嬨€佺┖闂寸悊瑙? * - 鍑鸿瀵艰埅锛氬澶栧鑸€佺洸閬撳紩瀵笺€佷氦閫氳緟鍔? * - 鍦烘櫙鎰熺煡锛氱墿浣撹瘑鍒€佸満鏅弿杩般€佹枃瀛楁湕璇? */
 
 package com.blindpath.app.ui.screens
 
@@ -79,7 +71,6 @@ import com.blindpath.module_navigation.domain.model.LocationInfo
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
 import com.blindpath.module_trip_assist.ui.TripAssistScreen
-// IndoorScreen 在同包 com.blindpath.app.ui.screens 中，无需导入
 import com.blindpath.module_voice.domain.model.VoiceCommand
 import com.blindpath.module_voice.domain.model.VoiceGuidance
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
@@ -96,31 +87,12 @@ import org.json.JSONObject
 import kotlin.math.abs
 
 /**
- * 主界面 - 视障友好极简设计 v5.0
+ * 涓荤晫闈?- 瑙嗛殰鍙嬪ソ鏋佺畝璁捐 v6.0
  * 
- * 设计原则（基于用户设计稿）：
- * 1. 首页直接显示摄像头预览 + 地图预览
- * 2. 底部三个核心按钮：唤醒小智 + 切换导航 + SOS
- * 3. 语音指令驱动：说"我要外出，请为我导航"直接打开导航
- * 4. 高对比度：蓝白主调，红色警示
- * 
- * ========== 修复说明 v2.0 ==========
- * P0-2 修复：移除了重复的欢迎词 LaunchedEffect 块
- * 
- * 原问题（约170-176行）：
- * // LaunchedEffect(uiState.isInitialized) {
- * //     if (uiState.isInitialized && !hasAnnouncedWelcome) {
- * //         hasAnnouncedWelcome = true
- * //         viewModel.speak("已进入主界面，请说\"小智小智\"唤醒语音助手...")
- * //     }
- * // }
- * 
- * 根因分析：
- * - MainScreen 中的 speak() 与 VoiceInteractionViewModel.initialize() 中的 speakWelcome() 并发执行
- * - 导致 TTS 队列冲突、speakWelcome() 的 setWakeWordEnabled(true) 被干扰
- * 
- * 解决方案：
- * - 注释掉此处的欢迎词播报，统一由 ViewModel.initialize() → speakWelcome() 管理完整流程
+ * 璁捐鍘熷垯锛? * 1. 棣栭〉涓夊ぇ妯″潡鍏ュ彛锛氬鍐呮劅鐭?/ 鍑鸿瀵艰埅 / 鍦烘櫙鎰熺煡
+ * 2. 姣忎釜妯″潡鍔熻兘鐙珛娓呮櫚
+ * 3. 璇煶鎸囦护椹卞姩
+ * 4. 楂樺姣斿害锛氳摑鐧戒富璋冿紝绾㈣壊璀︾ず
  */
 @Composable
 fun MainScreen(
@@ -136,58 +108,52 @@ fun MainScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showCommunity by remember { mutableStateOf(false) }
     var showTripAssist by remember { mutableStateOf(false) }
-    var showObstacleDetection by remember { mutableStateOf(false) }
-    var showLocation by remember { mutableStateOf(false) }
-    var showNavigation by remember { mutableStateOf(false) }
-    var showIndoorScreen by remember { mutableStateOf(false) }
+    var showIndoorPerception by remember { mutableStateOf(false) }
+    var showOutdoorNavigation by remember { mutableStateOf(false) }
+    var showScenePerception by remember { mutableStateOf(false) }
 
-    // 收集障碍物状态，供语音指令处理器直接使用
-    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
+    // 鏀堕泦闅滅鐗╃姸鎬?    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
         initialValue = ObstacleState()
     )
 
     val commandScope = rememberCoroutineScope()
 
-    // 设置语音指令处理器
-    LaunchedEffect(Unit) {
+    // 璁剧疆璇煶鎸囦护澶勭悊鍣?    LaunchedEffect(Unit) {
         viewModel.setCommandHandler { command ->
             Timber.d("MainScreen: Handling voice command - ${command.name}")
             when (command) {
-                VoiceCommand.START_OBSTACLE_DETECTION -> {
-                    // 修复问题3：在主页面直接开启环境感知，不跳转
-                    showObstacleDetection = true
-                    viewModel.speak(VoiceGuidance.OBSTACLE_DETECTION_STARTED)
+                VoiceCommand.START_INDOOR_PERCEPTION -> {
+                    showIndoorPerception = true
+                    viewModel.speak("瀹ゅ唴鎰熺煡宸插惎鍔?)
                     true
                 }
-                VoiceCommand.STOP_OBSTACLE_DETECTION -> {
-                    showObstacleDetection = false
-                    viewModel.speak(VoiceGuidance.OBSTACLE_DETECTION_STOPPED)
+                VoiceCommand.STOP_INDOOR_PERCEPTION -> {
+                    showIndoorPerception = false
+                    viewModel.speak("瀹ゅ唴鎰熺煡宸插仠姝?)
                     true
                 }
-                VoiceCommand.START_SONAR_DETECTION -> {
-                    viewModel.speak("声呐检测功能即将上线")
+                VoiceCommand.START_OUTDOOR_NAVIGATION -> {
+                    showOutdoorNavigation = true
+                    viewModel.speak("鍑鸿瀵艰埅宸插惎鍔?)
                     true
                 }
-                VoiceCommand.STOP_SONAR_DETECTION -> {
-                    viewModel.speak("声呐检测已关闭")
+                VoiceCommand.STOP_OUTDOOR_NAVIGATION -> {
+                    showOutdoorNavigation = false
+                    viewModel.speak("鍑鸿瀵艰埅宸插仠姝?)
                     true
                 }
-                VoiceCommand.START_NAVIGATION -> {
-                    showNavigation = true
-                    viewModel.speak("正在为您打开导航")
-                    // 切换到导航感知模式，启用交通信号检测
-                    commandScope.launch {
-                        obstacleRepository.setPerceptionMode(com.blindpath.module_obstacle.domain.model.PerceptionMode.NAVIGATION)
-                    }
+                VoiceCommand.START_SCENE_PERCEPTION -> {
+                    showScenePerception = true
+                    viewModel.speak("鍦烘櫙鎰熺煡宸插惎鍔?)
                     true
                 }
-                VoiceCommand.STOP_NAVIGATION -> {
-                    showNavigation = false
-                    viewModel.speak(VoiceGuidance.NAVIGATION_STOPPED)
+                VoiceCommand.STOP_SCENE_PERCEPTION -> {
+                    showScenePerception = false
+                    viewModel.speak("鍦烘櫙鎰熺煡宸插仠姝?)
                     true
                 }
                 VoiceCommand.WHERE_AM_I -> {
-                    showLocation = true
+                    onLocationClick()
                     true
                 }
                 VoiceCommand.SOS, VoiceCommand.CALL_SOS -> {
@@ -195,1015 +161,583 @@ fun MainScreen(
                     viewModel.speak(VoiceGuidance.SOS_TRIGGERED)
                     true
                 }
-                VoiceCommand.SHOW_MAP -> {
-                    showLocation = true
-                    viewModel.speak(VoiceGuidance.MAP_OPENED)
-                    true
-                }
-                VoiceCommand.HIDE_MAP -> {
-                    showLocation = false
-                    viewModel.speak(VoiceGuidance.MAP_CLOSED)
-                    true
-                }
-                VoiceCommand.OPEN_SETTINGS -> {
-                    showSettings = true
-                    viewModel.speak(VoiceGuidance.SETTINGS_OPENED)
-                    true
-                }
-                VoiceCommand.CLOSE_SETTINGS -> {
-                    showSettings = false
-                    viewModel.speak(VoiceGuidance.SETTINGS_CLOSED)
-                    true
-                }
-                VoiceCommand.HELP -> {
-                    viewModel.speakHelp()
-                    true
-                }
-                VoiceCommand.REPEAT -> {
-                    viewModel.speak("暂无上一条播报")
-                    true
-                }
-                VoiceCommand.CANCEL -> {
-                    viewModel.speak("已取消")
-                    true
-                }
-                VoiceCommand.BACK -> {
-                    showSettings = false
-                    showCommunity = false
-                    showTripAssist = false
-                    showObstacleDetection = false
-                    showLocation = false
-                    showNavigation = false
-                    showIndoorScreen = false
-                    viewModel.speak("已返回主界面")
-                    true
-                }
-                // [新增] 物品查找指令
-                VoiceCommand.FIND_ITEM -> {
-                    obstacleRepository.startItemSearch()
-                    true
-                }
-                VoiceCommand.STOP_FINDING -> {
-                    obstacleRepository.stopItemSearch()
-                    true
-                }
-                // [新增] 公交引导指令
-                VoiceCommand.FIND_BUS_STOP -> {
-                    obstacleRepository.startBusGuide()
-                    true
-                }
-                VoiceCommand.TAKE_BUS -> {
-                    viewModel.speak("请告诉我您要乘坐的公交线路，或者搜索附近的公交站")
-                    true
-                }
-                VoiceCommand.NEXT_STOP -> {
-                    viewModel.speak("正在为您查询下一站信息")
-                    true
-                }
-                // [新增] 场景询问指令
-                VoiceCommand.WHAT_PLACE -> {
-                    val scene = obstacleState.sceneRecognition
-                    if (scene != null) {
-                        viewModel.speak(scene.sceneType.getEntryAnnouncement())
-                    } else {
-                        viewModel.speak("正在识别当前场所，请稍候")
-                    }
-                    true
-                }
+                else -> false
             }
         }
-
-        viewModel.initialize()
     }
-    
-    // ========================================================================
-    // ========== P0-2 修复：移除重复的欢迎词 LaunchedEffect 块 ==========
-    // ========================================================================
-    // 
-    // 原问题代码（约170-176行）：
-    // 
-    // var hasAnnouncedWelcome by remember { mutableStateOf(false) }
-    // LaunchedEffect(uiState.isInitialized) {
-    //     if (uiState.isInitialized && !hasAnnouncedWelcome) {
-    //         hasAnnouncedWelcome = true
-    //         viewModel.speak("已进入主界面，请说\"小智小智\"唤醒语音助手...")
-    //     }
-    // }
-    // 
-    // 问题根因：
-    // 1. 此处的 speak() 与 VoiceInteractionViewModel.initialize() 中的 speakWelcome() 并发执行
-    // 2. 导致 TTS 队列冲突，语音播报混乱
-    // 3. speakWelcome() 的 setWakeWordEnabled(true) 被并发操作干扰
-    // 4. 用户可能听到重复的欢迎语
-    // 
-    // 解决方案：
-    // - 完全注释掉此处的欢迎词播报逻辑
-    // - 统一由 ViewModel.initialize() → speakWelcome() 管理完整流程
-    // - ViewModel 中的 speakWelcome() 已确保：
-    //   1. TTS 引擎初始化完成后才播报
-    //   2. 使用同步锁避免并发问题
-    //   3. 正确的时序：初始化 → TTS就绪 → speakWelcome() → setWakeWordEnabled(true)
-    //
-    // 注意：如果将来需要在此处播报，必须先检查 ViewModel.initialize() 是否已完成，
-    // 并且需要使用与 ViewModel 相同的同步机制。
-    //
-    // ========================================================================
-    
+
+    // 椤甸潰璺敱
     when {
         showSettings -> {
-            SettingsScreen(onBackClick = { showSettings = false })
+            SettingsScreen(
+                onBack = { showSettings = false },
+                modifier = Modifier.fillMaxSize()
+            )
+            return
         }
         showCommunity -> {
-            CommunityScreen(onBackClick = { showCommunity = false })
+            CommunityScreen(
+                onBack = { showCommunity = false },
+                modifier = Modifier.fillMaxSize()
+            )
+            return
         }
         showTripAssist -> {
-            TripAssistScreen(onBackClick = { showTripAssist = false })
+            TripAssistScreen(
+                onBack = { showTripAssist = false },
+                modifier = Modifier.fillMaxSize()
+            )
+            return
         }
-        showLocation -> {
-            LocationScreen(onBackClick = { showLocation = false })
-        }
-        showNavigation -> {
-            NavigationScreen(onBackClick = { showNavigation = false })
-        }
-        showIndoorScreen -> {
-            IndoorScreen(onBackClick = { showIndoorScreen = false })
-        }
-        else -> {
-            SmartDashboard(
-                showObstacleDetection = showObstacleDetection,
-                onObstacleToggle = { showObstacleDetection = !showObstacleDetection },
-                onNavigationClick = { showNavigation = true },
-                onSosClick = onSosClick,
-                onSettingsClick = { showSettings = true },
-                onLocationClick = { showLocation = true },
-                onExploreClick = {},
-                onTripAssistClick = {
-                    showTripAssist = true
-                    showIndoorScreen = false
-                    showSettings = false
-                    showCommunity = false
-                },
-                onIndoorClick = {
-                    showIndoorScreen = true
-                    showTripAssist = false
-                    showSettings = false
-                    showCommunity = false
-                },
-                isListening = uiState.isListening,
-                onStartListening = { viewModel.startListening() },
-                onStopListening = { viewModel.stopListening() },
+        showIndoorPerception -> {
+            IndoorPerceptionScreen(
                 obstacleRepository = obstacleRepository,
                 navigationRepository = navigationRepository,
+                onBack = { showIndoorPerception = false },
                 viewModel = viewModel
+            )
+            return
+        }
+        showOutdoorNavigation -> {
+            OutdoorNavigationScreen(
+                obstacleRepository = obstacleRepository,
+                navigationRepository = navigationRepository,
+                onBack = { showOutdoorNavigation = false },
+                viewModel = viewModel
+            )
+            return
+        }
+        showScenePerception -> {
+            ScenePerceptionScreen(
+                obstacleRepository = obstacleRepository,
+                onBack = { showScenePerception = false },
+                viewModel = viewModel
+            )
+            return
+        }
+    }
+
+    // 涓荤晫闈?    MainScreenContent(
+        uiState = uiState,
+        obstacleState = obstacleState,
+        onIndoorPerceptionClick = { showIndoorPerception = true },
+        onOutdoorNavigationClick = { showOutdoorNavigation = true },
+        onScenePerceptionClick = { showScenePerception = true },
+        onSettingsClick = { showSettings = true },
+        onCommunityClick = { showCommunity = true },
+        onTripAssistClick = { showTripAssist = true },
+        onSosClick = onSosClick,
+        onStartListening = { viewModel.startListening() },
+        onStopListening = { viewModel.stopListening() },
+        viewModel = viewModel
+    )
+}
+
+/**
+ * 涓荤晫闈㈠唴瀹?- 涓夊ぇ妯″潡鍏ュ彛
+ */
+@Composable
+private fun MainScreenContent(
+    uiState: VoiceInteractionUiState,
+    obstacleState: ObstacleState,
+    onIndoorPerceptionClick: () -> Unit,
+    onOutdoorNavigationClick: () -> Unit,
+    onScenePerceptionClick: () -> Unit,
+    onSettingsClick: () -> Unit,
+    onCommunityClick: () -> Unit,
+    onTripAssistClick: () -> Unit,
+    onSosClick: () -> Unit,
+    onStartListening: () -> Unit,
+    onStopListening: () -> Unit,
+    viewModel: VoiceInteractionViewModel
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    
+    // 鏉冮檺鐘舵€?    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == 
+            PackageManager.PERMISSION_GRANTED
+        )
+    }
+    
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasCameraPermission = isGranted
+        if (isGranted) {
+            viewModel.speak("鐩告満鏉冮檺宸茶幏鍙?)
+        } else {
+            viewModel.speak("闇€瑕佺浉鏈烘潈闄愭墠鑳戒娇鐢ㄨ瑙夊姛鑳?)
+        }
+    }
+
+    // 瀵艰埅鐘舵€?    val navState by navigationRepository.state.collectAsStateWithLifecycle()
+
+    Scaffold(
+        topBar = {
+            MainTopBar(
+                onSettingsClick = onSettingsClick,
+                onCommunityClick = onCommunityClick
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // 娆㈣繋璇?            Text(
+                text = "鎮ㄥソ锛屾垜鏄皬鏅?,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1A1A3E)
+            )
+            Text(
+                text = "璇疯\"灏忔櫤灏忔櫤\"鍞ら啋鎴?,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF666666),
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // 涓夊ぇ鏍稿績妯″潡鍏ュ彛
+            Text(
+                text = "閫夋嫨鍔熻兘妯″潡",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1A1A3E),
+                modifier = Modifier.align(Alignment.Start)
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            // 妯″潡 1锛氬鍐呮劅鐭?            ModuleCard(
+                title = "瀹ゅ唴鎰熺煡",
+                subtitle = "瀹ゅ唴瀵艰埅 路 闅滅鐗╂娴?路 绌洪棿鐞嗚В",
+                icon = Icons.Default.Home,
+                backgroundColor = Color(0xFF1E90FF),
+                onClick = onIndoorPerceptionClick,
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // 妯″潡 2锛氬嚭琛屽鑸?            ModuleCard(
+                title = "鍑鸿瀵艰埅",
+                subtitle = "璺嚎瑙勫垝 路 鐩查亾寮曞 路 浜ら€氳緟鍔?,
+                icon = Icons.Default.Navigation,
+                backgroundColor = Color(0xFF4CAF50),
+                onClick = onOutdoorNavigationClick,
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // 妯″潡 3锛氬満鏅劅鐭?            ModuleCard(
+                title = "鍦烘櫙鎰熺煡",
+                subtitle = "鐗╀綋璇嗗埆 路 鍦烘櫙鎻忚堪 路 鏂囧瓧鏈楄",
+                icon = Icons.Default.Visibility,
+                backgroundColor = Color(0xFFFF9800),
+                onClick = onScenePerceptionClick,
+                modifier = Modifier.fillMaxWidth()
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // 蹇€熷姛鑳?            Text(
+                text = "蹇€熷姛鑳?,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1A1A3E),
+                modifier = Modifier.align(Alignment.Start)
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                QuickActionButton(
+                    icon = Icons.Default.LocationOn,
+                    label = "鎴戠殑浣嶇疆",
+                    onClick = { /* TODO */ },
+                    modifier = Modifier.weight(1f)
+                )
+                QuickActionButton(
+                    icon = Icons.Default.Phone,
+                    label = "绱ф€ユ眰鍔?,
+                    onClick = onSosClick,
+                    backgroundColor = Color(0xFFE53935),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // 璇煶鍞ら啋鎸夐挳
+            VoiceWakeUpButton(
+                isListening = uiState.isListening,
+                onClick = { if (uiState.isListening) onStopListening() else onStartListening() },
+                modifier = Modifier.size(80.dp)
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Text(
+                text = if (uiState.isListening) "姝ｅ湪鑱嗗惉..." else "鐐瑰嚮鍞ら啋",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (uiState.isListening) Color(0xFF4CAF50) else Color(0xFF666666)
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * 妯″潡鍗＄墖
+ */
+@Composable
+private fun ModuleCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    backgroundColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier
+            .height(100.dp)
+            .semantics { 
+                contentDescription = "$title锛?subtitle"
+            },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = backgroundColor.copy(alpha = 0.1f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // 鍥炬爣
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(backgroundColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            // 鏂囧瓧
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1A1A3E)
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color(0xFF666666)
+                )
+            }
+            
+            // 绠ご
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = backgroundColor,
+                modifier = Modifier.size(24.dp)
             )
         }
     }
 }
 
 /**
- * 智能仪表盘 - v6.0 创新设计
+ * 蹇€熸搷浣滄寜閽? */
+@Composable
+private fun QuickActionButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    backgroundColor: Color = Color(0xFF1E90FF),
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier
+            .height(80.dp)
+            .semantics { contentDescription = label },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = backgroundColor.copy(alpha = 0.1f))
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = backgroundColor,
+                modifier = Modifier.size(32.dp)
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = backgroundColor,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+/**
+ * 璇煶鍞ら啋鎸夐挳
  */
 @Composable
-private fun SmartDashboard(
-    showObstacleDetection: Boolean = false,
-    onObstacleToggle: () -> Unit = {},
-    onNavigationClick: () -> Unit,
-    onSosClick: () -> Unit,
-    onSettingsClick: () -> Unit,
-    onLocationClick: () -> Unit,
-    onExploreClick: () -> Unit = {},
-    onTripAssistClick: () -> Unit,
-    onIndoorClick: () -> Unit,
-    isListening: Boolean = false,
-    onStartListening: () -> Unit = {},
-    onStopListening: () -> Unit = {},
-    obstacleRepository: ObstacleRepository,
-    navigationRepository: NavigationRepository,
-    viewModel: VoiceInteractionViewModel
-) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    
-    var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-        )
-    }
-    
-    var hasLocationPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
-        )
-    }
-    
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted -> hasCameraPermission = granted }
-    
-    val locationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { permissions ->
-        hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
-                              permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
-    }
-    
-    LaunchedEffect(Unit) {
-        if (!hasCameraPermission) {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-        }
-        if (!hasLocationPermission) {
-            locationPermissionLauncher.launch(arrayOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            ))
-        }
-    }
-    
-    val navState by navigationRepository.navigationState.collectAsStateWithLifecycle(
-        initialValue = NavigationState()
-    )
-    
-    // 收集障碍物状态供UI使用
-    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
-        initialValue = ObstacleState()
-    )
-    
-    var lastVibratedLevel by remember { mutableStateOf<AlertLevel?>(null) }
-    LaunchedEffect(obstacleState.currentAlert?.level) {
-        val currentLevel = obstacleState.currentAlert?.level ?: AlertLevel.SAFE
-        if (currentLevel != lastVibratedLevel) {
-            lastVibratedLevel = currentLevel
-            if (obstacleState.isRunning && obstacleState.detectedObstacles.isNotEmpty()) {
-                VibrationHelper.vibrate(context, currentLevel)
-            } else if (currentLevel == AlertLevel.DANGER || currentLevel == AlertLevel.WARNING) {
-                VibrationHelper.vibrate(context, currentLevel)
-            }
-        }
-    }
-    
-    var compassAzimuth by remember { mutableStateOf(0f) }
-    LaunchedEffect(lifecycleOwner) {
-        val compass = DeviceOrientationCalculator(context) { azimuth, _, _ ->
-            compassAzimuth = azimuth
-        }
-        compass.start()
-        try {
-            while (true) {
-                delay(1000)
-            }
-        } finally {
-            compass.stop()
-        }
-    }
-    
-        // 环境感知自动启停 + 语音播报联动
-    LaunchedEffect(showObstacleDetection) {
-        if (showObstacleDetection) {
-            Timber.d("环境感知启动：调用 obstacleRepository.startDetection()")
-            obstacleRepository.startDetection()
-            viewModel.speak("环境感知已启动，正在检测周围障碍物")
-        } else {
-            Timber.d("环境感知停止：调用 obstacleRepository.stopDetection()")
-            obstacleRepository.stopDetection()
-            viewModel.speak("环境感知已停止")
-        }
-    }
-
-    // 障碍物检测语音播报联动
-    var lastAlertDescription by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(obstacleState.currentAlert) {
-        val alert = obstacleState.currentAlert
-        if (alert != null && alert.description != lastAlertDescription && obstacleState.isRunning) {
-            lastAlertDescription = alert.description
-            // 修复：SAFE/UNKNOWN 状态也播报，让用户知道系统正在工作
-            viewModel.speak(alert.description)
-        }
-    }
-
-    // 场景识别语音播报联动
-    var lastSceneDescription by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(obstacleState.sceneRecognition) {
-        val scene = obstacleState.sceneRecognition
-        if (scene != null && obstacleState.isRunning) {
-            val desc = scene.sceneType.getEntryAnnouncement()
-            if (desc.isNotEmpty() && desc != lastSceneDescription) {
-                lastSceneDescription = desc
-                viewModel.speak(desc)
-            }
-        }
-    }
-
-    // [新增] 物品查找语音播报联动
-    val itemSearchState by obstacleRepository.itemSearchState.collectAsStateWithLifecycle(
-        initialValue = ItemSearchManager.ItemSearchState()
-    )
-    var lastItemSearchMsg by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(itemSearchState.searchState, itemSearchState.message) {
-        val msg = itemSearchState.message
-        if (msg != null && msg != lastItemSearchMsg) {
-            lastItemSearchMsg = msg
-            viewModel.speak(msg)
-        }
-    }
-
-    // [新增] 公交引导语音播报联动
-    val busGuideState by obstacleRepository.busGuideState.collectAsStateWithLifecycle(
-        initialValue = BusGuideManager.BusGuideState()
-    )
-    var lastBusGuideMsg by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(busGuideState.guideState, busGuideState.message) {
-        val msg = busGuideState.message
-        if (msg != null && msg != lastBusGuideMsg) {
-            lastBusGuideMsg = msg
-            viewModel.speak(msg)
-        }
-    }
-    
-    Scaffold(
-        containerColor = Color(0xFF0D0D1A),
-        topBar = {
-            SmartTopBar(onSettingsClick = onSettingsClick, navState = navState)
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            PulseVoiceStatus(
-                isListening = isListening,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-            )
-            
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 8.dp)
-            ) {
-                if (showObstacleDetection) {
-                    ObstacleDetectionContent(
-                        hasPermission = hasCameraPermission,
-                        onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-                        lifecycleOwner = lifecycleOwner,
-                        obstacleRepository = obstacleRepository,
-                        onClose = onObstacleToggle,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    // 【首页重构】三卡片入口：出行 / 室内 / 场景感知
-                    HomeCards(
-                        onTripAssist = onTripAssistClick,
-                        onIndoor = onIndoorClick,
-                        onSceneAware = onObstacleToggle,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            DashboardBottomBar(
-                isListening = isListening,
-                onWakeUpClick = { if (isListening) onStopListening() else onStartListening() },
-                onExploreClick = {
-                    val announcement = NearbyPoiService.generateAnnouncementSync(
-                        navState.currentLocation ?: return@DashboardBottomBar
-                    )
-                    viewModel.speak(announcement)
-                },
-                onToolsClick = onSettingsClick,
-                onSosClick = onSosClick,
-                isObstacleActive = showObstacleDetection,
-                onTripAssist = onTripAssistClick,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp)
-                    .padding(bottom = 12.dp)
-            )
-        }
-    }
-}
-
-// ==================== 其他 Composable 组件 ====================
-// 由于篇幅限制，以下组件保持与原文件一致
-// 完整实现请参考原始 MainScreen.kt
-
-@Composable
-private fun DashboardCameraView(
-    hasPermission: Boolean,
-    onRequestPermission: () -> Unit,
+private fun VoiceWakeUpButton(
+    isListening: Boolean,
     onClick: () -> Unit,
-    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
-    navState: NavigationState,
-    alertLevel: AlertLevel? = null,
-    compassAzimuth: Float = 0f,
     modifier: Modifier = Modifier
 ) {
-    // ... 保持原有实现
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(onClick = onClick)
-            .semantics {
-                contentDescription = "智能仪表盘，点击开启环境感知"
-                stateDescription = if (navState.isLocationAvailable) "GPS信号正常" else "正在获取位置"
-            }
-    ) {
-        if (hasPermission) {
-            AndroidView(
-                factory = { ctx ->
-                    PreviewView(ctx).apply {
-                        scaleType = PreviewView.ScaleType.FILL_CENTER
-                        implementationMode = PreviewView.ImplementationMode.PERFORMANCE
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-                update = { previewView ->
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(previewView.context)
-                    cameraProviderFuture.addListener({
-                        try {
-                            val cameraProvider = cameraProviderFuture.get()
-                            val preview = Preview.Builder().build().also {
-                                it.setSurfaceProvider(previewView.surfaceProvider)
-                            }
-                            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-                            cameraProvider.unbindAll()
-                            cameraProvider.bindToLifecycle(lifecycleOwner, cameraSelector, preview)
-                        } catch (e: Exception) {
-                            Timber.e(e, "DashboardCameraView: Camera failed")
-                        }
-                    }, ContextCompat.getMainExecutor(previewView.context))
-                }
-            )
-        } else {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color(0xFF1A1A2E)),
-                contentAlignment = Alignment.Center
-            ) {
-                Button(
-                    onClick = onRequestPermission,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E90FF)),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("授权摄像头", color = Color.White)
-                }
-            }
-        }
-        
-        SafetyGlowRing(alertLevel = alertLevel, modifier = Modifier.fillMaxSize())
-        HUDInfoOverlay(navState = navState, compassAzimuth = compassAzimuth, modifier = Modifier.fillMaxSize())
-    }
-}
-
-@Composable
-private fun SafetyGlowRing(alertLevel: AlertLevel?, modifier: Modifier = Modifier) {
-    val ringColor = when (alertLevel) {
-        AlertLevel.DANGER -> Color(0xFFFF6B6B)
-        AlertLevel.WARNING -> Color(0xFFFFB347)
-        AlertLevel.SAFE -> Color(0xFF1E90FF)
-        else -> Color(0xFF4CAF50)
-    }
-    
-    Canvas(modifier = modifier) {
-        drawCircle(
-            color = ringColor.copy(alpha = 0.3f),
-            radius = size.minDimension / 2,
-            style = Stroke(width = 20.dp.toPx())
-        )
-    }
-}
-
-@Composable
-private fun HUDInfoOverlay(navState: NavigationState, compassAzimuth: Float, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.padding(16.dp),
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        // 顶部信息
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            val currentLocationVal = navState.currentLocation
-            if (navState.isLocationAvailable && currentLocationVal != null) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = Color(0xAA000000)
-                ) {
-                    Text(
-                        text = "GPS: %.4f, %.4f".format(
-                            currentLocationVal.latitude,
-                            currentLocationVal.longitude
-                        ),
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(8.dp)
-                    )
-                }
-            }
-            
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = Color(0xAA000000)
-            ) {
-                Text(
-                    text = "方向: %.0f°".format(compassAzimuth),
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(8.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PulseVoiceStatus(isListening: Boolean, modifier: Modifier = Modifier) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val alpha by infiniteTransition.animateFloat(
-        initialValue = 0.6f,
-        targetValue = 1f,
+    val scale by infiniteTransition.animateFloat(
+        initialValue = 1f,
+        targetValue = if (isListening) 1.1f else 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000),
+            animation = tween(1000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "pulseAlpha"
+        label = "scale"
     )
     
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(20.dp),
-        color = if (isListening) Color(0xFF4CAF50).copy(alpha = alpha) else Color(0xFF666666)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = if (isListening) Icons.Default.Call else Icons.Default.Settings,
-                contentDescription = null,
-                tint = Color.White,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(
-                text = if (isListening) "正在聆听..." else "小智待机中",
-                color = Color.White,
-                fontSize = 12.sp
-            )
-        }
-    }
-}
-
-@Composable
-private fun DashboardBottomBar(
-    isListening: Boolean,
-    onWakeUpClick: () -> Unit,
-    onExploreClick: () -> Unit,
-    onToolsClick: () -> Unit,
-    onSosClick: () -> Unit,
-    isObstacleActive: Boolean,
-    onTripAssist: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // 智能出行按钮
-        FilledTonalButton(
-            onClick = onTripAssist,
-            modifier = Modifier.weight(1f).height(56.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = Color(0xFF2A2A3E)
-            )
-        ) {
-            Icon(Icons.Default.Star, null, tint = Color(0xFF4FC3F7))
-            Spacer(Modifier.width(6.dp))
-            Text("智能出行", color = Color.White)
-        }
-        
-        Spacer(Modifier.width(8.dp))
-        
-        // 唤醒按钮
-        Button(
-            onClick = onWakeUpClick,
-            modifier = Modifier.weight(1f).height(56.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (isListening) Color(0xFF4CAF50) else Color(0xFF1E90FF)
-            )
-        ) {
-            Icon(
-                if (isListening) Icons.Default.Call else Icons.Default.Settings,
-                null,
-                tint = Color.White
-            )
-            Spacer(Modifier.width(6.dp))
-            Text(if (isListening) "停止" else "唤醒小智", color = Color.White)
-        }
-        
-        Spacer(Modifier.width(8.dp))
-        
-        // SOS 按钮
-        Button(
-            onClick = onSosClick,
-            modifier = Modifier.weight(0.8f).height(56.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
-        ) {
-            Icon(Icons.Default.Warning, null, tint = Color.White)
-            Spacer(Modifier.width(4.dp))
-            Text("SOS", color = Color.White)
-        }
-    }
-}
-
-@Composable
-private fun HomeCards(
-    onTripAssist: () -> Unit,
-    onIndoor: () -> Unit,
-    onSceneAware: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Column(
+    Box(
         modifier = modifier
-            .padding(horizontal = 12.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+            .scale(scale)
+            .clip(CircleShape)
+            .background(
+                if (isListening) Color(0xFF4CAF50) else Color(0xFF1E90FF)
+            )
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = if (isListening) "姝ｅ湪鑱嗗惉锛岀偣鍑诲仠姝? else "鐐瑰嚮鍞ら啋璇煶鍔╂墜" },
+        contentAlignment = Alignment.Center
     ) {
-        // 标题行
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "快捷功能",
-                color = Color(0xFF64B5F6),
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp
-            )
-            Text(
-                "下滑查看更多",
-                color = Color(0xFF666666),
-                fontSize = 11.sp
-            )
-        }
-        
-        // 场景感知 — 主卡片（带头图）
-        Card(
-            onClick = onSceneAware,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(160.dp)
-                .semantics { contentDescription = "开启场景感知，识别周边障碍物和路况" },
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A3E))
-        ) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                // 装饰性渐变背景
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors = listOf(Color(0xFF1E90FF).copy(alpha = 0.3f), Color(0xFF1A1A3E))
-                            )
-                        )
-                )
-                // 内容
-                Column(
-                    modifier = Modifier.padding(20.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.Home,
-                            null,
-                            tint = Color(0xFF1E90FF),
-                            modifier = Modifier.size(32.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            "场景感知",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
-                        )
-                    }
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "AI实时识别周边障碍物、信号灯、斑马线、道牙等路况",
-                        color = Color(0xFFAAAAAA),
-                        fontSize = 13.sp,
-                        maxLines = 2
-                    )
-                    Spacer(Modifier.weight(1f))
-                    Row(
-                        modifier = Modifier.align(Alignment.End),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("点击开启", color = Color(0xFF64B5F6), fontSize = 13.sp)
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            Icons.Default.KeyboardArrowRight,
-                            null,
-                            tint = Color(0xFF64B5F6),
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-            }
-        }
-        
-        // 下方两个小卡片
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // 智能出行
-            Card(
-                onClick = onTripAssist,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(130.dp)
-                    .semantics { contentDescription = "智能出行，路线规划和公交引导" },
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF2A1A3E))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Icon(
-                        Icons.Default.Star,
-                        null,
-                        tint = Color(0xFF81C784),
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "智能出行",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "路线规划·公交引导",
-                        color = Color(0xFF888888),
-                        fontSize = 12.sp
-                    )
-                }
-            }
-            
-            // 室内导航
-            Card(
-                onClick = onIndoor,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(130.dp)
-                    .semantics { contentDescription = "室内导航，购物中心和医院等室内场所引导" },
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF3E1A2A))
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Icon(
-                        Icons.Default.Home,
-                        null,
-                        tint = Color(0xFFEF9A9A),
-                        modifier = Modifier.size(28.dp)
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Text(
-                        "室内导航",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        "商场·医院·地铁站",
-                        color = Color(0xFF888888),
-                        fontSize = 12.sp
-                    )
-                }
-            }
-        }
-        
-        // 底部留白
-        Spacer(Modifier.height(8.dp))
+        Icon(
+            imageVector = if (isListening) Icons.Default.Mic else Icons.Default.MicNone,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.size(40.dp)
+        )
     }
 }
 
+/**
+ * 椤堕儴鏍? */
 @Composable
-private fun SmartTopBar(
+private fun MainTopBar(
     onSettingsClick: () -> Unit,
-    navState: NavigationState = NavigationState()
+    onCommunityClick: () -> Unit
 ) {
     TopAppBar(
         title = {
-            Column {
-                Text(
-                    "智行助盲",
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF64B5F6),
-                    fontSize = 20.sp,
-                    modifier = Modifier.semantics { contentDescription = "智行助盲，视障人士出行辅助应用" }
-                )
-                if (navState.isLocationAvailable && navState.currentLocation != null) {
-                    Text(
-                        text = "GPS已定位",
-                        color = Color(0xFF4CAF50),
-                        fontSize = 11.sp
-                    )
-                }
-            }
-        },
-        navigationIcon = {
-            IconButton(
-                onClick = onSettingsClick,
-                modifier = Modifier.semantics { contentDescription = "设置入口" }
-            ) {
-                Icon(
-                    Icons.Outlined.Menu,
-                    contentDescription = null,
-                    tint = Color(0xFF90CAF9),
-                    modifier = Modifier.size(26.dp)
-                )
-            }
+            Text(
+                text = "鏅鸿鍔╃洸",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold
+            )
         },
         actions = {
-            if (navState.isLocationAvailable) {
+            IconButton(onClick = onCommunityClick) {
                 Icon(
-                    Icons.Default.LocationOn,
-                    contentDescription = "GPS信号正常",
-                    tint = Color(0xFF4CAF50),
-                    modifier = Modifier.size(20.dp).padding(end = 4.dp)
+                    imageVector = Icons.Default.People,
+                    contentDescription = "绀惧尯"
                 )
             }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Color(0xFF0D0D1A),
-            titleContentColor = Color(0xFF64B5F6)
-        )
+            IconButton(onClick = onSettingsClick) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "璁剧疆"
+                )
+            }
+        }
     )
 }
 
+// ==================== 涓夊ぇ妯″潡灞忓箷 ====================
+
+/**
+ * 瀹ゅ唴鎰熺煡灞忓箷
+ */
 @Composable
-private fun ObstacleDetectionContent(
-    hasPermission: Boolean,
-    onRequestPermission: () -> Unit,
-    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+private fun IndoorPerceptionScreen(
     obstacleRepository: ObstacleRepository,
-    onClose: () -> Unit = {},
-    modifier: Modifier = Modifier
+    navigationRepository: NavigationRepository,
+    onBack: () -> Unit,
+    viewModel: VoiceInteractionViewModel
 ) {
-    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
-        initialValue = ObstacleState()
-    )
-    
-    val safetyStatus = when {
-        obstacleState.currentAlert?.level == AlertLevel.DANGER -> "危险"
-        obstacleState.currentAlert?.level == AlertLevel.WARNING -> "警告"
-        obstacleState.isRunning -> "安全"
-        else -> "待机"
-    }
-    
-    val obstacleCount = obstacleState.detectedObstacles.size
-    
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color(0xFF1A1A2E))
-            .padding(16.dp)
+    // TODO: 瀹炵幇瀹ゅ唴鎰熺煡鍔熻兘
+    ModuleScreenTemplate(
+        title = "瀹ゅ唴鎰熺煡",
+        onBack = onBack,
+        viewModel = viewModel
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Call, null, tint = Color(0xFF1E90FF), modifier = Modifier.size(24.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("环境感知", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = Color.White)
-            }
-            
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = when (safetyStatus) {
-                        "危险" -> Color(0xFFFF6B6B)
-                        "警告" -> Color(0xFFFFB347)
-                        "安全" -> Color(0xFF4CAF50)
-                        else -> Color(0xFF666666)
-                    }
-                ) {
-                    Text(safetyStatus, modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, color = Color.White)
-                }
-                Spacer(Modifier.width(10.dp))
-                Surface(onClick = onClose, shape = CircleShape, color = Color(0x44FFFFFF), modifier = Modifier.size(40.dp).semantics { contentDescription = "关闭环境感知" }) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(22.dp))
-                    }
-                }
-            }
-        }
-        
-        Spacer(Modifier.height(16.dp))
-        
-        Box(
-            modifier = Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(16.dp)).background(Color.Black)
-        ) {
-            if (hasPermission) {
-                AndroidView(
-                    factory = { ctx ->
-                        PreviewView(ctx).apply {
-                            scaleType = PreviewView.ScaleType.FILL_CENTER
-                            implementationMode = PreviewView.ImplementationMode.PERFORMANCE
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                    update = { previewView ->
-                        obstacleRepository.setLifecycleOwner(lifecycleOwner)
-                        obstacleRepository.setPreviewSurfaceProvider(previewView.surfaceProvider)
-                    }
-                )
-                
-                if (obstacleState.isRunning && obstacleCount > 0) {
-                    Surface(modifier = Modifier.align(Alignment.TopEnd).padding(12.dp), shape = RoundedCornerShape(8.dp), color = Color(0xFFFF6B6B)) {
-                        Column(Modifier.padding(12.dp, 6.dp)) {
-                            Text("检测到 $obstacleCount 个障碍物", style = MaterialTheme.typography.labelSmall, color = Color.White, fontWeight = FontWeight.Bold)
-                            obstacleState.detectedObstacles.firstOrNull()?.let {
-                                Text("${it.type.chineseName} ${String.format("%.1f", it.distance)}m", style = MaterialTheme.typography.labelSmall, color = Color.White)
-                            }
-                        }
-                    }
-                }
-            } else {
-                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.Settings, null, tint = Color(0xFF666666), modifier = Modifier.size(48.dp))
-                    Spacer(Modifier.height(8.dp))
-                    Text("需要摄像头权限", style = MaterialTheme.typography.bodyMedium, color = Color(0xFF666666))
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = onRequestPermission, shape = RoundedCornerShape(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E90FF))) {
-                        Text("授权摄像头", color = Color.White)
-                    }
-                }
-            }
-        }
-        
-        Spacer(Modifier.height(16.dp))
-        
-        Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), color = Color(0xFF2A2A3E)) {
-            Column(Modifier.padding(12.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    InfoChip("状态", if (obstacleState.isRunning) "检测中" else "待机", if (obstacleState.isRunning) Color(0xFF4CAF50) else Color(0xFF666666))
-                    InfoChip("模型", when {
-                        obstacleState.isModelLoaded -> "已加载"
-                        !obstacleState.isModelInitComplete -> "加载中..."
-                        else -> "未加载"
-                    }, when {
-                        obstacleState.isModelLoaded -> Color(0xFF4CAF50)
-                        !obstacleState.isModelInitComplete -> Color(0xFFFFB347)
-                        else -> Color(0xFFFF5252)
-                    })
-                    InfoChip("障碍物", if (obstacleCount > 0) "$obstacleCount 个" else "无", if (obstacleCount > 0) Color(0xFFFF9800) else Color(0xFF4CAF50))
-                    InfoChip("FPS", "${obstacleState.fps}", Color(0xFF1E90FF))
-                }
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = onClose,
-                    Modifier.fillMaxWidth().height(48.dp).semantics { contentDescription = "停止环境感知" },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE53935))
-                ) {
-                    Icon(Icons.Default.Close, null, tint = Color.White, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("停止环境感知", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-            }
+            Icon(
+                imageVector = Icons.Default.Home,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = Color(0xFF1E90FF)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "瀹ゅ唴鎰熺煡鍔熻兘",
+                style = MaterialTheme.typography.headlineSmall
+            )
+            Text(
+                text = "瀹ゅ唴瀵艰埅 路 闅滅鐗╂娴?路 绌洪棿鐞嗚В",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF666666)
+            )
         }
     }
 }
 
+/**
+ * 鍑鸿瀵艰埅灞忓箷
+ */
 @Composable
-private fun InfoChip(label: String, value: String, valueColor: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Color(0xFF888888))
-        Text(value, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = valueColor)
+private fun OutdoorNavigationScreen(
+    obstacleRepository: ObstacleRepository,
+    navigationRepository: NavigationRepository,
+    onBack: () -> Unit,
+    viewModel: VoiceInteractionViewModel
+) {
+    // TODO: 瀹炵幇鍑鸿瀵艰埅鍔熻兘
+    ModuleScreenTemplate(
+        title = "鍑鸿瀵艰埅",
+        onBack = onBack,
+        viewModel = viewModel
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Navigation,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = Color(0xFF4CAF50)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "鍑鸿瀵艰埅鍔熻兘",
+                style = MaterialTheme.typography.headlineSmall
+            )
+            Text(
+                text = "璺嚎瑙勫垝 路 鐩查亾寮曞 路 浜ら€氳緟鍔?,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF666666)
+            )
+        }
     }
 }
 
-// ==================== NearbyPoiService（保持原样）==================
-// 完整的 NearbyPoiService 实现见原始文件
-object NearbyPoiService {
-    fun generateAnnouncementSync(location: LocationInfo): String {
-        return "附近暂无可播报的地点"
+/**
+ * 鍦烘櫙鎰熺煡灞忓箷
+ */
+@Composable
+private fun ScenePerceptionScreen(
+    obstacleRepository: ObstacleRepository,
+    onBack: () -> Unit,
+    viewModel: VoiceInteractionViewModel
+) {
+    // TODO: 瀹炵幇鍦烘櫙鎰熺煡鍔熻兘
+    ModuleScreenTemplate(
+        title = "鍦烘櫙鎰熺煡",
+        onBack = onBack,
+        viewModel = viewModel
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Visibility,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = Color(0xFFFF9800)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "鍦烘櫙鎰熺煡鍔熻兘",
+                style = MaterialTheme.typography.headlineSmall
+            )
+            Text(
+                text = "鐗╀綋璇嗗埆 路 鍦烘櫙鎻忚堪 路 鏂囧瓧鏈楄",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color(0xFF666666)
+            )
+        }
     }
 }
 
-
-
+/**
+ * 妯″潡灞忓箷妯℃澘
+ */
+@Composable
+private fun ModuleScreenTemplate(
+    title: String,
+    onBack: () -> Unit,
+    viewModel: VoiceInteractionViewModel,
+    content: @Composable () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "杩斿洖")
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+        ) {
+            content()
+        }
+    }
+}
