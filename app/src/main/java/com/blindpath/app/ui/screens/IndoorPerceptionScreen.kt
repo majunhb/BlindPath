@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -52,7 +53,7 @@ import java.util.concurrent.Executors
 
 /**
  * 室内感知屏幕 - 技术方案 v1.0 实现
- * 
+ *
  * 核心功能：
  * 1. 高精度室内定位（多源融合）
  * 2. 全维度障碍物感知与分级预警
@@ -105,6 +106,11 @@ fun IndoorPerceptionScreen(
     var lastAlertTime by remember { mutableStateOf(0L) }
     var lastObstacleAlertTime by remember { mutableStateOf(0L) }
 
+    // 模型加载重试相关状态
+    var modelLoadAttempts by remember { mutableStateOf(0) }
+    var showModelRetryButton by remember { mutableStateOf(false) }
+    val maxModelLoadAttempts = 3
+
     // 功能模式切换
     var currentMode by remember { mutableStateOf(IndoorPerceptionMode.ENVIRONMENT) }
 
@@ -130,31 +136,77 @@ fun IndoorPerceptionScreen(
         }
     }
 
-    // 检测状态切换
-    LaunchedEffect(isDetecting) {
-        if (isDetecting) {
-            isModelLoading = true
-            lastAnnouncement = "正在加载AI检测模型..."
-            viewModel.speak("正在加载室内感知模型")
-            
+    // 模型加载函数（支持重试）
+    suspend fun loadModelWithRetry(): Boolean {
+        isModelLoading = true
+        showModelRetryButton = false
+        modelLoadAttempts++
+        
+        Timber.d("IndoorPerceptionScreen 开始加载模型，第 $modelLoadAttempts 次尝试")
+        lastAnnouncement = "正在加载AI检测模型..."
+        viewModel.speak("正在加载室内感知模型")
+
+        return try {
             val loaded = indoorDetector.loadModel()
             isModelLoading = false
             isModelReady = loaded
 
             if (loaded) {
-                lastAnnouncement = "室内感知已启动，正在扫描周围环境"
-                viewModel.speak("室内感知已启动，正在扫描周围环境")
+                modelLoadAttempts = 0
+                val isAiLoaded = indoorDetector.isAiModelLoaded()
+                val isMlKitLoaded = indoorDetector.isMlKitInitialized()
+                
+                if (isAiLoaded) {
+                    lastAnnouncement = "室内感知已启动，正在扫描周围环境"
+                    viewModel.speak("室内感知已启动，正在扫描周围环境")
+                } else {
+                    lastAnnouncement = "室内感知已启动（基础模式），仅支持场景识别"
+                    viewModel.speak("室内感知已启动基础模式，支持场景识别")
+                }
+                Timber.i("模型加载成功: AI=$isAiLoaded, MLKit=$isMlKitLoaded")
             } else {
-                lastAnnouncement = "室内感知启动失败，请检查设备后重试"
-                viewModel.speak("室内感知启动失败")
+                if (modelLoadAttempts < maxModelLoadAttempts) {
+                    lastAnnouncement = "模型加载失败，可点击重试"
+                    showModelRetryButton = true
+                    Timber.w("模型加载失败，第 $modelLoadAttempts 次尝试，显示重试按钮")
+                } else {
+                    lastAnnouncement = "模型加载多次失败，请检查网络或设备存储空间"
+                    viewModel.speak("模型加载失败，请检查设备后重试")
+                    showModelRetryButton = true
+                    Timber.e("模型加载 $maxModelLoadAttempts 次均失败")
+                }
                 isDetecting = false
             }
+            loaded
+        } catch (e: Exception) {
+            Timber.e(e, "模型加载异常: ${e.message}")
+            isModelLoading = false
+            isModelReady = false
+            
+            if (modelLoadAttempts < maxModelLoadAttempts) {
+                lastAnnouncement = "模型加载异常，可点击重试"
+                showModelRetryButton = true
+            } else {
+                lastAnnouncement = "模型加载多次异常，请检查设备"
+                showModelRetryButton = true
+            }
+            isDetecting = false
+            false
+        }
+    }
+
+    // 检测状态切换
+    LaunchedEffect(isDetecting) {
+        if (isDetecting) {
+            loadModelWithRetry()
         } else {
             indoorDetector.unloadModel()
             isModelReady = false
             currentScene = null
             lastRoomType = null
             detectedObstacles = emptyList()
+            modelLoadAttempts = 0
+            showModelRetryButton = false
             viewModel.speak("室内感知已停止")
         }
     }
@@ -231,19 +283,19 @@ fun IndoorPerceptionScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { 
+                title = {
                     Text(
-                        "室内感知", 
+                        "室内感知",
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFF1E90FF)
-                    ) 
+                    )
                 },
                 navigationIcon = {
                     IconButton(
                         onClick = {
                             isDetecting = false
-                            scope.launch { 
-                                voiceRepository.speak("室内感知已关闭", queueMode = false) 
+                            scope.launch {
+                                voiceRepository.speak("室内感知已关闭", queueMode = false)
                             }
                             onBack()
                         }
@@ -406,6 +458,58 @@ fun IndoorPerceptionScreen(
                                 CircularProgressIndicator(color = Color.White)
                                 Spacer(modifier = Modifier.height(12.dp))
                                 Text("正在加载AI模型...", color = Color.White, fontSize = 16.sp)
+                            }
+                        }
+                    }
+
+                    // 模型加载失败重试按钮
+                    if (showModelRetryButton && !isModelLoading) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
+                                .padding(24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFA500),
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    "模型加载失败",
+                                    color = Color.White,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    "已尝试 $modelLoadAttempts/$maxModelLoadAttempts 次",
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    fontSize = 14.sp
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            loadModelWithRetry()
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF1E90FF)
+                                    )
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("重新加载模型")
+                                }
                             }
                         }
                     }
@@ -626,7 +730,7 @@ private fun IndoorObstacleResultItem(obstacle: DetectedIndoorObstacle) {
 private fun generateSpatialDescription(scene: IndoorScene): String {
     val roomName = scene.roomType.chineseName
     val obstacleCount = scene.obstacles.size
-    
+
     return if (obstacleCount > 0) {
         val nearestObstacle = scene.obstacles.minByOrNull { it.distance }
         val obstacleDesc = nearestObstacle?.let {

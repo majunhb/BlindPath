@@ -31,6 +31,8 @@ class IndoorDetector @Inject constructor(
 ) {
     private var imageLabeler: com.google.mlkit.vision.label.ImageLabeler? = null
     private var isLoaded = false
+    private var aiModelLoaded = false
+    private var mlKitInitialized = false
 
     // ML Kit 标签到房间类型的映射
     private val labelToRoomType = mapOf(
@@ -144,24 +146,56 @@ class IndoorDetector @Inject constructor(
 
     /**
      * 加载检测模型
+     * 修复：即使 AIDetector 加载失败，也继续初始化 ML Kit Image Labeler，提供降级功能
      */
     suspend fun loadModel(): Boolean {
+        Timber.d("IndoorDetector.loadModel() 开始加载模型...")
         return try {
-            // 1. 加载 AIDetector 模型
-            val aiLoaded = aiDetector.loadModel()
+            // 1. 尝试加载 AIDetector 模型（障碍物检测）
+            aiModelLoaded = try {
+                Timber.d("开始加载 AIDetector 模型...")
+                val loaded = aiDetector.loadModel()
+                Timber.d("AIDetector 模型加载结果: $loaded")
+                loaded
+            } catch (e: Exception) {
+                Timber.e(e, "AIDetector 模型加载失败，将使用 ML Kit 降级方案。异常类型: ${e.javaClass.simpleName}, 消息: ${e.message}")
+                false
+            }
 
-            // 2. 初始化 ML Kit Image Labeler（优化参数）
-            val options = ImageLabelerOptions.Builder()
-                .setConfidenceThreshold(0.3f)  // 降低阈值提高召回率
-                .build()
-            imageLabeler = ImageLabeling.getClient(options)
+            // 2. 初始化 ML Kit Image Labeler（场景识别，必须成功）
+            mlKitInitialized = try {
+                Timber.d("开始初始化 ML Kit Image Labeler...")
+                val options = ImageLabelerOptions.Builder()
+                    .setConfidenceThreshold(0.3f)  // 降低阈值提高召回率
+                    .build()
+                imageLabeler = ImageLabeling.getClient(options)
+                Timber.d("ML Kit Image Labeler 初始化成功")
+                true
+            } catch (e: Exception) {
+                Timber.e(e, "ML Kit Image Labeler 初始化失败。异常类型: ${e.javaClass.simpleName}, 消息: ${e.message}")
+                false
+            }
 
-            isLoaded = aiLoaded
-            Timber.d("IndoorDetector loaded: AI=$aiLoaded, ImageLabeler initialized")
+            // 3. 判断整体加载状态：只要 ML Kit 初始化成功，就认为模型可用（降级模式）
+            isLoaded = mlKitInitialized
+            
+            if (isLoaded) {
+                if (aiModelLoaded) {
+                    Timber.i("IndoorDetector 加载完成: AI模型+ML Kit双引擎就绪")
+                } else {
+                    Timber.w("IndoorDetector 加载完成: AIDetector 失败，仅 ML Kit 单引擎运行（降级模式）")
+                }
+            } else {
+                Timber.e("IndoorDetector 加载失败: ML Kit 初始化失败，无法提供任何检测能力")
+            }
+            
+            Timber.d("IndoorDetector 最终状态: isLoaded=$isLoaded, aiModelLoaded=$aiModelLoaded, mlKitInitialized=$mlKitInitialized")
             isLoaded
         } catch (e: Exception) {
-            Timber.e(e, "加载室内检测模型失败")
+            Timber.e(e, "加载室内检测模型时发生未捕获异常。异常类型: ${e.javaClass.simpleName}, 消息: ${e.message}")
             isLoaded = false
+            aiModelLoaded = false
+            mlKitInitialized = false
             false
         }
     }
@@ -170,18 +204,33 @@ class IndoorDetector @Inject constructor(
      * 卸载模型
      */
     fun unloadModel() {
-        aiDetector.unloadModel()
-        imageLabeler?.close()
+        Timber.d("IndoorDetector 开始卸载模型...")
+        try {
+            aiDetector.unloadModel()
+            Timber.d("AIDetector 模型已卸载")
+        } catch (e: Exception) {
+            Timber.e(e, "卸载 AIDetector 模型时发生异常")
+        }
+        try {
+            imageLabeler?.close()
+            Timber.d("ML Kit Image Labeler 已关闭")
+        } catch (e: Exception) {
+            Timber.e(e, "关闭 ML Kit Image Labeler 时发生异常")
+        }
         imageLabeler = null
         isLoaded = false
-        Timber.d("IndoorDetector unloaded")
+        aiModelLoaded = false
+        mlKitInitialized = false
+        Timber.d("IndoorDetector 卸载完成")
     }
 
     /**
      * 检测室内场景和障碍物
+     * 修复：即使 AIDetector 未加载，也继续执行 ML Kit 检测
      */
     suspend fun detect(bitmap: Bitmap): IndoorScene {
         if (!isLoaded) {
+            Timber.w("IndoorDetector 未加载，返回空场景")
             return IndoorScene(
                 roomType = RoomType.UNKNOWN,
                 confidence = 0f,
@@ -191,9 +240,24 @@ class IndoorDetector @Inject constructor(
 
         return withContext(Dispatchers.IO) {
             try {
-                // 并行执行3个检测任务（原来串行，现在并发）
+                // 并行执行检测任务
                 val roomTypeDeferred = async { detectRoomType(bitmap) }
-                val obstaclesDeferred = async { aiDetector.detect(bitmap) }
+                
+                // 只有 AIDetector 加载成功时才执行障碍物检测
+                val obstaclesDeferred = async {
+                    if (aiModelLoaded) {
+                        try {
+                            aiDetector.detect(bitmap)
+                        } catch (e: Exception) {
+                            Timber.e(e, "AIDetector 检测失败，跳过")
+                            emptyList()
+                        }
+                    } else {
+                        Timber.d("AIDetector 未加载，跳过障碍物检测")
+                        emptyList()
+                    }
+                }
+                
                 val mlKitObstaclesDeferred = async { detectWithMlKit(bitmap) }
 
                 // 等待所有结果
@@ -205,13 +269,15 @@ class IndoorDetector @Inject constructor(
                 val indoorObstacles = detectedObstacles.mapNotNull { convertToIndoorObstacle(it) }
                 val allObstacles = mergeObstacles(indoorObstacles, mlKitObstacles)
 
+                Timber.d("检测完成: 房间类型=${roomTypeResult.first.chineseName}, AIDetector障碍物=${indoorObstacles.size}, MLKit障碍物=${mlKitObstacles.size}, 合并后=${allObstacles.size}")
+
                 IndoorScene(
                     roomType = roomTypeResult.first,
                     confidence = roomTypeResult.second,
                     obstacles = allObstacles
                 )
             } catch (e: Exception) {
-                Timber.e(e, "室内检测失败")
+                Timber.e(e, "室内检测失败。异常类型: ${e.javaClass.simpleName}, 消息: ${e.message}")
                 IndoorScene(
                     roomType = RoomType.UNKNOWN,
                     confidence = 0f,
@@ -230,14 +296,17 @@ class IndoorDetector @Inject constructor(
             val labels = imageLabeler?.process(image)?.await()
 
             if (labels.isNullOrEmpty()) {
+                Timber.d("ML Kit 未返回任何标签")
                 return Pair(RoomType.UNKNOWN, 0f)
             }
+
+            Timber.d("ML Kit 返回 ${labels.size} 个标签: ${labels.map { "${it.text}(${String.format("%.2f", it.confidence)})" }}")
 
             // 查找匹配的房间类型
             for (label in labels) {
                 val roomType = labelToRoomType[label.text]
                 if (roomType != null) {
-                    Timber.d("Detected room type: ${label.text} -> ${roomType.chineseName} (${label.confidence})")
+                    Timber.d("检测到房间类型: ${label.text} -> ${roomType.chineseName} (置信度: ${label.confidence})")
                     return Pair(roomType, label.confidence)
                 }
             }
@@ -246,9 +315,13 @@ class IndoorDetector @Inject constructor(
             val labelTexts = labels.map { it.text.lowercase() }.toSet()
             val inferredType = inferRoomType(labelTexts)
 
+            if (inferredType != RoomType.UNKNOWN) {
+                Timber.d("通过标签组合推断房间类型: ${inferredType.chineseName}")
+            }
+
             Pair(inferredType, labels.firstOrNull()?.confidence ?: 0.5f)
         } catch (e: Exception) {
-            Timber.e(e, "房间类型识别失败")
+            Timber.e(e, "房间类型识别失败。异常类型: ${e.javaClass.simpleName}, 消息: ${e.message}")
             Pair(RoomType.UNKNOWN, 0f)
         }
     }
@@ -365,9 +438,13 @@ class IndoorDetector @Inject constructor(
                 }
             }
 
+            if (results.isNotEmpty()) {
+                Timber.d("ML Kit 检测到 ${results.size} 个室内物品: ${results.map { it.type.chineseName }}")
+            }
+
             results
         } catch (e: Exception) {
-            Timber.e(e, "ML Kit 室内物品检测失败")
+            Timber.e(e, "ML Kit 室内物品检测失败。异常类型: ${e.javaClass.simpleName}, 消息: ${e.message}")
             emptyList()
         }
     }
@@ -404,4 +481,14 @@ class IndoorDetector @Inject constructor(
      * 检查模型是否已加载
      */
     fun isModelLoaded(): Boolean = isLoaded
+
+    /**
+     * 检查 AI 模型是否加载成功
+     */
+    fun isAiModelLoaded(): Boolean = aiModelLoaded
+
+    /**
+     * 检查 ML Kit 是否初始化成功
+     */
+    fun isMlKitInitialized(): Boolean = mlKitInitialized
 }
