@@ -782,7 +782,7 @@ private fun DashboardBottomBar(
                 containerColor = Color(0xFF2A2A3E)
             )
         ) {
-            Icon(Icons.Default.Navigation, null, tint = Color(0xFF4FC3F7))
+            Icon(Icons.Default.Star, null, tint = Color(0xFF4FC3F7))
             Spacer(Modifier.width(6.dp))
             Text("智能出行", color = Color.White)
         }
@@ -882,7 +882,7 @@ private fun HomeCards(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Default.Visibility,
+                            Icons.Default.Camera,
                             null,
                             tint = Color(0xFF1E90FF),
                             modifier = Modifier.size(32.dp)
@@ -937,7 +937,7 @@ private fun HomeCards(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Icon(
-                        Icons.Default.Navigation,
+                        Icons.Default.Star,
                         null,
                         tint = Color(0xFF81C784),
                         modifier = Modifier.size(28.dp)
