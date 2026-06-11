@@ -19,42 +19,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
-          lfs: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+          cache: gradle
 
-      - name: Setup Android SDK (preinstalled)
-        run: |
-          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          echo "ANDROID_SDK_ROOT=" >> 
-          echo "ANDROID_HOME=" >> 
-
-      - name: Configure Gradle
-        run: |
-          mkdir -p ~/.gradle
-          echo "GRADLE_OPTS=-Dorg.gradle.daemon=false -Dorg.gradle.internal.network.timeout=300000" >> 
-
-      - name: Deep Clean
-        run: |
-          ./gradlew clean --no-daemon || true
-          rm -rf ~/.gradle/caches/build-cache-1/*
-          rm -rf app/build/ module_*/build/ base/build/
-          find . -path "*/build/*" -type d -exec rm -rf {} + 2>/dev/null || true
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
       - name: Build Debug APK
-        run: |
-          ./gradlew assembleDebug --no-daemon --rerun-tasks \
-            -Dorg.gradle.jvmargs="-Xmx4096m -XX:MaxMetaspaceSize=512m"
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: debug-apk
           path: app/build/outputs/apk/debug/*.apk
