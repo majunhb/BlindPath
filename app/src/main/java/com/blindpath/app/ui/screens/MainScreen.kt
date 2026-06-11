@@ -882,7 +882,7 @@ private fun HomeCards(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
-                            Icons.Default.Camera,
+                            Icons.Default.Home,
                             null,
                             tint = Color(0xFF1E90FF),
                             modifier = Modifier.size(32.dp)
