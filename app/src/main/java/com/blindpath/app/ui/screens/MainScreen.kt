@@ -23,75 +23,82 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.Preview
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
-import androidx.compose.animation.core.*
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicNone
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.semantics.*
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.blindpath.base.common.AlertLevel
-import com.blindpath.base.tts.VibrationHelper
-import com.blindpath.base.power.DeviceOrientationCalculator
 import androidx.core.content.ContextCompat
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.ObstacleState
-import com.blindpath.module_obstacle.domain.ItemSearchManager
-import com.blindpath.module_obstacle.domain.BusGuideManager
 import com.blindpath.module_navigation.domain.NavigationRepository
-import com.blindpath.module_navigation.domain.model.NavigationState
-import com.blindpath.module_navigation.domain.model.LocationInfo
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
 import com.blindpath.module_trip_assist.ui.TripAssistScreen
 import com.blindpath.module_voice.domain.model.VoiceCommand
 import com.blindpath.module_voice.domain.model.VoiceGuidance
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.util.concurrent.Executors
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import kotlin.math.abs
 
 /**
  * 主界面 - 视障友好极简设计 v6.0
@@ -102,6 +109,7 @@ import kotlin.math.abs
  * 3. 语音指令驱动
  * 4. 高对比度：蓝白主调，红色警示
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     obstacleRepository: ObstacleRepository,
@@ -180,22 +188,19 @@ fun MainScreen(
     when {
         showSettings -> {
             SettingsScreen(
-                onBack = { showSettings = false },
-                modifier = Modifier.fillMaxSize()
+                onBackClick = { showSettings = false }
             )
             return
         }
         showCommunity -> {
             CommunityScreen(
-                onBack = { showCommunity = false },
-                modifier = Modifier.fillMaxSize()
+                onBackClick = { showCommunity = false }
             )
             return
         }
         showTripAssist -> {
             TripAssistScreen(
-                onBack = { showTripAssist = false },
-                modifier = Modifier.fillMaxSize()
+                onBackClick = { showTripAssist = false }
             )
             return
         }
@@ -231,6 +236,7 @@ fun MainScreen(
     MainScreenContent(
         uiState = uiState,
         obstacleState = obstacleState,
+        navigationRepository = navigationRepository,
         onIndoorPerceptionClick = { showIndoorPerception = true },
         onOutdoorNavigationClick = { showOutdoorNavigation = true },
         onScenePerceptionClick = { showScenePerception = true },
@@ -247,10 +253,12 @@ fun MainScreen(
 /**
  * 主界面内容 - 三大模块入口
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreenContent(
-    uiState: VoiceInteractionUiState,
+    uiState: com.blindpath.module_voice.viewmodel.VoiceInteractionUiState,
     obstacleState: ObstacleState,
+    navigationRepository: NavigationRepository,
     onIndoorPerceptionClick: () -> Unit,
     onOutdoorNavigationClick: () -> Unit,
     onScenePerceptionClick: () -> Unit,
@@ -263,7 +271,6 @@ private fun MainScreenContent(
     viewModel: VoiceInteractionViewModel
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     
     // 权限状态
     var hasCameraPermission by remember {
@@ -348,7 +355,7 @@ private fun MainScreenContent(
             ModuleCard(
                 title = "出行导航",
                 subtitle = "路线规划 · 盲道引导 · 交通辅助",
-                icon = Icons.Default.Navigation,
+                icon = Icons.Default.Place,
                 backgroundColor = Color(0xFF4CAF50),
                 onClick = onOutdoorNavigationClick,
                 modifier = Modifier.fillMaxWidth()
@@ -360,7 +367,7 @@ private fun MainScreenContent(
             ModuleCard(
                 title = "场景感知",
                 subtitle = "物体识别 · 场景描述 · 文字朗读",
-                icon = Icons.Default.Visibility,
+                icon = Icons.Default.Search,
                 backgroundColor = Color(0xFFFF9800),
                 onClick = onScenePerceptionClick,
                 modifier = Modifier.fillMaxWidth()
@@ -390,7 +397,7 @@ private fun MainScreenContent(
                     modifier = Modifier.weight(1f)
                 )
                 QuickActionButton(
-                    icon = Icons.Default.Phone,
+                    icon = Icons.Default.Call,
                     label = "紧急求助",
                     onClick = onSosClick,
                     backgroundColor = Color(0xFFE53935),
@@ -423,6 +430,7 @@ private fun MainScreenContent(
 /**
  * 模块卡片
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ModuleCard(
     title: String,
@@ -483,7 +491,7 @@ private fun ModuleCard(
             
             // 箭头
             Icon(
-                imageVector = Icons.Default.ChevronRight,
+                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = null,
                 tint = backgroundColor,
                 modifier = Modifier.size(24.dp)
@@ -495,6 +503,7 @@ private fun ModuleCard(
 /**
  * 快速操作按钮
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun QuickActionButton(
     icon: ImageVector,
@@ -561,8 +570,7 @@ private fun VoiceWakeUpButton(
                 if (isListening) Color(0xFF4CAF50) else Color(0xFF1E90FF)
             )
             .clickable(onClick = onClick)
-            .semantics { contentDescription = if (isListening) "正在聆听，点击停止" else "点击唤醒语音助手" }
-            .then(Modifier),
+            .semantics { contentDescription = if (isListening) "正在聆听，点击停止" else "点击唤醒语音助手" },
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -577,6 +585,7 @@ private fun VoiceWakeUpButton(
 /**
  * 顶部栏
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainTopBar(
     onSettingsClick: () -> Unit,
@@ -593,7 +602,7 @@ private fun MainTopBar(
         actions = {
             IconButton(onClick = onCommunityClick) {
                 Icon(
-                    imageVector = Icons.Default.People,
+                    imageVector = Icons.Default.Person,
                     contentDescription = "社区"
                 )
             }
@@ -612,6 +621,7 @@ private fun MainTopBar(
 /**
  * 室内感知屏幕
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun IndoorPerceptionScreen(
     obstacleRepository: ObstacleRepository,
@@ -653,6 +663,7 @@ private fun IndoorPerceptionScreen(
 /**
  * 出行导航屏幕
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun OutdoorNavigationScreen(
     obstacleRepository: ObstacleRepository,
@@ -672,7 +683,7 @@ private fun OutdoorNavigationScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Icon(
-                imageVector = Icons.Default.Navigation,
+                imageVector = Icons.Default.Place,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
                 tint = Color(0xFF4CAF50)
@@ -694,6 +705,7 @@ private fun OutdoorNavigationScreen(
 /**
  * 场景感知屏幕
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScenePerceptionScreen(
     obstacleRepository: ObstacleRepository,
@@ -712,7 +724,7 @@ private fun ScenePerceptionScreen(
             verticalArrangement = Arrangement.Center
         ) {
             Icon(
-                imageVector = Icons.Default.Visibility,
+                imageVector = Icons.Default.Search,
                 contentDescription = null,
                 modifier = Modifier.size(64.dp),
                 tint = Color(0xFFFF9800)
@@ -734,6 +746,7 @@ private fun ScenePerceptionScreen(
 /**
  * 模块屏幕模板
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ModuleScreenTemplate(
     title: String,
@@ -747,7 +760,7 @@ private fun ModuleScreenTemplate(
                 title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
                     }
                 }
             )
