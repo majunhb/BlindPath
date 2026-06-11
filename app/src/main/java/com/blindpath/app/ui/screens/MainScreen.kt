@@ -1,14 +1,21 @@
 /**
- * BlindPath - 瑙嗛殰浜哄＋鍑鸿杈呭姪搴旂敤
+ * BlindPath - 视障人士出行辅助应用
  * 
- * 鏂囦欢锛歁ainScreen.kt
- * 璺緞锛歛pp/src/main/java/com/blindpath/app/ui/screens/
+ * 文件：MainScreen.kt
+ * 路径：app/src/main/java/com/blindpath/app/ui/screens/
  * 
- * 鐗堟湰 v3.0 - 棣栭〉閲嶆瀯
+ * 版本 v3.0 - 首页重构
  * 
- * 閲嶆瀯鍐呭锛? * 1. 绉婚櫎"鐜鎰熺煡"鍏ュ彛
- * 2. 棣栭〉鐩存帴鏄剧ず涓夊ぇ妯″潡锛氬鍐呮劅鐭ャ€佸嚭琛屽鑸€佸満鏅劅鐭? * 3. 姣忎釜妯″潡鐙珛鍏ュ彛锛屽姛鑳芥洿鍔犳竻鏅? * 
- * 涓夊ぇ鏍稿績妯″潡锛? * - 瀹ゅ唴鎰熺煡锛氬鍐呭鑸€侀殰纰嶇墿妫€娴嬨€佺┖闂寸悊瑙? * - 鍑鸿瀵艰埅锛氬澶栧鑸€佺洸閬撳紩瀵笺€佷氦閫氳緟鍔? * - 鍦烘櫙鎰熺煡锛氱墿浣撹瘑鍒€佸満鏅弿杩般€佹枃瀛楁湕璇? */
+ * 重构内容：
+ * 1. 移除"环境感知"入口
+ * 2. 首页直接显示三大模块：室内感知、出行导航、场景感知
+ * 3. 每个模块独立入口，功能更加清晰
+ * 
+ * 三大核心模块：
+ * - 室内感知：室内导航、障碍物检测、空间理解
+ * - 出行导航：室外导航、盲道引导、交通辅助
+ * - 场景感知：物体识别、场景描述、文字朗读
+ */
 
 package com.blindpath.app.ui.screens
 
@@ -87,12 +94,13 @@ import org.json.JSONObject
 import kotlin.math.abs
 
 /**
- * 涓荤晫闈?- 瑙嗛殰鍙嬪ソ鏋佺畝璁捐 v6.0
+ * 主界面 - 视障友好极简设计 v6.0
  * 
- * 璁捐鍘熷垯锛? * 1. 棣栭〉涓夊ぇ妯″潡鍏ュ彛锛氬鍐呮劅鐭?/ 鍑鸿瀵艰埅 / 鍦烘櫙鎰熺煡
- * 2. 姣忎釜妯″潡鍔熻兘鐙珛娓呮櫚
- * 3. 璇煶鎸囦护椹卞姩
- * 4. 楂樺姣斿害锛氳摑鐧戒富璋冿紝绾㈣壊璀︾ず
+ * 设计原则：
+ * 1. 首页三大模块入口：室内感知 / 出行导航 / 场景感知
+ * 2. 每个模块功能独立清晰
+ * 3. 语音指令驱动
+ * 4. 高对比度：蓝白主调，红色警示
  */
 @Composable
 fun MainScreen(
@@ -112,44 +120,46 @@ fun MainScreen(
     var showOutdoorNavigation by remember { mutableStateOf(false) }
     var showScenePerception by remember { mutableStateOf(false) }
 
-    // 鏀堕泦闅滅鐗╃姸鎬?    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
+    // 收集障碍物状态
+    val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
         initialValue = ObstacleState()
     )
 
     val commandScope = rememberCoroutineScope()
 
-    // 璁剧疆璇煶鎸囦护澶勭悊鍣?    LaunchedEffect(Unit) {
+    // 设置语音指令处理器
+    LaunchedEffect(Unit) {
         viewModel.setCommandHandler { command ->
             Timber.d("MainScreen: Handling voice command - ${command.name}")
             when (command) {
                 VoiceCommand.START_INDOOR_PERCEPTION -> {
                     showIndoorPerception = true
-                    viewModel.speak("瀹ゅ唴鎰熺煡宸插惎鍔?)
+                    viewModel.speak("室内感知已启动")
                     true
                 }
                 VoiceCommand.STOP_INDOOR_PERCEPTION -> {
                     showIndoorPerception = false
-                    viewModel.speak("瀹ゅ唴鎰熺煡宸插仠姝?)
+                    viewModel.speak("室内感知已停止")
                     true
                 }
                 VoiceCommand.START_OUTDOOR_NAVIGATION -> {
                     showOutdoorNavigation = true
-                    viewModel.speak("鍑鸿瀵艰埅宸插惎鍔?)
+                    viewModel.speak("出行导航已启动")
                     true
                 }
                 VoiceCommand.STOP_OUTDOOR_NAVIGATION -> {
                     showOutdoorNavigation = false
-                    viewModel.speak("鍑鸿瀵艰埅宸插仠姝?)
+                    viewModel.speak("出行导航已停止")
                     true
                 }
                 VoiceCommand.START_SCENE_PERCEPTION -> {
                     showScenePerception = true
-                    viewModel.speak("鍦烘櫙鎰熺煡宸插惎鍔?)
+                    viewModel.speak("场景感知已启动")
                     true
                 }
                 VoiceCommand.STOP_SCENE_PERCEPTION -> {
                     showScenePerception = false
-                    viewModel.speak("鍦烘櫙鎰熺煡宸插仠姝?)
+                    viewModel.speak("场景感知已停止")
                     true
                 }
                 VoiceCommand.WHERE_AM_I -> {
@@ -166,7 +176,7 @@ fun MainScreen(
         }
     }
 
-    // 椤甸潰璺敱
+    // 页面路由
     when {
         showSettings -> {
             SettingsScreen(
@@ -217,7 +227,8 @@ fun MainScreen(
         }
     }
 
-    // 涓荤晫闈?    MainScreenContent(
+    // 主界面
+    MainScreenContent(
         uiState = uiState,
         obstacleState = obstacleState,
         onIndoorPerceptionClick = { showIndoorPerception = true },
@@ -234,7 +245,7 @@ fun MainScreen(
 }
 
 /**
- * 涓荤晫闈㈠唴瀹?- 涓夊ぇ妯″潡鍏ュ彛
+ * 主界面内容 - 三大模块入口
  */
 @Composable
 private fun MainScreenContent(
@@ -254,7 +265,8 @@ private fun MainScreenContent(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     
-    // 鏉冮檺鐘舵€?    var hasCameraPermission by remember {
+    // 权限状态
+    var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == 
             PackageManager.PERMISSION_GRANTED
@@ -266,13 +278,14 @@ private fun MainScreenContent(
     ) { isGranted ->
         hasCameraPermission = isGranted
         if (isGranted) {
-            viewModel.speak("鐩告満鏉冮檺宸茶幏鍙?)
+            viewModel.speak("相机权限已获取")
         } else {
-            viewModel.speak("闇€瑕佺浉鏈烘潈闄愭墠鑳戒娇鐢ㄨ瑙夊姛鑳?)
+            viewModel.speak("需要相机权限才能使用视觉功能")
         }
     }
 
-    // 瀵艰埅鐘舵€?    val navState by navigationRepository.state.collectAsStateWithLifecycle()
+    // 导航状态
+    val navState by navigationRepository.state.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -292,14 +305,15 @@ private fun MainScreenContent(
         ) {
             Spacer(modifier = Modifier.height(16.dp))
             
-            // 娆㈣繋璇?            Text(
-                text = "鎮ㄥソ锛屾垜鏄皬鏅?,
+            // 欢迎语
+            Text(
+                text = "您好，我是小智",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1A1A3E)
             )
             Text(
-                text = "璇疯\"灏忔櫤灏忔櫤\"鍞ら啋鎴?,
+                text = "请说\"小智小智\"唤醒我",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF666666),
                 modifier = Modifier.padding(top = 4.dp)
@@ -307,9 +321,9 @@ private fun MainScreenContent(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // 涓夊ぇ鏍稿績妯″潡鍏ュ彛
+            // 三大核心模块入口
             Text(
-                text = "閫夋嫨鍔熻兘妯″潡",
+                text = "选择功能模块",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1A1A3E),
@@ -318,9 +332,10 @@ private fun MainScreenContent(
             
             Spacer(modifier = Modifier.height(16.dp))
             
-            // 妯″潡 1锛氬鍐呮劅鐭?            ModuleCard(
-                title = "瀹ゅ唴鎰熺煡",
-                subtitle = "瀹ゅ唴瀵艰埅 路 闅滅鐗╂娴?路 绌洪棿鐞嗚В",
+            // 模块 1：室内感知
+            ModuleCard(
+                title = "室内感知",
+                subtitle = "室内导航 · 障碍物检测 · 空间理解",
                 icon = Icons.Default.Home,
                 backgroundColor = Color(0xFF1E90FF),
                 onClick = onIndoorPerceptionClick,
@@ -329,9 +344,10 @@ private fun MainScreenContent(
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // 妯″潡 2锛氬嚭琛屽鑸?            ModuleCard(
-                title = "鍑鸿瀵艰埅",
-                subtitle = "璺嚎瑙勫垝 路 鐩查亾寮曞 路 浜ら€氳緟鍔?,
+            // 模块 2：出行导航
+            ModuleCard(
+                title = "出行导航",
+                subtitle = "路线规划 · 盲道引导 · 交通辅助",
                 icon = Icons.Default.Navigation,
                 backgroundColor = Color(0xFF4CAF50),
                 onClick = onOutdoorNavigationClick,
@@ -340,9 +356,10 @@ private fun MainScreenContent(
             
             Spacer(modifier = Modifier.height(12.dp))
             
-            // 妯″潡 3锛氬満鏅劅鐭?            ModuleCard(
-                title = "鍦烘櫙鎰熺煡",
-                subtitle = "鐗╀綋璇嗗埆 路 鍦烘櫙鎻忚堪 路 鏂囧瓧鏈楄",
+            // 模块 3：场景感知
+            ModuleCard(
+                title = "场景感知",
+                subtitle = "物体识别 · 场景描述 · 文字朗读",
                 icon = Icons.Default.Visibility,
                 backgroundColor = Color(0xFFFF9800),
                 onClick = onScenePerceptionClick,
@@ -351,8 +368,9 @@ private fun MainScreenContent(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // 蹇€熷姛鑳?            Text(
-                text = "蹇€熷姛鑳?,
+            // 快速功能
+            Text(
+                text = "快速功能",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFF1A1A3E),
@@ -367,13 +385,13 @@ private fun MainScreenContent(
             ) {
                 QuickActionButton(
                     icon = Icons.Default.LocationOn,
-                    label = "鎴戠殑浣嶇疆",
+                    label = "我的位置",
                     onClick = { /* TODO */ },
                     modifier = Modifier.weight(1f)
                 )
                 QuickActionButton(
                     icon = Icons.Default.Phone,
-                    label = "绱ф€ユ眰鍔?,
+                    label = "紧急求助",
                     onClick = onSosClick,
                     backgroundColor = Color(0xFFE53935),
                     modifier = Modifier.weight(1f)
@@ -382,7 +400,7 @@ private fun MainScreenContent(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-            // 璇煶鍞ら啋鎸夐挳
+            // 语音唤醒按钮
             VoiceWakeUpButton(
                 isListening = uiState.isListening,
                 onClick = { if (uiState.isListening) onStopListening() else onStartListening() },
@@ -392,7 +410,7 @@ private fun MainScreenContent(
             Spacer(modifier = Modifier.height(16.dp))
             
             Text(
-                text = if (uiState.isListening) "姝ｅ湪鑱嗗惉..." else "鐐瑰嚮鍞ら啋",
+                text = if (uiState.isListening) "正在聆听..." else "点击唤醒",
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (uiState.isListening) Color(0xFF4CAF50) else Color(0xFF666666)
             )
@@ -403,7 +421,7 @@ private fun MainScreenContent(
 }
 
 /**
- * 妯″潡鍗＄墖
+ * 模块卡片
  */
 @Composable
 private fun ModuleCard(
@@ -419,7 +437,7 @@ private fun ModuleCard(
         modifier = modifier
             .height(100.dp)
             .semantics { 
-                contentDescription = "$title锛?subtitle"
+                contentDescription = "$title，$subtitle"
             },
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = backgroundColor.copy(alpha = 0.1f))
@@ -430,7 +448,7 @@ private fun ModuleCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 鍥炬爣
+            // 图标
             Box(
                 modifier = Modifier
                     .size(56.dp)
@@ -448,7 +466,7 @@ private fun ModuleCard(
             
             Spacer(modifier = Modifier.width(16.dp))
             
-            // 鏂囧瓧
+            // 文字
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -463,7 +481,7 @@ private fun ModuleCard(
                 )
             }
             
-            // 绠ご
+            // 箭头
             Icon(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = null,
@@ -475,7 +493,8 @@ private fun ModuleCard(
 }
 
 /**
- * 蹇€熸搷浣滄寜閽? */
+ * 快速操作按钮
+ */
 @Composable
 private fun QuickActionButton(
     icon: ImageVector,
@@ -515,7 +534,7 @@ private fun QuickActionButton(
 }
 
 /**
- * 璇煶鍞ら啋鎸夐挳
+ * 语音唤醒按钮
  */
 @Composable
 private fun VoiceWakeUpButton(
@@ -542,7 +561,8 @@ private fun VoiceWakeUpButton(
                 if (isListening) Color(0xFF4CAF50) else Color(0xFF1E90FF)
             )
             .clickable(onClick = onClick)
-            .semantics { contentDescription = if (isListening) "姝ｅ湪鑱嗗惉锛岀偣鍑诲仠姝? else "鐐瑰嚮鍞ら啋璇煶鍔╂墜" },
+            .semantics { contentDescription = if (isListening) "正在聆听，点击停止" else "点击唤醒语音助手" }
+            .then(Modifier),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -555,7 +575,8 @@ private fun VoiceWakeUpButton(
 }
 
 /**
- * 椤堕儴鏍? */
+ * 顶部栏
+ */
 @Composable
 private fun MainTopBar(
     onSettingsClick: () -> Unit,
@@ -564,7 +585,7 @@ private fun MainTopBar(
     TopAppBar(
         title = {
             Text(
-                text = "鏅鸿鍔╃洸",
+                text = "智行助盲",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
@@ -573,23 +594,23 @@ private fun MainTopBar(
             IconButton(onClick = onCommunityClick) {
                 Icon(
                     imageVector = Icons.Default.People,
-                    contentDescription = "绀惧尯"
+                    contentDescription = "社区"
                 )
             }
             IconButton(onClick = onSettingsClick) {
                 Icon(
                     imageVector = Icons.Default.Settings,
-                    contentDescription = "璁剧疆"
+                    contentDescription = "设置"
                 )
             }
         }
     )
 }
 
-// ==================== 涓夊ぇ妯″潡灞忓箷 ====================
+// ==================== 三大模块屏幕 ====================
 
 /**
- * 瀹ゅ唴鎰熺煡灞忓箷
+ * 室内感知屏幕
  */
 @Composable
 private fun IndoorPerceptionScreen(
@@ -598,9 +619,9 @@ private fun IndoorPerceptionScreen(
     onBack: () -> Unit,
     viewModel: VoiceInteractionViewModel
 ) {
-    // TODO: 瀹炵幇瀹ゅ唴鎰熺煡鍔熻兘
+    // TODO: 实现室内感知功能
     ModuleScreenTemplate(
-        title = "瀹ゅ唴鎰熺煡",
+        title = "室内感知",
         onBack = onBack,
         viewModel = viewModel
     ) {
@@ -617,11 +638,11 @@ private fun IndoorPerceptionScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "瀹ゅ唴鎰熺煡鍔熻兘",
+                text = "室内感知功能",
                 style = MaterialTheme.typography.headlineSmall
             )
             Text(
-                text = "瀹ゅ唴瀵艰埅 路 闅滅鐗╂娴?路 绌洪棿鐞嗚В",
+                text = "室内导航 · 障碍物检测 · 空间理解",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF666666)
             )
@@ -630,7 +651,7 @@ private fun IndoorPerceptionScreen(
 }
 
 /**
- * 鍑鸿瀵艰埅灞忓箷
+ * 出行导航屏幕
  */
 @Composable
 private fun OutdoorNavigationScreen(
@@ -639,9 +660,9 @@ private fun OutdoorNavigationScreen(
     onBack: () -> Unit,
     viewModel: VoiceInteractionViewModel
 ) {
-    // TODO: 瀹炵幇鍑鸿瀵艰埅鍔熻兘
+    // TODO: 实现出行导航功能
     ModuleScreenTemplate(
-        title = "鍑鸿瀵艰埅",
+        title = "出行导航",
         onBack = onBack,
         viewModel = viewModel
     ) {
@@ -658,11 +679,11 @@ private fun OutdoorNavigationScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "鍑鸿瀵艰埅鍔熻兘",
+                text = "出行导航功能",
                 style = MaterialTheme.typography.headlineSmall
             )
             Text(
-                text = "璺嚎瑙勫垝 路 鐩查亾寮曞 路 浜ら€氳緟鍔?,
+                text = "路线规划 · 盲道引导 · 交通辅助",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF666666)
             )
@@ -671,7 +692,7 @@ private fun OutdoorNavigationScreen(
 }
 
 /**
- * 鍦烘櫙鎰熺煡灞忓箷
+ * 场景感知屏幕
  */
 @Composable
 private fun ScenePerceptionScreen(
@@ -679,9 +700,9 @@ private fun ScenePerceptionScreen(
     onBack: () -> Unit,
     viewModel: VoiceInteractionViewModel
 ) {
-    // TODO: 瀹炵幇鍦烘櫙鎰熺煡鍔熻兘
+    // TODO: 实现场景感知功能
     ModuleScreenTemplate(
-        title = "鍦烘櫙鎰熺煡",
+        title = "场景感知",
         onBack = onBack,
         viewModel = viewModel
     ) {
@@ -698,11 +719,11 @@ private fun ScenePerceptionScreen(
             )
             Spacer(modifier = Modifier.height(16.dp))
             Text(
-                text = "鍦烘櫙鎰熺煡鍔熻兘",
+                text = "场景感知功能",
                 style = MaterialTheme.typography.headlineSmall
             )
             Text(
-                text = "鐗╀綋璇嗗埆 路 鍦烘櫙鎻忚堪 路 鏂囧瓧鏈楄",
+                text = "物体识别 · 场景描述 · 文字朗读",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color(0xFF666666)
             )
@@ -711,7 +732,7 @@ private fun ScenePerceptionScreen(
 }
 
 /**
- * 妯″潡灞忓箷妯℃澘
+ * 模块屏幕模板
  */
 @Composable
 private fun ModuleScreenTemplate(
@@ -726,7 +747,7 @@ private fun ModuleScreenTemplate(
                 title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "杩斿洖")
+                        Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                     }
                 }
             )
