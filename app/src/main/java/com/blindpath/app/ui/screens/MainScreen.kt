@@ -336,6 +336,18 @@ fun MainScreen(
                 onSettingsClick = { showSettings = true },
                 onLocationClick = { showLocation = true },
                 onExploreClick = {},
+                onTripAssistClick = {
+                    showTripAssist = true
+                    showIndoorScreen = false
+                    showSettings = false
+                    showCommunity = false
+                },
+                onIndoorClick = {
+                    showIndoorScreen = true
+                    showTripAssist = false
+                    showSettings = false
+                    showCommunity = false
+                },
                 isListening = uiState.isListening,
                 onStartListening = { viewModel.startListening() },
                 onStopListening = { viewModel.stopListening() },
@@ -359,6 +371,8 @@ private fun SmartDashboard(
     onSettingsClick: () -> Unit,
     onLocationClick: () -> Unit,
     onExploreClick: () -> Unit = {},
+    onTripAssistClick: () -> Unit,
+    onIndoorClick: () -> Unit,
     isListening: Boolean = false,
     onStartListening: () -> Unit = {},
     onStopListening: () -> Unit = {},
@@ -538,18 +552,8 @@ private fun SmartDashboard(
                 } else {
                     // 【首页重构】三卡片入口：出行 / 室内 / 场景感知
                     HomeCards(
-                        onTripAssist = {
-                            showTripAssist = true
-                            showIndoorScreen = false
-                            showSettings = false
-                            showCommunity = false
-                        },
-                        onIndoor = {
-                            showIndoorScreen = true
-                            showTripAssist = false
-                            showSettings = false
-                            showCommunity = false
-                        },
+                        onTripAssist = onTripAssistClick,
+                        onIndoor = onIndoorClick,
                         onSceneAware = onObstacleToggle,
                         modifier = Modifier.fillMaxSize()
                     )
@@ -569,12 +573,7 @@ private fun SmartDashboard(
                 onToolsClick = onSettingsClick,
                 onSosClick = onSosClick,
                 isObstacleActive = showObstacleDetection,
-                onTripAssist = {
-                    showTripAssist = true
-                    showIndoorScreen = false
-                    showSettings = false
-                    showCommunity = false
-                },
+                onTripAssist = onTripAssistClick,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
