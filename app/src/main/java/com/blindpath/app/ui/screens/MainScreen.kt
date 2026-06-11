@@ -79,6 +79,7 @@ import com.blindpath.module_navigation.domain.model.LocationInfo
 import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
 import com.blindpath.module_trip_assist.ui.TripAssistScreen
+import com.blindpath.module_indoor.ui.IndoorScreen
 import com.blindpath.module_voice.domain.model.VoiceCommand
 import com.blindpath.module_voice.domain.model.VoiceGuidance
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
