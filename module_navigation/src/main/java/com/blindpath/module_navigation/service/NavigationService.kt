@@ -272,6 +272,8 @@ class NavigationService : LifecycleService() {
             append("当前位置：")
             when {
                 location.address.isNotBlank() -> append(location.address)
+                location.road.isNotBlank() -> append(location.road)
+                location.street.isNotBlank() -> append(location.street)
                 location.poiName.isNotBlank() -> append("附近${location.poiName}")
                 else -> append("未知位置")
             }
