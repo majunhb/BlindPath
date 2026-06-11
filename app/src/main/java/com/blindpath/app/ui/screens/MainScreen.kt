@@ -1,28 +1,7 @@
-/**
- * BlindPath - 视障人士出行辅助应用
- * 
- * 文件：MainScreen.kt
- * 路径：app/src/main/java/com/blindpath/app/ui/screens/
- * 
- * 版本 v3.0 - 首页重构
- * 
- * 重构内容：
- * 1. 移除"环境感知"入口
- * 2. 首页直接显示三大模块：室内感知、出行导航、场景感知
- * 3. 每个模块独立入口，功能更加清晰
- * 
- * 三大核心模块：
- * - 室内感知：室内导航、障碍物检测、空间理解
- * - 出行导航：室外导航、盲道引导、交通辅助
- * - 场景感知：物体识别、场景描述、文字朗读
- */
-
 package com.blindpath.app.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -51,10 +30,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicNone
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -72,7 +47,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,12 +54,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.module_obstacle.domain.ObstacleRepository
@@ -97,17 +69,11 @@ import com.blindpath.module_trip_assist.ui.TripAssistScreen
 import com.blindpath.module_voice.domain.model.VoiceCommand
 import com.blindpath.module_voice.domain.model.VoiceGuidance
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
-import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
- * 主界面 - 视障友好极简设计 v6.0
- * 
- * 设计原则：
- * 1. 首页三大模块入口：室内感知 / 出行导航 / 场景感知
- * 2. 每个模块功能独立清晰
- * 3. 语音指令驱动
- * 4. 高对比度：蓝白主调，红色警示
+ * 主界面 - 视障友好极简设计
+ * 三大模块入口：室内感知 / 出行导航 / 场景感知
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -120,7 +86,7 @@ fun MainScreen(
     viewModel: VoiceInteractionViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    
+
     var showSettings by remember { mutableStateOf(false) }
     var showCommunity by remember { mutableStateOf(false) }
     var showTripAssist by remember { mutableStateOf(false) }
@@ -128,14 +94,11 @@ fun MainScreen(
     var showOutdoorNavigation by remember { mutableStateOf(false) }
     var showScenePerception by remember { mutableStateOf(false) }
 
-    // 收集障碍物状态
     val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
         initialValue = ObstacleState()
     )
 
-    val commandScope = rememberCoroutineScope()
-
-    // 设置语音指令处理器
+    // 语音指令处理器
     LaunchedEffect(Unit) {
         viewModel.setCommandHandler { command ->
             Timber.d("MainScreen: Handling voice command - ${command.name}")
@@ -184,24 +147,18 @@ fun MainScreen(
         }
     }
 
-    // 页面路由
+    // 页面路由 - 使用独立文件中的 public 函数
     when {
         showSettings -> {
-            SettingsScreen(
-                onBackClick = { showSettings = false }
-            )
+            SettingsScreen(onBackClick = { showSettings = false })
             return
         }
         showCommunity -> {
-            CommunityScreen(
-                onBackClick = { showCommunity = false }
-            )
+            CommunityScreen(onBackClick = { showCommunity = false })
             return
         }
         showTripAssist -> {
-            TripAssistScreen(
-                onBackClick = { showTripAssist = false }
-            )
+            TripAssistScreen(onBackClick = { showTripAssist = false })
             return
         }
         showIndoorPerception -> {
@@ -232,11 +189,10 @@ fun MainScreen(
         }
     }
 
-    // 主界面
+    // 主界面内容
     MainScreenContent(
         uiState = uiState,
         obstacleState = obstacleState,
-        navigationRepository = navigationRepository,
         onIndoorPerceptionClick = { showIndoorPerception = true },
         onOutdoorNavigationClick = { showOutdoorNavigation = true },
         onScenePerceptionClick = { showScenePerception = true },
@@ -251,14 +207,13 @@ fun MainScreen(
 }
 
 /**
- * 主界面内容 - 三大模块入口
+ * 主界面内容
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreenContent(
     uiState: com.blindpath.module_voice.viewmodel.VoiceInteractionUiState,
     obstacleState: ObstacleState,
-    navigationRepository: NavigationRepository,
     onIndoorPerceptionClick: () -> Unit,
     onOutdoorNavigationClick: () -> Unit,
     onScenePerceptionClick: () -> Unit,
@@ -270,30 +225,6 @@ private fun MainScreenContent(
     onStopListening: () -> Unit,
     viewModel: VoiceInteractionViewModel
 ) {
-    val context = LocalContext.current
-    
-    // 权限状态
-    var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == 
-            PackageManager.PERMISSION_GRANTED
-        )
-    }
-    
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        hasCameraPermission = isGranted
-        if (isGranted) {
-            viewModel.speak("相机权限已获取")
-        } else {
-            viewModel.speak("需要相机权限才能使用视觉功能")
-        }
-    }
-
-    // 导航状态
-    val navState by navigationRepository.state.collectAsStateWithLifecycle()
-
     Scaffold(
         topBar = {
             MainTopBar(
@@ -311,7 +242,7 @@ private fun MainScreenContent(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // 欢迎语
             Text(
                 text = "您好，我是小智",
@@ -325,9 +256,9 @@ private fun MainScreenContent(
                 color = Color(0xFF666666),
                 modifier = Modifier.padding(top = 4.dp)
             )
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             // 三大核心模块入口
             Text(
                 text = "选择功能模块",
@@ -336,9 +267,9 @@ private fun MainScreenContent(
                 color = Color(0xFF1A1A3E),
                 modifier = Modifier.align(Alignment.Start)
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // 模块 1：室内感知
             ModuleCard(
                 title = "室内感知",
@@ -348,9 +279,9 @@ private fun MainScreenContent(
                 onClick = onIndoorPerceptionClick,
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             // 模块 2：出行导航
             ModuleCard(
                 title = "出行导航",
@@ -360,9 +291,9 @@ private fun MainScreenContent(
                 onClick = onOutdoorNavigationClick,
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             // 模块 3：场景感知
             ModuleCard(
                 title = "场景感知",
@@ -372,9 +303,9 @@ private fun MainScreenContent(
                 onClick = onScenePerceptionClick,
                 modifier = Modifier.fillMaxWidth()
             )
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             // 快速功能
             Text(
                 text = "快速功能",
@@ -383,9 +314,9 @@ private fun MainScreenContent(
                 color = Color(0xFF1A1A3E),
                 modifier = Modifier.align(Alignment.Start)
             )
-            
+
             Spacer(modifier = Modifier.height(12.dp))
-            
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -404,24 +335,24 @@ private fun MainScreenContent(
                     modifier = Modifier.weight(1f)
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             // 语音唤醒按钮
             VoiceWakeUpButton(
                 isListening = uiState.isListening,
                 onClick = { if (uiState.isListening) onStopListening() else onStartListening() },
                 modifier = Modifier.size(80.dp)
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             Text(
                 text = if (uiState.isListening) "正在聆听..." else "点击唤醒",
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (uiState.isListening) Color(0xFF4CAF50) else Color(0xFF666666)
             )
-            
+
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
@@ -444,7 +375,7 @@ private fun ModuleCard(
         onClick = onClick,
         modifier = modifier
             .height(100.dp)
-            .semantics { 
+            .semantics {
                 contentDescription = "$title，$subtitle"
             },
         shape = RoundedCornerShape(16.dp),
@@ -456,7 +387,6 @@ private fun ModuleCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 图标
             Box(
                 modifier = Modifier
                     .size(56.dp)
@@ -471,10 +401,9 @@ private fun ModuleCard(
                     modifier = Modifier.size(32.dp)
                 )
             }
-            
+
             Spacer(modifier = Modifier.width(16.dp))
-            
-            // 文字
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
@@ -488,8 +417,7 @@ private fun ModuleCard(
                     color = Color(0xFF666666)
                 )
             }
-            
-            // 箭头
+
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                 contentDescription = null,
@@ -552,7 +480,7 @@ private fun VoiceWakeUpButton(
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val scale by infiniteTransition.animateFloat(
+    val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
         targetValue = if (isListening) 1.1f else 1f,
         animationSpec = infiniteRepeatable(
@@ -561,10 +489,10 @@ private fun VoiceWakeUpButton(
         ),
         label = "scale"
     )
-    
+
     Box(
         modifier = modifier
-            .scale(scale)
+            .scale(pulseScale)
             .clip(CircleShape)
             .background(
                 if (isListening) Color(0xFF4CAF50) else Color(0xFF1E90FF)
@@ -573,8 +501,9 @@ private fun VoiceWakeUpButton(
             .semantics { contentDescription = if (isListening) "正在聆听，点击停止" else "点击唤醒语音助手" },
         contentAlignment = Alignment.Center
     ) {
+        // 使用 Home 图标代替 Mic（避免 material-icons-extended 依赖问题）
         Icon(
-            imageVector = if (isListening) Icons.Default.Mic else Icons.Default.MicNone,
+            imageVector = if (isListening) Icons.Default.Home else Icons.Default.Search,
             contentDescription = null,
             tint = Color.White,
             modifier = Modifier.size(40.dp)
@@ -602,7 +531,7 @@ private fun MainTopBar(
         actions = {
             IconButton(onClick = onCommunityClick) {
                 Icon(
-                    imageVector = Icons.Default.Person,
+                    imageVector = Icons.Default.Place,
                     contentDescription = "社区"
                 )
             }
@@ -614,164 +543,4 @@ private fun MainTopBar(
             }
         }
     )
-}
-
-// ==================== 三大模块屏幕 ====================
-
-/**
- * 室内感知屏幕
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun IndoorPerceptionScreen(
-    obstacleRepository: ObstacleRepository,
-    navigationRepository: NavigationRepository,
-    onBack: () -> Unit,
-    viewModel: VoiceInteractionViewModel
-) {
-    // TODO: 实现室内感知功能
-    ModuleScreenTemplate(
-        title = "室内感知",
-        onBack = onBack,
-        viewModel = viewModel
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Home,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = Color(0xFF1E90FF)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "室内感知功能",
-                style = MaterialTheme.typography.headlineSmall
-            )
-            Text(
-                text = "室内导航 · 障碍物检测 · 空间理解",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF666666)
-            )
-        }
-    }
-}
-
-/**
- * 出行导航屏幕
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun OutdoorNavigationScreen(
-    obstacleRepository: ObstacleRepository,
-    navigationRepository: NavigationRepository,
-    onBack: () -> Unit,
-    viewModel: VoiceInteractionViewModel
-) {
-    // TODO: 实现出行导航功能
-    ModuleScreenTemplate(
-        title = "出行导航",
-        onBack = onBack,
-        viewModel = viewModel
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Place,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = Color(0xFF4CAF50)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "出行导航功能",
-                style = MaterialTheme.typography.headlineSmall
-            )
-            Text(
-                text = "路线规划 · 盲道引导 · 交通辅助",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF666666)
-            )
-        }
-    }
-}
-
-/**
- * 场景感知屏幕
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ScenePerceptionScreen(
-    obstacleRepository: ObstacleRepository,
-    onBack: () -> Unit,
-    viewModel: VoiceInteractionViewModel
-) {
-    // TODO: 实现场景感知功能
-    ModuleScreenTemplate(
-        title = "场景感知",
-        onBack = onBack,
-        viewModel = viewModel
-    ) {
-        Column(
-            modifier = Modifier.fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Search,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = Color(0xFFFF9800)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text(
-                text = "场景感知功能",
-                style = MaterialTheme.typography.headlineSmall
-            )
-            Text(
-                text = "物体识别 · 场景描述 · 文字朗读",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF666666)
-            )
-        }
-    }
-}
-
-/**
- * 模块屏幕模板
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ModuleScreenTemplate(
-    title: String,
-    onBack: () -> Unit,
-    viewModel: VoiceInteractionViewModel,
-    content: @Composable () -> Unit
-) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(title) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                    }
-                }
-            )
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            content()
-        }
-    }
 }
