@@ -469,7 +469,9 @@ class NavigationRepositoryImpl @Inject constructor(
             bearing = aMapLocation.bearing,
             timestamp = aMapLocation.time,
             address = aMapLocation.address ?: "",
-            poiName = aMapLocation.poiName ?: ""
+            poiName = aMapLocation.poiName ?: "",
+            road = aMapLocation.road ?: "",
+            street = aMapLocation.street ?: ""
         )
 
         _state.update {
