@@ -339,7 +339,7 @@ class AssistedDetector @Inject constructor(
                 for (y in (centerY - height / 3)..(centerY + height / 3) step 4) {
                     val idx = y.coerceIn(0, height - 1) * width + x.coerceIn(0, width - 1)
                     val pixel = pixels[idx]
-                    val brightness = ((pixel shr 16) and 0xFF + (pixel shr 8) and 0xFF + pixel and 0xFF) / 3
+                    val brightness = (((pixel shr 16) and 0xFF) + ((pixel shr 8) and 0xFF) + (pixel and 0xFF)) / 3
                     if (prevBrightness >= 0 && abs(brightness - prevBrightness) > 25) {
                         colEdges++
                     }
