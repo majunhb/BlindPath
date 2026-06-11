@@ -33,14 +33,15 @@ import androidx.compose.animation.core.*
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
-import androidx.compose.foundation.clickable
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -535,14 +536,21 @@ private fun SmartDashboard(
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    DashboardCameraView(
-                        hasPermission = hasCameraPermission,
-                        onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-                        onClick = onObstacleToggle,
-                        lifecycleOwner = lifecycleOwner,
-                        navState = navState,
-                        alertLevel = obstacleState.currentAlert?.level,
-                        compassAzimuth = compassAzimuth,
+                    // 【首页重构】三卡片入口：出行 / 室内 / 场景感知
+                    HomeCards(
+                        onTripAssist = {
+                            showTripAssist = true
+                            showIndoorScreen = false
+                            showSettings = false
+                            showCommunity = false
+                        },
+                        onIndoor = {
+                            showIndoorScreen = true
+                            showTripAssist = false
+                            showSettings = false
+                            showCommunity = false
+                        },
+                        onSceneAware = onObstacleToggle,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -561,7 +569,12 @@ private fun SmartDashboard(
                 onToolsClick = onSettingsClick,
                 onSosClick = onSosClick,
                 isObstacleActive = showObstacleDetection,
-                onObstacleToggle = onObstacleToggle,
+                onTripAssist = {
+                    showTripAssist = true
+                    showIndoorScreen = false
+                    showSettings = false
+                    showCommunity = false
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
@@ -753,7 +766,7 @@ private fun DashboardBottomBar(
     onToolsClick: () -> Unit,
     onSosClick: () -> Unit,
     isObstacleActive: Boolean,
-    onObstacleToggle: () -> Unit,
+    onTripAssist: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -761,18 +774,18 @@ private fun DashboardBottomBar(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // 环境感知按钮
+        // 智能出行按钮
         FilledTonalButton(
-            onClick = onObstacleToggle,
+            onClick = onTripAssist,
             modifier = Modifier.weight(1f).height(56.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = if (isObstacleActive) Color(0xFF1E90FF) else Color(0xFF2A2A3E)
+                containerColor = Color(0xFF2A2A3E)
             )
         ) {
-            Icon(Icons.Default.Home, null, tint = Color.White)
+            Icon(Icons.Default.Navigation, null, tint = Color(0xFF4FC3F7))
             Spacer(Modifier.width(6.dp))
-            Text("环境感知", color = Color.White)
+            Text("智能出行", color = Color.White)
         }
         
         Spacer(Modifier.width(8.dp))
@@ -808,6 +821,180 @@ private fun DashboardBottomBar(
             Spacer(Modifier.width(4.dp))
             Text("SOS", color = Color.White)
         }
+    }
+}
+
+@Composable
+private fun HomeCards(
+    onTripAssist: () -> Unit,
+    onIndoor: () -> Unit,
+    onSceneAware: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .padding(horizontal = 12.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // 标题行
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "快捷功能",
+                color = Color(0xFF64B5F6),
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+            Text(
+                "下滑查看更多",
+                color = Color(0xFF666666),
+                fontSize = 11.sp
+            )
+        }
+        
+        // 场景感知 — 主卡片（带头图）
+        Card(
+            onClick = onSceneAware,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(160.dp)
+                .semantics { contentDescription = "开启场景感知，识别周边障碍物和路况" },
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A3E))
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // 装饰性渐变背景
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(Color(0xFF1E90FF).copy(alpha = 0.3f), Color(0xFF1A1A3E))
+                            )
+                        )
+                )
+                // 内容
+                Column(
+                    modifier = Modifier.padding(20.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Visibility,
+                            null,
+                            tint = Color(0xFF1E90FF),
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            "场景感知",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp
+                        )
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "AI实时识别周边障碍物、信号灯、斑马线、道牙等路况",
+                        color = Color(0xFFAAAAAA),
+                        fontSize = 13.sp,
+                        maxLines = 2
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Row(
+                        modifier = Modifier.align(Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("点击开启", color = Color(0xFF64B5F6), fontSize = 13.sp)
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            Icons.Default.KeyboardArrowRight,
+                            null,
+                            tint = Color(0xFF64B5F6),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+        
+        // 下方两个小卡片
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // 智能出行
+            Card(
+                onClick = onTripAssist,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(130.dp)
+                    .semantics { contentDescription = "智能出行，路线规划和公交引导" },
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2A1A3E))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Icon(
+                        Icons.Default.Navigation,
+                        null,
+                        tint = Color(0xFF81C784),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "智能出行",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "路线规划·公交引导",
+                        color = Color(0xFF888888),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            
+            // 室内导航
+            Card(
+                onClick = onIndoor,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(130.dp)
+                    .semantics { contentDescription = "室内导航，购物中心和医院等室内场所引导" },
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF3E1A2A))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Icon(
+                        Icons.Default.Home,
+                        null,
+                        tint = Color(0xFFEF9A9A),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "室内导航",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "商场·医院·地铁站",
+                        color = Color(0xFF888888),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+        
+        // 底部留白
+        Spacer(Modifier.height(8.dp))
     }
 }
 
