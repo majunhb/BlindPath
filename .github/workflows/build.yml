@@ -1,4 +1,4 @@
-﻿name: Android CI
+name: Android CI
 
 on:
   push:
@@ -18,7 +18,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_PAT }}
           fetch-depth: 1
           lfs: false
 
@@ -31,13 +30,13 @@ jobs:
       - name: Setup Android SDK (preinstalled)
         run: |
           export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
-          echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=" >> 
+          echo "ANDROID_HOME=" >> 
 
       - name: Configure Gradle
         run: |
           mkdir -p ~/.gradle
-          echo "GRADLE_OPTS=-Dorg.gradle.daemon=false -Dorg.gradle.internal.network.timeout=300000" >> $GITHUB_ENV
+          echo "GRADLE_OPTS=-Dorg.gradle.daemon=false -Dorg.gradle.internal.network.timeout=300000" >> 
 
       - name: Deep Clean
         run: |
