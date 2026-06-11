@@ -1,4 +1,4 @@
-﻿name: Code Quality
+name: Code Quality
 
 on:
   push:
@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 1
 
       - uses: actions/setup-java@v4
         with:
@@ -58,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 1
 
       - uses: actions/setup-java@v4
         with:
@@ -104,7 +104,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 1
 
       - uses: actions/setup-java@v4
         with:
@@ -130,47 +130,18 @@ jobs:
           retention-days: 7
 
   # ============================================================
-  # 4. CodeQL — GitHub 安全扫描
+  # 4. CodeQL — GitHub 安全扫描（已禁用，仓库未启用 Code Scanning）
   # ============================================================
-  codeql:
-    name: CodeQL Security Scan
-    runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GH_PAT }}
-
-      - uses: github/codeql-action/init@v3
-        with:
-          languages: java-kotlin
-          build-mode: manual
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-
-      - uses: android-actions/setup-android@v3
-
-      - name: Create local.properties
-        run: |
-          echo "BAIDU_APP_ID=" > local.properties
-          echo "BAIDU_API_KEY=" >> local.properties
-          echo "BAIDU_SECRET_KEY=" >> local.properties
-          echo "IFLYTEK_APP_ID=" >> local.properties
-          echo "IFLYTEK_API_KEY=" >> local.properties
-          echo "IFLYTEK_API_SECRET=" >> local.properties
-          echo "AMAP_API_KEY=" >> local.properties
-
-      - name: Build for CodeQL
-        run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
-
-      - uses: github/codeql-action/analyze@v3
-        with:
-          token: ${{ secrets.GH_PAT }}
+  # codeql:
+  #   name: CodeQL Security Scan
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     security-events: write
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         fetch-depth: 1
+  #     ...
 
   # ============================================================
   # 5. 质量汇总报告 — 所有检查通过后输出摘要
@@ -189,6 +160,6 @@ jobs:
           echo "  ktlint:  ${{ needs.ktlint.result }}"
           echo ""
           echo "ℹ️ Lint/Detekt/ktlint run in report-only mode."
-          echo "   CodeQL security scan runs in blocking mode."
+          echo "   CodeQL security scan is disabled (repository not enabled for Code Scanning)."
           echo "   Download artifacts to review detailed reports."
           echo "✅ Quality Gate: checks completed (violations logged as artifacts)"
