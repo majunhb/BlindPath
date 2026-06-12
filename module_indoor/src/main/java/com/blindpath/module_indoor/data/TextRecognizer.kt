@@ -1,13 +1,13 @@
 package com.blindpath.module_indoor.data
 
 import android.graphics.Bitmap
+import android.graphics.Rect
 import com.blindpath.module_indoor.domain.model.BoundingBox
 import com.blindpath.module_indoor.domain.model.OcrBlock
 import com.blindpath.module_indoor.domain.model.OcrResult
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.TextRecognizerOptions
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import dagger.hilt.android.scopes.ViewModelScoped
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -38,11 +38,9 @@ import kotlin.coroutines.resumeWithException
 @Singleton
 class TextRecognizer @Inject constructor() {
 
-    /** 中文+英文文字识别器 */
-    private val recognizer: TextRecognition by lazy {
-        TextRecognition.getClient(
-            ChineseTextRecognizerOptions.Builder().build()
-        )
+    /** 文字识别器（默认选项支持中文+英文） */
+    private val recognizer: com.google.mlkit.vision.text.TextRecognizer by lazy {
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
     }
 
     /** 是否已初始化 */
@@ -108,8 +106,8 @@ class TextRecognizer @Inject constructor() {
                     OcrBlock(
                         text = block.text,
                         boundingBox = boundingBox,
-                        language = block.recognizedLanguages.firstOrNull()?.language ?: "",
-                        confidence = block.lines.map { it.confidence }.average().toFloat()
+                        language = block.recognizedLanguages.firstOrNull()?.languageTag ?: "",
+                        confidence = block.lines.mapNotNull { it.confidence }.average().toFloat()
                     )
                 }
 
