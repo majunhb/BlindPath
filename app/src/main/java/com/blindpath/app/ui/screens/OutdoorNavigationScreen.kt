@@ -64,6 +64,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amap.api.maps.AMap
 import com.amap.api.maps.CameraUpdateFactory
@@ -238,6 +239,29 @@ fun OutdoorNavigationScreen(
     var sidewalkStatus by remember { mutableStateOf(SidewalkStatus(isOnSidewalk = true)) }
     var surfaceChangeAlerts by remember { mutableStateOf(listOf<SurfaceChangeInfo>()) }
     var detectedObstacles by remember { mutableStateOf(listOf<ObstacleInfo>()) }
+
+    // ★ 从NavigationState同步障碍物感知数据（ObstacleRepository桥接）
+    // 当NavigationService检测到障碍物时，数据会通过NavigationState.nearbyObstacles推送
+    val navigationObstacles = uiState.nearbyObstacles
+    val navigationAlertMsg = uiState.obstacleAlertMessage
+    LaunchedEffect(navigationObstacles) {
+        if (navigationObstacles.isNotEmpty()) {
+            detectedObstacles = navigationObstacles.map { obs ->
+                ObstacleInfo(
+                    type = when {
+                        obs.type.contains("行人") || obs.type.contains("人") -> ObstacleType.PEDESTRIAN
+                        obs.type.contains("车") -> ObstacleType.VEHICLE
+                        obs.type.contains("自行车") || obs.type.contains("电动车") -> ObstacleType.NON_VEHICLE
+                        else -> ObstacleType.STATIC
+                    },
+                    distance = obs.distance,
+                    direction = obs.direction,
+                    speed = 0f,  // 当前版本不提供速度数据
+                    ttc = Float.MAX_VALUE
+                )
+            }
+        }
+    }
 
     // ---- 决策层状态 ----
     var dangerLevel by remember { mutableStateOf(DangerLevel.LOW) }

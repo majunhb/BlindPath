@@ -36,6 +36,7 @@ android {
 dependencies {
     implementation(project(":base"))
     implementation(project(":module_voice"))
+    implementation(project(":module_obstacle"))
     
     // Hilt
     implementation(libs.hilt.android)

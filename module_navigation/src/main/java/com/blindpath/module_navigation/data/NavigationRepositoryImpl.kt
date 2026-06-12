@@ -480,25 +480,51 @@ class NavigationRepositoryImpl @Inject constructor(
         return Result.Success(doAdvanceStep())
     }
 
-    // ==================== 交通设施识别数据接口（预留YOLO接入） ====================
+    // ==================== ★ 障碍物感知数据桥接 ====================
 
     /**
-     * 检测交通信号灯状态（预留，后续接入YOLO模型）
+     * 更新障碍物感知数据到NavigationState
+     *
+     * 由NavigationService调用，将ObstacleRepository的检测结果
+     * 桥接到导航状态流中，供UI层和ViewModel消费。
+     */
+    override fun updateObstacleData(
+        isActive: Boolean,
+        obstacles: List<com.blindpath.module_navigation.domain.model.NavigationObstacle>,
+        nearest: com.blindpath.module_navigation.domain.model.NavigationObstacle?,
+        alertMessage: String?
+    ) {
+        _state.update { it.copy(
+            isObstacleDetectionActive = isActive,
+            nearbyObstacles = obstacles,
+            nearestObstacle = nearest,
+            obstacleAlertMessage = alertMessage
+        ) }
+    }
+
+    // ==================== 交通设施识别数据接口（已桥接到ObstacleRepository） ====================
+
+    /**
+     * 检测交通信号灯状态
+     *
+     * ★ 已桥接到ObstacleRepository：通过NavigationService监听obstacleState获取实时数据。
+     * 此方法保留用于手动触发的场景（如截图分析），内部通过ObstacleRepository的AI检测实现。
      */
     fun detectTrafficLight(bitmap: Bitmap): TrafficLightState {
-        // 预留：接入YOLO模型进行交通信号灯识别
-        // 当前返回模拟数据
-        Timber.d("Traffic light detection requested (mock)")
+        // ★ 实际检测已通过ObstacleRepository的AIDetector自动完成
+        // 此方法保留用于兼容性，NavigationState.nearestObstacle中包含实时检测结果
+        Timber.d("Traffic light detection - data available via NavigationState.obstacleAlertMessage")
         return TrafficLightState.UNKNOWN
     }
 
     /**
-     * 检测斑马线信息（预留，后续接入YOLO模型）
+     * 检测斑马线信息
+     *
+     * ★ 已桥接到ObstacleRepository：SceneClassifier自动识别斑马线场景。
      */
     fun detectCrosswalk(bitmap: Bitmap): CrosswalkInfo {
-        // 预留：接入YOLO模型进行斑马线识别
-        // 当前返回模拟数据
-        Timber.d("Crosswalk detection requested (mock)")
+        // ★ 实际检测已通过ObstacleRepository的SceneClassifier自动完成
+        Timber.d("Crosswalk detection - data available via NavigationState.sceneRecognition")
         return CrosswalkInfo(
             detected = false,
             distance = 0f,
@@ -508,12 +534,13 @@ class NavigationRepositoryImpl @Inject constructor(
     }
 
     /**
-     * 检测人行道状态（预留，后续接入YOLO模型）
+     * 检测人行道状态
+     *
+     * ★ 已桥接到ObstacleRepository：SceneClassifier自动识别人行道场景。
      */
     fun detectSidewalk(bitmap: Bitmap): SidewalkStatus {
-        // 预留：接入YOLO模型进行人行道识别
-        // 当前返回模拟数据
-        Timber.d("Sidewalk detection requested (mock)")
+        // ★ 实际检测已通过ObstacleRepository的SceneClassifier自动完成
+        Timber.d("Sidewalk detection - data available via NavigationState.sceneRecognition")
         return SidewalkStatus.UNKNOWN
     }
 

@@ -15,6 +15,8 @@ import com.blindpath.base.config.AppConfig
 import com.blindpath.base.error.DegradationManager
 import com.blindpath.module_navigation.data.GpsQuality
 import com.blindpath.module_navigation.domain.NavigationRepository
+import com.blindpath.module_navigation.domain.model.NavigationObstacle
+import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
@@ -48,6 +50,9 @@ class NavigationService : LifecycleService() {
 
     @Inject
     lateinit var voiceRepository: VoiceRepository
+
+    @Inject
+    lateinit var obstacleRepository: ObstacleRepository
 
     // Vibrator 通过系统服务获取（不使用Hilt注入）
     private val vibrator: Vibrator by lazy {
@@ -141,7 +146,15 @@ class NavigationService : LifecycleService() {
 
     private var currentSpeechRate: SpeechRate = SpeechRate.NORMAL
 
-    // ==================== 新增：TTC 碰撞预测 ====================
+    // ==================== 新增：障碍物感知桥接 ====================
+
+    /** 障碍物播报冷却（避免重复播报同一障碍物） */
+    private var lastObstacleAnnounceTime = 0L
+    private var lastObstacleAnnounceKey: String? = null
+    private val OBSTACLE_ANNOUNCE_INTERVAL_MS = 5000L  // 5秒内不重复播报同类障碍物
+
+    /** 障碍物监听协程Job */
+    private var obstacleListenJob: Job? = null
 
     /** 滑动窗口：障碍物距离历史（用于滤波平滑） */
     private val ttcDistanceWindow = ArrayDeque<Float>(TTC_WINDOW_SIZE)
@@ -281,10 +294,18 @@ class NavigationService : LifecycleService() {
                         //     val ttc = calculateTTC(obstacle.distance, obstacle.speed, state.userSpeed)
                         //     handleTtcAlert(ttc)
                         // }
+
+                        // ★ 障碍物感知数据桥接
+                        state.obstacleAlertMessage?.let { msg ->
+                            announceObstacleInNavigation(msg, state.nearestObstacle)
+                        }
                     } catch (e: Exception) {
                         Timber.e(e, "Error processing navigation state")
                     }
                 }
+
+                // ★ 监听ObstacleRepository的障碍物检测数据
+                startObstacleListener()
             } catch (e: Exception) {
                 Timber.e(e, "Navigation failed")
                 announceWithPriority("导航异常", VoiceGuidancePriority.URGENT)
@@ -300,6 +321,10 @@ class NavigationService : LifecycleService() {
         guidanceJob?.cancel()
         guidanceJob = null
         guidanceQueue.clear()
+
+        // 停止障碍物监听
+        obstacleListenJob?.cancel()
+        obstacleListenJob = null
 
         lifecycleScope.launch {
             navigationRepository.stopNavigation()
@@ -504,9 +529,155 @@ class NavigationService : LifecycleService() {
         }
     }
 
+    // ==================== 障碍物感知桥接（核心新增） ====================
+
     /**
-     * 根据TTC值触发相应级别预警
+     * 启动障碍物检测监听
+     *
+     * 从ObstacleRepository获取实时障碍物数据，
+     * 转换为NavigationObstacle并推送到NavigationState，
+     * 同时生成导航级语音播报。
      */
+    private fun startObstacleListener() {
+        obstacleListenJob = lifecycleScope.launch {
+            try {
+                // 初始化障碍物检测器（如果尚未初始化）
+                obstacleRepository.initialize()
+                obstacleRepository.startDetection()
+
+                // 监听障碍物状态流
+                obstacleRepository.obstacleState.collectLatest { obstacleState ->
+                    try {
+                        if (!isRunning) return@collectLatest
+
+                        val obstacles = obstacleState.detectedObstacles
+                        if (obstacles.isEmpty()) {
+                            // 无障碍物时清除导航状态中的障碍物数据
+                            navigationRepository.updateObstacleData(
+                                isActive = true,
+                                obstacles = emptyList(),
+                                nearest = null,
+                                alertMessage = null
+                            )
+                            return@collectLatest
+                        }
+
+                        // 转换为NavigationObstacle
+                        val navObstacles = obstacles.map { obs ->
+                            NavigationObstacle(
+                                type = obs.type.chineseName,
+                                distance = obs.distance,
+                                direction = obs.direction.getChineseName(),
+                                confidence = obs.confidence,
+                                isDangerous = obs.distance < 1.0f,
+                                timestamp = obs.timestamp
+                            )
+                        }
+
+                        // 找到最近的障碍物
+                        val nearest = navObstacles.minByOrNull { it.distance }
+
+                        // 生成导航级语音播报
+                        val alertMessage = generateNavigationObstacleAlert(navObstacles, nearest)
+
+                        // 推送到NavigationState
+                        navigationRepository.updateObstacleData(
+                            isActive = true,
+                            obstacles = navObstacles,
+                            nearest = nearest,
+                            alertMessage = alertMessage
+                        )
+
+                        // 语音播报（带节流）
+                        if (alertMessage != null) {
+                            announceObstacleInNavigation(alertMessage, nearest)
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Error processing obstacle state in navigation")
+                    }
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to start obstacle listener")
+                // 障碍物检测启动失败不影响导航功能
+                announceWithPriority("障碍物检测启动失败，仅提供导航指引", VoiceGuidancePriority.ROUTINE)
+            }
+        }
+    }
+
+    /**
+     * 生成导航级障碍物预警文案
+     *
+     * 策略：
+     * - 只关注距离 < 5米 的障碍物
+     * - 优先播报危险级别（< 1m）
+     * - 自然语言描述（"注意，正前方3米有行人"）
+     */
+    private fun generateNavigationObstacleAlert(
+        obstacles: List<NavigationObstacle>,
+        nearest: NavigationObstacle?
+    ): String? {
+        if (nearest == null) return null
+
+        // 过滤：只关注5米以内的障碍物
+        val nearby = obstacles.filter { it.distance < 5f }
+        if (nearby.isEmpty()) return null
+
+        return when {
+            nearest.isDangerous -> {
+                // 危险级别（< 1m）：紧急播报
+                "紧急！${nearest.direction}${String.format("%.1f", nearest.distance)}米有${nearest.type}，请立即停下"
+            }
+            nearest.distance < 2f -> {
+                // 警告级别（< 2m）
+                "注意，${nearest.direction}${String.format("%.1f", nearest.distance)}米有${nearest.type}，请小心避让"
+            }
+            nearest.distance < 3f -> {
+                // 提示级别（< 3m）
+                "${nearest.direction}${String.format("%.1f", nearest.distance)}米有${nearest.type}"
+            }
+            else -> {
+                // 远距离提示（3-5m）
+                "前方${String.format("%.0f", nearest.distance)}米有${nearest.type}"
+            }
+        }
+    }
+
+    /**
+     * 播报导航级障碍物预警（带冷却机制）
+     *
+     * 使用分层语音队列：
+     * - 危险障碍物 → URGENT（立即打断）
+     * - 警告障碍物 → EVENT（打断ROUTINE）
+     * - 提示障碍物 → ROUTINE（排队等待）
+     */
+    private fun announceObstacleInNavigation(message: String, obstacle: NavigationObstacle?) {
+        if (obstacle == null) return
+
+        val now = System.currentTimeMillis()
+        // 冷却：同类同方向的障碍物5秒内不重复播报
+        val key = "${obstacle.type}_${obstacle.direction}"
+        if (key == lastObstacleAnnounceKey && now - lastObstacleAnnounceTime < OBSTACLE_ANNOUNCE_INTERVAL_MS) {
+            return
+        }
+        lastObstacleAnnounceKey = key
+        lastObstacleAnnounceTime = now
+
+        val priority = when {
+            obstacle.isDangerous -> VoiceGuidancePriority.URGENT
+            obstacle.distance < 2f -> VoiceGuidancePriority.EVENT
+            else -> VoiceGuidancePriority.ROUTINE
+        }
+
+        announceWithPriority(message, priority)
+
+        // 危险和警告级别触发振动
+        if (obstacle.distance < 2f) {
+            val pattern = if (obstacle.isDangerous) VibrationPattern.RAPID_3X else VibrationPattern.LONG_500MS
+            triggerVibration(pattern)
+        }
+    }
+
+    // ==================== 原有：TTC 碰撞预测 ====================
     private fun handleTtcAlert(ttc: Float) {
         when {
             ttc < TTC_CRITICAL_THRESHOLD_S -> {

@@ -36,7 +36,24 @@ data class NavigationState(
     val isOffRoute: Boolean = false,
     val totalDistance: String = "",
     val totalDuration: String = "",
-    val isRoutePlanned: Boolean = false
+    val isRoutePlanned: Boolean = false,
+    // ★ 障碍物感知数据（由ObstacleRepository桥接）
+    val isObstacleDetectionActive: Boolean = false,
+    val nearbyObstacles: List<NavigationObstacle> = emptyList(),
+    val nearestObstacle: NavigationObstacle? = null,
+    val obstacleAlertMessage: String? = null
+)
+
+/**
+ * 导航级障碍物信息（从ObstacleRepository桥接的精简数据）
+ */
+data class NavigationObstacle(
+    val type: String,           // 障碍物类型中文名（如"行人"、"车辆"、"台阶"）
+    val distance: Float,        // 估算距离（米）
+    val direction: String,      // 方向（如"正前方"、"左侧"、"右前方"）
+    val confidence: Float,      // 置信度 0-1
+    val isDangerous: Boolean,   // 是否危险（距离 < 1m）
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 /**

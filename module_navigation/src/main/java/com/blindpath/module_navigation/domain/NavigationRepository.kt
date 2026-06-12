@@ -3,6 +3,7 @@ package com.blindpath.module_navigation.domain
 import android.location.Location
 import com.blindpath.base.common.Result
 import com.blindpath.module_navigation.domain.model.LatLonPoint
+import com.blindpath.module_navigation.domain.model.NavigationObstacle
 import com.blindpath.module_navigation.domain.model.NavigationState
 import kotlinx.coroutines.flow.Flow
 
@@ -22,4 +23,12 @@ interface NavigationRepository {
 
     // 步进导航
     suspend fun advanceToNextStep(): Result<Boolean>
+
+    // ★ 障碍物感知数据桥接（由NavigationService调用）
+    fun updateObstacleData(
+        isActive: Boolean,
+        obstacles: List<NavigationObstacle>,
+        nearest: NavigationObstacle?,
+        alertMessage: String?
+    )
 }
