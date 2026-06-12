@@ -268,9 +268,21 @@ class IndoorDetector @Inject constructor(
 
                 // 转换和合并
                 val indoorObstacles = detectedObstacles.mapNotNull { convertToIndoorObstacle(it) }
-                val allObstacles = mergeObstacles(indoorObstacles, mlKitObstacles)
+                val mergedObstacles = mergeObstacles(indoorObstacles, mlKitObstacles)
 
-                Timber.d("检测完成: 房间类型=${roomTypeResult.first.chineseName}, AIDetector障碍物=${indoorObstacles.size}, MLKit障碍物=${mlKitObstacles.size}, 合并后=${allObstacles.size}")
+                // ★ 检测悬空障碍物（头部高度）和地面障碍物
+                val overheadObstacles = detectOverheadObstacles(mergedObstacles)
+                val groundObstacles = detectGroundObstacles(mergedObstacles)
+
+                // 合并所有障碍物（去重：如果已有悬空障碍物，不重复添加原始物体）
+                val allObstacles = mergedObstacles + overheadObstacles.filter { overhead ->
+                    // 避免重复：如果悬空障碍物对应的原始物体已存在，不添加
+                    overheadObstacles.none { it == overhead }
+                }
+
+                Timber.d("检测完成: 房间=${roomTypeResult.first.chineseName}, " +
+                    "AI障碍物=${indoorObstacles.size}, MLKit=${mlKitObstacles.size}, " +
+                    "悬空=${overheadObstacles.size}, 地面=${groundObstacles.size}")
 
                 IndoorScene(
                     roomType = roomTypeResult.first,
@@ -477,6 +489,84 @@ class IndoorDetector @Inject constructor(
             compareByDescending<DetectedIndoorObstacle> { it.type.priority }
                 .thenBy { it.distance }
         )
+    }
+
+    // ==================== 悬空障碍物检测 ====================
+
+    /**
+     * 检测悬空障碍物（头部高度）
+     *
+     * 将画面分为上、中、下三个区域：
+     * - 上半部分（top < 0.4）：头部撞击区，检测打开的柜门、伸出的桌角、悬挂物
+     * - 中间部分（0.4 <= top < 0.7）：身体撞击区
+     * - 下半部分（top >= 0.7）：地面区域，检测绊脚物
+     *
+     * 悬空障碍物判定条件：
+     * 1. 物体位于画面上半部分（boundingBox.top < 0.4）
+     * 2. 物体类型为柜门/桌子/架子等可能产生悬空障碍的物体
+     * 3. 或物体高度占画面比例较小（可能是伸出的部分而非完整物体）
+     */
+    private fun detectOverheadObstacles(
+        obstacles: List<DetectedIndoorObstacle>
+    ): List<DetectedIndoorObstacle> {
+        val overheadObstacles = mutableListOf<DetectedIndoorObstacle>()
+
+        obstacles.forEach { obstacle ->
+            val box = obstacle.boundingBox
+            val isUpperRegion = box.top < 0.4f  // 上半部分
+            val isSmallHeight = (box.bottom - box.top) < 0.3f  // 高度较小（可能是伸出的部分）
+            val isNearTop = box.top < 0.2f  // 非常靠近顶部
+
+            // 判断是否为悬空障碍物
+            val isOverhead = when (obstacle.type) {
+                IndoorObstacleType.CABINET -> isUpperRegion && isSmallHeight
+                IndoorObstacleType.TABLE -> isUpperRegion && isSmallHeight
+                IndoorObstacleType.DOOR -> isUpperRegion
+                IndoorObstacleType.UNKNOWN -> isNearTop && isSmallHeight
+                else -> false
+            }
+
+            if (isOverhead) {
+                // 转换为悬空障碍物类型
+                val overheadType = when (obstacle.type) {
+                    IndoorObstacleType.CABINET -> IndoorObstacleType.OPEN_CABINET_DOOR
+                    IndoorObstacleType.TABLE -> IndoorObstacleType.TABLE_CORNER
+                    IndoorObstacleType.DOOR -> IndoorObstacleType.OPEN_CABINET_DOOR
+                    else -> IndoorObstacleType.HANGING_OBJECT
+                }
+
+                overheadObstacles.add(
+                    obstacle.copy(
+                        type = overheadType,
+                        confidence = obstacle.confidence * 0.9f  // 降低置信度（因为是推断）
+                    )
+                )
+            }
+        }
+
+        return overheadObstacles
+    }
+
+    /**
+     * 检测地面障碍物（绊脚物）
+     *
+     * 下半部分（top >= 0.7）的物体可能是绊脚物
+     */
+    private fun detectGroundObstacles(
+        obstacles: List<DetectedIndoorObstacle>
+    ): List<DetectedIndoorObstacle> {
+        return obstacles.filter { obstacle ->
+            val box = obstacle.boundingBox
+            val isLowerRegion = box.top >= 0.6f  // 下半部分
+            val isSmallObject = (box.bottom - box.top) < 0.25f  // 小物体
+            isLowerRegion && isSmallObject && obstacle.distance < 2f
+        }.map { obstacle ->
+            // 标记为高风险（绊脚物）
+            obstacle.copy(
+                confidence = obstacle.confidence,
+                distance = obstacle.distance
+            )
+        }
     }
 
     /**

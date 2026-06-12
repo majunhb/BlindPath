@@ -47,29 +47,22 @@ enum class RoomType(val chineseName: String) {
  */
 
 enum class IndoorObstacleType(val chineseName: String, val priority: Int) {
-
     SOFA("沙发", 1),
-
     CHAIR("椅子", 1),
-
     TABLE("桌子", 2),
-
     BED("床", 1),
-
     CABINET("柜子", 2),
-
     DOOR("门", 3),
-
     WINDOW("窗户", 2),
-
     STAIRS("楼梯", 5), // 最高优先级
-
     TV("电视", 1),
-
     REFRIGERATOR("冰箱", 2),
-
     WASHING_MACHINE("洗衣机", 2),
-
+    // ★ 悬空障碍物（头部高度）
+    OPEN_CABINET_DOOR("打开的柜门", 4),
+    TABLE_CORNER("伸出的桌角", 4),
+    HANGING_OBJECT("悬挂物", 3),
+    SHELF_EDGE("架子边缘", 3),
     UNKNOWN("未知物品", 0);
 
 
@@ -121,11 +114,12 @@ enum class IndoorObstacleType(val chineseName: String, val priority: Int) {
             STAIRS -> if (distance < 2f) "注意！前方${distanceInt}米处有楼梯" else "前方${distanceInt}米处有楼梯"
 
             TV -> "$directionPrefix${distanceInt}米处有电视"
-
             REFRIGERATOR -> "$directionPrefix${distanceInt}米处有冰箱"
-
             WASHING_MACHINE -> "$directionPrefix${distanceInt}米处有洗衣机"
-
+            OPEN_CABINET_DOOR -> "注意头部！$directionPrefix${distanceInt}米处有打开的柜门"
+            TABLE_CORNER -> "注意头部！$directionPrefix${distanceInt}米处有伸出的桌角"
+            HANGING_OBJECT -> "注意！$directionPrefix${distanceInt}米处有悬挂物"
+            SHELF_EDGE -> "注意！$directionPrefix${distanceInt}米处有架子边缘"
             UNKNOWN -> "$directionPrefix${distanceInt}米处有物体"
 
         }
