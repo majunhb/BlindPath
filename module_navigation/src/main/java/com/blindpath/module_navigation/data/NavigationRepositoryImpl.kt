@@ -9,6 +9,8 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.location.Location
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.core.content.ContextCompat
 import com.amap.api.location.AMapLocation
 import com.amap.api.location.AMapLocationClient
@@ -27,6 +29,7 @@ import com.amap.api.services.route.WalkRouteResult
 import com.blindpath.base.common.NavigationInfo
 import com.blindpath.base.common.Result
 import com.blindpath.base.config.AppConfig
+import com.blindpath.module_navigation.data.NavigationCacheManager
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.LatLonPoint
 import com.blindpath.module_navigation.domain.model.RouteStep
@@ -60,7 +63,8 @@ import kotlin.math.*
  */
 @Singleton
 class NavigationRepositoryImpl @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val navigationCacheManager: NavigationCacheManager
 ) : NavigationRepository, SensorEventListener {
 
     private val _state = MutableStateFlow(NavigationState())
@@ -282,7 +286,15 @@ class NavigationRepositoryImpl @Inject constructor(
         originLat: Double, originLon: Double,
         destLat: Double, destLon: Double
     ): Result<Boolean> {
-        return withTimeoutOrNull(15000L) {
+        // 捕获路线规划数据（用于后续缓存），
+        // 因为 suspendCancellableCoroutine 内部无法直接调用 suspend 函数
+        var capturedSteps: List<RouteStep>? = null
+        var capturedDistance: Float = 0f
+        var capturedDuration: Long = 0L
+        var capturedPolylines: List<List<LatLonPoint>>? = null
+        var capturedDestName: String = _state.value.destinationName ?: "Destination"
+
+        val result = withTimeoutOrNull(15000L) {
             suspendCancellableCoroutine { cont ->
                 try {
                     val origin = AMapLatLonPoint(originLat, originLon)
@@ -322,6 +334,12 @@ class NavigationRepositoryImpl @Inject constructor(
                                         } ?: emptyList()
                                     }
 
+                                    // 捕获路线数据用于后续缓存
+                                    capturedSteps = navSteps
+                                    capturedDistance = path.distance
+                                    capturedDuration = path.duration
+                                    capturedPolylines = polylines
+
                                     _state.update {
                                         it.copy(
                                             routeSteps = navSteps,
@@ -356,6 +374,60 @@ class NavigationRepositoryImpl @Inject constructor(
                 }
             }
         } ?: Result.Error(message = "路线规划超时")
+
+        // 路径规划成功后，缓存到 Room DB 用于离线使用
+        if (result is Result.Success && capturedSteps != null) {
+            try {
+                navigationCacheManager.cacheRoute(
+                    originName = "Current Location",
+                    originLat = originLat,
+                    originLon = originLon,
+                    destName = capturedDestName,
+                    destLat = destLat,
+                    destLon = destLon,
+                    steps = capturedSteps,
+                    totalDistanceMeters = capturedDistance,
+                    totalDurationSeconds = capturedDuration,
+                    polylinePoints = capturedPolylines?.flatten() ?: emptyList(),
+                    totalDistanceFormatted = "${capturedDistance.toInt()}米",
+                    totalDurationFormatted = formatDuration(capturedDuration.toInt())
+                )
+                // 清理旧缓存，保持最近3条
+                navigationCacheManager.trimCache()
+                Timber.d("Route cached for offline use")
+            } catch (e: Exception) {
+                Timber.e(e, "Failed to cache route")
+            }
+        }
+
+        // 离线优先：规划失败时尝试从缓存加载
+        if (result is Result.Error) {
+            val cachedRoute = navigationCacheManager.getCachedRoute(destLat, destLon)
+            if (cachedRoute != null) {
+                // 从缓存步骤重建 routePolylines（每步的 polyline）
+                val cachedPolylines = cachedRoute.steps.map { it.polyline }
+
+                _state.update { current ->
+                    current.copy(
+                        routeSteps = cachedRoute.steps,
+                        currentStepIndex = 0,
+                        routePolylines = cachedPolylines,
+                        isRoutePlanned = true,
+                        totalDistance = cachedRoute.totalDistanceFormatted,
+                        totalDuration = cachedRoute.totalDurationFormatted,
+                        lastError = "使用离线缓存路线"
+                    )
+                }
+
+                Timber.i("Loaded cached route from offline storage: " +
+                        "${cachedRoute.steps.size} steps, " +
+                        "${cachedRoute.totalDistanceFormatted}, " +
+                        "cached at ${cachedRoute.cachedAt}")
+                return Result.Success(true)
+            }
+        }
+
+        return result
     }
 
     /**
@@ -967,6 +1039,20 @@ class NavigationRepositoryImpl @Inject constructor(
         action.contains("直行") -> "直行"
         action.contains("到达") -> "到达"
         else -> "前行"
+    }
+
+    /**
+     * 检查是否有网络连接（用于离线降级判断）
+     */
+    private fun isNetworkAvailable(): Boolean {
+        return try {
+            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val network = connectivityManager.activeNetwork ?: return false
+            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        } catch (e: Exception) {
+            false
+        }
     }
 
     companion object {

@@ -168,8 +168,17 @@ class ModelManager @Inject constructor(
 
     /**
      * 在文件系统中查找模型文件
+     * 优先级: OTA下载目录 > 文件系统根目录 > 外部存储 > 缓存
      */
     private fun getModelFile(modelFileName: String): File? {
+        // 优先检查 OTA 模型目录
+        val otaModelDir = File(context.filesDir, "models")
+        val otaModelFile = File(otaModelDir, modelFileName)
+        if (otaModelFile.exists() && otaModelFile.length() > 0) {
+            Timber.d("Model found in OTA directory: ${otaModelFile.absolutePath}")
+            return otaModelFile
+        }
+
         listOf(
             File(context.filesDir, modelFileName),
             File(context.getExternalFilesDir(null), modelFileName),

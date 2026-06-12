@@ -3,6 +3,7 @@
 import android.content.Context
 import android.graphics.Bitmap
 import com.blindpath.base.config.AppConfig
+import com.blindpath.module_obstacle.data.model.ModelManager as OtaModelManager
 import com.blindpath.module_obstacle.domain.model.BoundingBox
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_obstacle.domain.model.ObstacleType
@@ -37,6 +38,7 @@ import kotlin.math.min
 class AIDetector @Inject constructor(
     @ApplicationContext private val context: Context,
     private val modelManager: ModelManager,
+    private val otaModelManager: OtaModelManager,
     private val assistedDetector: AssistedDetector,
     private val obstacleClassifier: ObstacleClassifier
 ) {
@@ -110,9 +112,28 @@ class AIDetector @Inject constructor(
     /**
      * 加载模型（代理到 ModelManager）
      * 保持与旧 API 的兼容性，供 ObstacleRepositoryImpl 调用
+     *
+     * 模型路径优先级: OTA下载版本 > 本地assets版本
      */
     suspend fun loadModel(): Boolean {
-        return modelManager.loadModel(lock.read { currentMode.modelFileName })
+        val modelFileName = lock.read { currentMode.modelFileName }
+        val otaModelPath = otaModelManager.getModelPath()
+        Timber.d("Model path: OTA=${otaModelPath.ifEmpty { "assets" }}, file=$modelFileName")
+
+        val success = modelManager.loadModel(modelFileName)
+
+        // 模型加载成功后，异步检查 OTA 更新（不阻塞主流程）
+        if (success) {
+            withContext(Dispatchers.IO) {
+                try {
+                    otaModelManager.checkForUpdate()
+                } catch (e: Exception) {
+                    Timber.w(e, "OTA update check failed (non-blocking)")
+                }
+            }
+        }
+
+        return success
     }
 
     /**

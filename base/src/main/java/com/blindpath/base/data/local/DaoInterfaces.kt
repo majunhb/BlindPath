@@ -1,6 +1,7 @@
 package com.blindpath.base.data.local
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -30,6 +31,12 @@ interface NavigationHistoryDao {
     
     @Query("DELETE FROM navigation_history WHERE timestamp < :beforeTimestamp")
     suspend fun deleteOldHistory(beforeTimestamp: Long): Int
+    
+    @Delete
+    suspend fun delete(entity: NavigationHistoryEntity): Int
+    
+    @Query("SELECT * FROM navigation_history ORDER BY timestamp DESC")
+    suspend fun getAllHistoryList(): List<NavigationHistoryEntity>
     
     @Query("DELETE FROM navigation_history")
     suspend fun deleteAll()
