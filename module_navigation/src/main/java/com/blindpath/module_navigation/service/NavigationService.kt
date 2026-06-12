@@ -273,11 +273,12 @@ class NavigationService : LifecycleService() {
                             }
                         }
 
-                        // ★ TTC 碰撞预测（若数据可用）
-                        state.obstacleInfo?.let { obstacle ->
-                            val ttc = calculateTTC(obstacle.distance, obstacle.speed, state.userSpeed)
-                            handleTtcAlert(ttc)
-                        }
+                        // ★ TTC 碰撞预测（预留接口，待感知层接入）
+                        // TODO: 接入障碍物检测数据后启用
+                        // state.obstacleInfo?.let { obstacle ->
+                        //     val ttc = calculateTTC(obstacle.distance, obstacle.speed, state.userSpeed)
+                        //     handleTtcAlert(ttc)
+                        // }
                     } catch (e: Exception) {
                         Timber.e(e, "Error processing navigation state")
                     }

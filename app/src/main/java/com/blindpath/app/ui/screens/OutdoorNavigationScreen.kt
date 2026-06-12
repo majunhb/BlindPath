@@ -34,17 +34,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.DirectionsWalk
+import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Traffic
-import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -632,7 +632,7 @@ fun ObstacleDetectionPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    Icons.Default.Sensors,
+                    Icons.Default.Wifi,
                     contentDescription = null,
                     tint = Color(0xFFFF9800),
                     modifier = Modifier.size(20.dp)
@@ -821,7 +821,7 @@ fun CrossingDecisionPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                Icons.Default.Traffic,
+                Icons.Default.Info,
                 contentDescription = null,
                 tint = status.color.copy(alpha = flashAlpha),
                 modifier = Modifier.size(24.dp)
@@ -883,7 +883,7 @@ fun VoiceGuidancePanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    Icons.Default.VolumeUp,
+                    Icons.Default.Notifications,
                     contentDescription = null,
                     tint = currentPriority.color,
                     modifier = Modifier.size(20.dp)
@@ -1089,7 +1089,7 @@ fun VoiceCommandPanel(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    Icons.Default.Mic,
+                    Icons.Default.Star,
                     contentDescription = null,
                     tint = if (isListening) Color(0xFFF44336) else Color(0xFF4CAF50),
                     modifier = Modifier.size(20.dp)
@@ -1141,7 +1141,7 @@ fun VoiceCommandPanel(
                         label = { Text(cmd, fontSize = 11.sp) },
                         leadingIcon = {
                             Icon(
-                                Icons.Default.Mic,
+                                Icons.Default.Star,
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp)
                             )
