@@ -294,10 +294,9 @@ class NavigationService : LifecycleService() {
                         //     handleTtcAlert(ttc)
                         // }
 
-                        // ★ 障碍物感知数据桥接
-                        state.obstacleAlertMessage?.let { msg ->
-                            announceObstacleInNavigation(msg, state.nearestObstacle)
-                        }
+                        // ★ 障碍物感知数据桥接（已由obstacleTracker在startObstacleListener中处理）
+                        // state.obstacleAlertMessage 已推送到NavigationState供UI展示
+                        // 语音播报在 obstacleListenJob 中通过 announceTrackedObstacle 完成
                     } catch (e: Exception) {
                         Timber.e(e, "Error processing navigation state")
                     }
