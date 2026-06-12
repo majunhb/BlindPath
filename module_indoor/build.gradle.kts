@@ -52,6 +52,9 @@ dependencies {
     // ML Kit Image Labeling
     implementation(libs.mlkit.image.labeling)
 
+    // ML Kit Text Recognition (OCR)
+    implementation(libs.mlkit.text.recognition)
+
     // TensorFlow Lite
     implementation(libs.tensorflow.lite)
     implementation(libs.tensorflow.lite.support)

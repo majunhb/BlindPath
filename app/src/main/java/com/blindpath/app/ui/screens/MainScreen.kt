@@ -67,6 +67,7 @@ import com.blindpath.module_settings.ui.SettingsScreen
 import com.blindpath.module_community.ui.CommunityScreen
 import com.blindpath.module_trip_assist.ui.TripAssistScreen
 import com.blindpath.module_voice.domain.model.VoiceCommand
+import com.blindpath.module_indoor.data.IndoorDetector
 import com.blindpath.module_voice.domain.model.VoiceGuidance
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
 import timber.log.Timber
@@ -80,6 +81,7 @@ import timber.log.Timber
 fun MainScreen(
     obstacleRepository: ObstacleRepository,
     navigationRepository: NavigationRepository,
+    indoorDetector: IndoorDetector,
     onObstacleDetectionClick: () -> Unit = {},
     onLocationClick: () -> Unit = {},
     onSosClick: () -> Unit = {},
@@ -182,6 +184,7 @@ fun MainScreen(
         showScenePerception -> {
             ScenePerceptionScreen(
                 obstacleRepository = obstacleRepository,
+                indoorDetector = indoorDetector,
                 onBack = { showScenePerception = false },
                 viewModel = viewModel
             )

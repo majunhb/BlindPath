@@ -212,56 +212,130 @@ fun IndoorPerceptionScreen(
     }
 
     // AI推理消费循环
-    LaunchedEffect(isDetecting, isModelReady) {
+    LaunchedEffect(isDetecting, isModelReady, currentMode) {
         if (isDetecting && isModelReady) {
             for (bitmap in frameChannel) {
                 if (!isActive || !isDetecting) break
                 try {
-                    val scene = indoorDetector.detect(bitmap)
+                    when (currentMode) {
+                        IndoorPerceptionMode.ENVIRONMENT, IndoorPerceptionMode.OBSTACLE -> {
+                            // 环境识别/障碍物检测模式
+                            val scene = indoorDetector.detect(bitmap)
 
-                    withContext(Dispatchers.Main) {
-                        currentScene = scene
-                        detectedObstacles = scene.obstacles
+                            withContext(Dispatchers.Main) {
+                                currentScene = scene
+                                detectedObstacles = scene.obstacles
 
-                        // 场景变化播报
-                        val now = System.currentTimeMillis()
-                        if (scene.roomType != lastRoomType && now - lastAlertTime > 3000) {
-                            lastAlertTime = now
-                            lastRoomType = scene.roomType
-                            val announcement = scene.getEntryAnnouncement()
-                            lastAnnouncement = announcement
-                            scope.launch {
-                                voiceRepository.speak(announcement, queueMode = false)
-                            }
-                        }
+                                // 场景变化播报
+                                val now = System.currentTimeMillis()
+                                if (scene.roomType != lastRoomType && now - lastAlertTime > 3000) {
+                                    lastAlertTime = now
+                                    lastRoomType = scene.roomType
+                                    val announcement = scene.getEntryAnnouncement()
+                                    lastAnnouncement = announcement
+                                    scope.launch {
+                                        voiceRepository.speak(announcement, queueMode = false)
+                                    }
+                                }
 
-                        // 高优先级障碍物预警
-                        val highPriorityObstacles = scene.obstacles.filter {
-                            it.type.priority >= 3 || it.distance < 2f
-                        }
+                                // 高优先级障碍物预警
+                                val highPriorityObstacles = scene.obstacles.filter {
+                                    it.type.priority >= 3 || it.distance < 2f
+                                }
 
-                        if (highPriorityObstacles.isNotEmpty() && now - lastObstacleAlertTime > 2000) {
-                            lastObstacleAlertTime = now
-                            val nearest = highPriorityObstacles.minByOrNull { it.distance }
-                            nearest?.let { obstacle ->
-                                val alertMsg = obstacle.type.getAlertMessage(
-                                    obstacle.distance,
-                                    obstacle.direction
-                                )
-                                lastAnnouncement = alertMsg
-                                scope.launch {
-                                    voiceRepository.speak(alertMsg, queueMode = true)
+                                if (highPriorityObstacles.isNotEmpty() && now - lastObstacleAlertTime > 2000) {
+                                    lastObstacleAlertTime = now
+                                    val nearest = highPriorityObstacles.minByOrNull { it.distance }
+                                    nearest?.let { obstacle ->
+                                        val alertMsg = obstacle.type.getAlertMessage(
+                                            obstacle.distance,
+                                            obstacle.direction
+                                        )
+                                        lastAnnouncement = alertMsg
+                                        scope.launch {
+                                            voiceRepository.speak(alertMsg, queueMode = true)
+                                        }
+                                    }
+                                }
+
+                                // 空间结构描述（每10秒一次）
+                                if (now - lastAlertTime > 10000 && scene.roomType != RoomType.UNKNOWN) {
+                                    lastAlertTime = now
+                                    val spatialDesc = scene.spatialDescription
+                                    lastAnnouncement = spatialDesc
+                                    scope.launch {
+                                        voiceRepository.speak(spatialDesc, queueMode = false)
+                                    }
                                 }
                             }
                         }
 
-                        // 空间结构描述（每10秒一次）
-                        if (now - lastAlertTime > 10000 && scene.roomType != RoomType.UNKNOWN) {
-                            lastAlertTime = now
-                            val spatialDesc = generateSpatialDescription(scene)
-                            lastAnnouncement = spatialDesc
-                            scope.launch {
-                                voiceRepository.speak(spatialDesc, queueMode = false)
+                        IndoorPerceptionMode.OCR -> {
+                            // ★ 文字识别模式
+                            val ocrResult = indoorDetector.recognizeText(bitmap)
+
+                            withContext(Dispatchers.Main) {
+                                if (ocrResult.text.isNotEmpty()) {
+                                    val now = System.currentTimeMillis()
+                                    if (now - lastAlertTime > 5000) {
+                                        lastAlertTime = now
+                                        lastAnnouncement = "识别到文字：${ocrResult.text}"
+
+                                        // 检查是否包含导航信息
+                                        if (indoorDetector.containsNavigationText(ocrResult)) {
+                                            val navInfo = indoorDetector.extractNavigationText(ocrResult)
+                                            lastAnnouncement = "发现路标：$navInfo"
+                                        }
+
+                                        scope.launch {
+                                            voiceRepository.speak(lastAnnouncement, queueMode = false)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        IndoorPerceptionMode.NAVIGATION -> {
+                            // ★ 室内导航模式（OCR + 环境感知）
+                            val scene = indoorDetector.detect(bitmap)
+                            val ocrResult = indoorDetector.recognizeText(bitmap)
+
+                            withContext(Dispatchers.Main) {
+                                currentScene = scene
+                                detectedObstacles = scene.obstacles
+
+                                val now = System.currentTimeMillis()
+
+                                // 检查OCR是否发现路标
+                                if (ocrResult.text.isNotEmpty() && indoorDetector.containsNavigationText(ocrResult)) {
+                                    val navInfo = indoorDetector.extractNavigationText(ocrResult)
+                                    if (now - lastAlertTime > 3000) {
+                                        lastAlertTime = now
+                                        lastAnnouncement = "发现路标：$navInfo"
+                                        scope.launch {
+                                            voiceRepository.speak(lastAnnouncement, queueMode = false)
+                                        }
+                                    }
+                                }
+
+                                // 障碍物预警（导航模式下更频繁）
+                                val highPriorityObstacles = scene.obstacles.filter {
+                                    it.type.priority >= 3 || it.distance < 2f
+                                }
+                                if (highPriorityObstacles.isNotEmpty() && now - lastObstacleAlertTime > 2000) {
+                                    lastObstacleAlertTime = now
+                                    val nearest = highPriorityObstacles.minByOrNull { it.distance }
+                                    nearest?.let { obstacle ->
+                                        val alertMsg = obstacle.type.getAlertMessage(
+                                            obstacle.distance,
+                                            obstacle.direction
+                                        )
+                                        lastAnnouncement = alertMsg
+                                        scope.launch {
+                                            voiceRepository.speak(alertMsg, queueMode = true)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

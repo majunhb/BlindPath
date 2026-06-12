@@ -27,6 +27,7 @@ import javax.inject.Singleton
 @Singleton
 class IndoorDetector @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val textRecognizer: TextRecognizer,
     private val aiDetector: AIDetector
 ) {
     private var imageLabeler: com.google.mlkit.vision.label.ImageLabeler? = null
@@ -274,7 +275,8 @@ class IndoorDetector @Inject constructor(
                 IndoorScene(
                     roomType = roomTypeResult.first,
                     confidence = roomTypeResult.second,
-                    obstacles = allObstacles
+                    obstacles = allObstacles,
+                    spatialDescription = generateSpatialDescription(roomTypeResult.first, allObstacles)
                 )
             } catch (e: Exception) {
                 Timber.e(e, "室内检测失败。异常类型: ${e.javaClass.simpleName}, 消息: ${e.message}")
@@ -491,4 +493,88 @@ class IndoorDetector @Inject constructor(
      * 检查 ML Kit 是否初始化成功
      */
     fun isMlKitInitialized(): Boolean = mlKitInitialized
+
+    // ==================== 空间描述生成 ====================
+
+    /**
+     * 生成自然语言空间描述
+     *
+     * 根据房间类型和检测到的障碍物，生成用户友好的空间描述。
+     * 示例："当前环境识别为：客厅。检测到前方有一张沙发，左侧是一个茶几。"
+     *
+     * @param roomType 房间类型
+     * @param obstacles 检测到的障碍物列表
+     * @return 自然语言空间描述
+     */
+    fun generateSpatialDescription(roomType: RoomType, obstacles: List<DetectedIndoorObstacle>): String {
+        val parts = mutableListOf<String>()
+
+        // 1. 房间类型描述
+        if (roomType != RoomType.UNKNOWN) {
+            parts.add("当前环境识别为：${roomType.chineseName}")
+        }
+
+        // 2. 按方向分组障碍物
+        if (obstacles.isNotEmpty()) {
+            // 过滤高置信度障碍物（> 0.5）
+            val significant = obstacles.filter { it.confidence > 0.5f }
+            if (significant.isNotEmpty()) {
+                val descriptions = significant.map { obs ->
+                    val dirStr = when (obs.direction) {
+                        Direction.LEFT -> "左侧"
+                        Direction.LEFT_FRONT -> "左前方"
+                        Direction.RIGHT -> "右侧"
+                        Direction.RIGHT_FRONT -> "右前方"
+                        Direction.CENTER -> "前方"
+                        Direction.BACK -> "后方"
+                    }
+                    val distStr = String.format("%.1f", obs.distance)
+                    "$dirStr${distStr}米处有${obs.type.chineseName}"
+                }
+
+                if (descriptions.size <= 3) {
+                    parts.add(descriptions.joinToString("，"))
+                } else {
+                    // 超过3个只描述最近的3个
+                    parts.add("附近检测到：${descriptions.take(3).joinToString("，")}，还有${descriptions.size - 3}个物体")
+                }
+            }
+        }
+
+        return if (parts.isEmpty()) "未检测到明显物体" else parts.joinToString("。") + "。"
+    }
+
+    // ==================== 文字识别（OCR） ====================
+
+    /**
+     * 识别图片中的文字
+     *
+     * @param bitmap 输入图片
+     * @param rotationDegrees 旋转角度
+     * @return OCR识别结果
+     */
+    suspend fun recognizeText(bitmap: Bitmap, rotationDegrees: Int = 0): com.blindpath.module_indoor.domain.model.OcrResult {
+        return textRecognizer.recognize(bitmap, rotationDegrees)
+    }
+
+    /**
+     * 初始化OCR识别器（预下载模型）
+     */
+    suspend fun initializeOcr() {
+        textRecognizer.initialize()
+    }
+
+    /**
+     * 检查OCR结果是否包含导航信息（路标/门牌等）
+     */
+    fun containsNavigationText(ocrResult: com.blindpath.module_indoor.domain.model.OcrResult): Boolean {
+        return textRecognizer.containsNavigationInfo(ocrResult)
+    }
+
+    /**
+     * 从OCR结果中提取路标信息
+     */
+    fun extractNavigationText(ocrResult: com.blindpath.module_indoor.domain.model.OcrResult): String {
+        return textRecognizer.extractNavigationInfo(ocrResult)
+    }
 }

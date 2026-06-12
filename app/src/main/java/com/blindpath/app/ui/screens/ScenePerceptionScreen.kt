@@ -11,6 +11,8 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.camera.core.ImageProxy
+import androidx.core.graphics.rotateBitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -36,11 +38,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import com.blindpath.module_indoor.data.IndoorDetector
+import com.blindpath.module_indoor.domain.model.IndoorScene
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.ObstacleState
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.receiveCatching
 import timber.log.Timber
 import java.util.concurrent.Executors
 
@@ -58,6 +63,7 @@ import java.util.concurrent.Executors
 @Composable
 fun ScenePerceptionScreen(
     obstacleRepository: ObstacleRepository,
+    indoorDetector: IndoorDetector,
     onBack: () -> Unit,
     viewModel: VoiceInteractionViewModel
 ) {
@@ -107,37 +113,64 @@ fun ScenePerceptionScreen(
         }
     }
 
-    // 模拟场景检测（实际应接入AI模型）
+    // 场景检测（使用IndoorDetector）
     LaunchedEffect(isDetecting) {
         if (isDetecting) {
             isModelLoading = true
             currentSceneDescription = "正在加载场景感知模型..."
             viewModel.speak("正在加载场景感知模型")
             
-            delay(1500) // 模拟模型加载
+            // 加载IndoorDetector
+            val loaded = indoorDetector.loadModel()
             isModelLoading = false
             
-            currentSceneDescription = "场景感知已启动，正在分析周围环境"
-            viewModel.speak("场景感知已启动，正在分析周围环境")
-            
-            // 模拟定期场景描述
-            while (isDetecting) {
-                delay(8000)
-                if (isDetecting) {
-                    val description = generateMockSceneDescription(currentMode)
-                    currentSceneDescription = description
-                    detectedObjects = generateMockObjects()
-                    detectedPeople = (0..3).random()
-                    environmentType = listOf("城市人行道", "商场内部", "公园", "地铁站", "餐厅").random()
-                    
-                    viewModel.speak(description)
-                }
+            if (!loaded) {
+                currentSceneDescription = "模型加载失败，使用辅助检测模式"
+                viewModel.speak("模型加载失败，使用辅助检测模式")
+            } else {
+                currentSceneDescription = "场景感知已启动，正在分析周围环境"
+                viewModel.speak("场景感知已启动，正在分析周围环境")
             }
-        } else {
-            currentSceneDescription = "场景感知已停止"
-            detectedObjects = emptyList()
-            detectedPeople = 0
-            viewModel.speak("场景感知已停止")
+            
+            // 使用帧分析回调进行真实检测
+            // 检测结果通过frameChannel传递
+        }
+    }
+
+    // 帧处理协程：从frameChannel获取帧并调用IndoorDetector
+    LaunchedEffect(isDetecting) {
+        if (!isDetecting) return@LaunchedEffect
+        var lastAnnounceTime = 0L
+        while (!frameChannel.isClosedForReceive) {
+            val bitmap = frameChannel.receiveCatching { it.getOrNull() } ?: continue
+            try {
+                val scene: IndoorScene = indoorDetector.detect(bitmap)
+                bitmap.recycle()
+
+                // 更新UI
+                currentSceneDescription = scene.spatialDescription
+                environmentType = scene.roomType.chineseName
+
+                // 转换为DetectedObjectInfo列表
+                detectedObjects = scene.obstacles.map { obs ->
+                    DetectedObjectInfo(
+                        obs.type.chineseName,
+                        "家具",
+                        obs.distance,
+                        obs.confidence
+                    )
+                }
+
+                // 语音播报（8秒冷却）
+                val now = System.currentTimeMillis()
+                if (now - lastAnnounceTime > 8000L && scene.spatialDescription.isNotEmpty()) {
+                    lastAnnounceTime = now
+                    viewModel.speak(scene.spatialDescription)
+                }
+            } catch (e: Exception) {
+                Timber.w(e, "场景检测失败")
+                bitmap.recycle()
+            }
         }
     }
 
@@ -247,6 +280,17 @@ fun ScenePerceptionScreen(
                                             if (frameSkipCounter % processEveryNFrames != 0) {
                                                 imageProxy.close()
                                                 return@setAnalyzer
+                                            }
+                                            try {
+                                                val bitmap = imageProxy.toBitmap()
+                                                val rotated = rotateBitmap(bitmap, imageProxy.imageInfo.rotationDegrees.toFloat())
+                                                bitmap.recycle()
+                                                // 发送到检测协程
+                                                if (!frameChannel.isClosedForSend) {
+                                                    frameChannel.trySend(rotated)
+                                                }
+                                            } catch (e: Exception) {
+                                                Timber.w(e, "帧处理失败")
                                             }
                                             imageProxy.close()
                                         }
