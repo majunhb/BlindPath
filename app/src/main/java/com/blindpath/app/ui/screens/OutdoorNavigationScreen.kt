@@ -250,8 +250,8 @@ fun OutdoorNavigationScreen(
                 ObstacleInfo(
                     type = when {
                         obs.type.contains("行人") || obs.type.contains("人") -> ObstacleType.PEDESTRIAN
-                        obs.type.contains("车") -> ObstacleType.VEHICLE
-                        obs.type.contains("自行车") || obs.type.contains("电动车") -> ObstacleType.NON_VEHICLE
+                        obs.type.contains("车") -> ObstacleType.MOTOR_VEHICLE
+                        obs.type.contains("自行车") || obs.type.contains("电动车") -> ObstacleType.NON_MOTOR_VEHICLE
                         else -> ObstacleType.STATIC
                     },
                     distance = obs.distance,
