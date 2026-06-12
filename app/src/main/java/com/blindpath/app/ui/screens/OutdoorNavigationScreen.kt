@@ -256,8 +256,7 @@ fun OutdoorNavigationScreen(
                     },
                     distance = obs.distance,
                     direction = obs.direction,
-                    speed = 0f,  // 当前版本不提供速度数据
-                    ttc = Float.MAX_VALUE
+                    speed = 0f  // 当前版本不提供速度数据
                 )
             }
         }
