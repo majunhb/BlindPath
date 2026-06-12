@@ -18,7 +18,10 @@ model = YOLO('yolov8n')
 model.export(format='tflite', imgsz=320)
 
 # 找到导出的文件并复制
-files = glob.glob('yolov8n*.tflite')
+# Ultralytics 导出为 saved_model 格式，需要查找子目录
+files = glob.glob('yolov8n_saved_model/*.tflite')
+if not files:
+    files = glob.glob('yolov8n*.tflite')  # 备用查找
 if files:
     os.makedirs(os.path.dirname(model_file), exist_ok=True)
     shutil.copy(files[0], model_file)
