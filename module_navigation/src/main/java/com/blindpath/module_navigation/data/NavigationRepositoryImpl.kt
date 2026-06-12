@@ -294,8 +294,8 @@ class NavigationRepositoryImpl @Inject constructor(
         var capturedPolylines: List<List<LatLonPoint>>? = null
         var capturedDestName: String = _state.value.destinationName ?: "Destination"
 
-        val result = withTimeoutOrNull(15000L) {
-            suspendCancellableCoroutine { cont ->
+        val result: Result<Boolean> = withTimeoutOrNull(15000L) {
+            suspendCancellableCoroutine<Result<Boolean>> { cont ->
                 try {
                     val origin = AMapLatLonPoint(originLat, originLon)
                     val dest = AMapLatLonPoint(destLat, destLon)
@@ -376,7 +376,10 @@ class NavigationRepositoryImpl @Inject constructor(
         } ?: Result.Error(message = "路线规划超时")
 
         // 路径规划成功后，缓存到 Room DB 用于离线使用
-        if (result is Result.Success && capturedSteps != null) {
+        if (result is Result.Success<*> && capturedSteps != null) {
+            // 使用局部val避免smart-cast问题（capturedSteps被lambda捕获）
+            val cachedSteps = capturedSteps!!
+            val cachedPoly = capturedPolylines
             try {
                 navigationCacheManager.cacheRoute(
                     originName = "Current Location",
@@ -385,10 +388,10 @@ class NavigationRepositoryImpl @Inject constructor(
                     destName = capturedDestName,
                     destLat = destLat,
                     destLon = destLon,
-                    steps = capturedSteps,
+                    steps = cachedSteps,
                     totalDistanceMeters = capturedDistance,
                     totalDurationSeconds = capturedDuration,
-                    polylinePoints = capturedPolylines?.flatten() ?: emptyList(),
+                    polylinePoints = cachedPoly?.flatten() ?: emptyList(),
                     totalDistanceFormatted = "${capturedDistance.toInt()}米",
                     totalDurationFormatted = formatDuration(capturedDuration.toInt())
                 )
