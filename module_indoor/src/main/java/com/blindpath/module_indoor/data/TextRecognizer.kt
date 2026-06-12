@@ -2,7 +2,7 @@ package com.blindpath.module_indoor.data
 
 import android.graphics.Bitmap
 import android.graphics.Rect
-import com.blindpath.module_indoor.domain.model.BoundingBox
+import com.blindpath.module_obstacle.domain.model.BoundingBox
 import com.blindpath.module_indoor.domain.model.OcrBlock
 import com.blindpath.module_indoor.domain.model.OcrResult
 import com.google.mlkit.vision.common.InputImage
@@ -106,7 +106,7 @@ class TextRecognizer @Inject constructor() {
                     OcrBlock(
                         text = block.text,
                         boundingBox = boundingBox,
-                        language = block.recognizedLanguages.firstOrNull()?.languageTag ?: "",
+                        language = "", // ML Kit TextRecognizerOptions.DEFAULT_OPTIONS 不支持 recognizedLanguages
                         confidence = block.lines.mapNotNull { it.confidence }.average().toFloat()
                     )
                 }
