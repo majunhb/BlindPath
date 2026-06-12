@@ -3,6 +3,7 @@ package com.blindpath.base.security
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import java.nio.charset.Charset
 import java.security.KeyStore
@@ -10,13 +11,16 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * 安全存储管理器
  * 使用 Android Keystore 加密敏感数据
  */
-class SecureStorage(
-    private val context: Context
+@Singleton
+class SecureStorage @Inject constructor(
+    @ApplicationContext private val context: Context
 ) {
     companion object {
         private const val ANDROID_KEY_STORE = "AndroidKeyStore"

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.blindpath.base.security.SecureStorage
+import dagger.hilt.android.qualifiers.ApplicationContext
 import net.sqlcipher.database.SupportFactory
 import timber.log.Timber
 import javax.inject.Inject
@@ -19,7 +20,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class EncryptedDatabaseFactory @Inject constructor(
-    private val context: Context,
+    @ApplicationContext private val context: Context,
     private val secureStorage: SecureStorage
 ) {
 
