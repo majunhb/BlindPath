@@ -714,7 +714,7 @@ class WakeWordServiceEnhanced : Service() {
 
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("助盲智行")
-            .setContentText("语音唤醒服务运行中 [$currentEngineType]")
+            .setContentText(buildNotificationText())
             .setSmallIcon(android.R.drawable.ic_btn_speak_now)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -722,6 +722,18 @@ class WakeWordServiceEnhanced : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .build()
+    }
+
+    /**
+     * 构建通知文本，根据引擎类型给出不同提示
+     */
+    private fun buildNotificationText(): String {
+        return when (currentEngineType) {
+            "BAIDU" -> "语音唤醒服务运行中 [百度引擎]"
+            "XF_IFLYTEK" -> "语音唤醒服务运行中 [讯飞引擎]"
+            "ENERGY" -> "语音唤醒运行中 [声音检测] - 唤醒词引擎未配置，注视屏幕或用语音指令"
+            else -> "语音唤醒服务运行中 [$currentEngineType]"
+        }
     }
 
     /**

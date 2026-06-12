@@ -13,7 +13,7 @@ import kotlin.math.sqrt
  * 注意：这只是检测声音响度，无法识别具体的唤醒词
  */
 class EnergyWakeWordDetector(
-    private val threshold: Int = 1000,
+    private val threshold: Int = 300,  // 降低阈值，正常说话即可触发
     private val onWakeWordDetected: (String) -> Unit
 ) : WakeWordDetector {
 

@@ -17,6 +17,7 @@ import com.blindpath.module_voice.service.BluetoothDeviceMonitor
 import com.blindpath.module_voice.service.PerformanceMonitor
 import com.blindpath.module_voice.service.SceneAdaptationManager
 import com.blindpath.module_voice.service.WakeWordServiceEnhanced
+import com.blindpath.module_voice.service.VoiceInteractionPipeline
 import android.app.ActivityManager
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
@@ -36,6 +37,9 @@ class BlindPathApp : Application() {
 
     @Inject
     lateinit var watchdog: DetectionServiceWatchdog
+
+    @Inject
+    lateinit var voiceInteractionPipeline: VoiceInteractionPipeline
 
     override fun onCreate() {
         super.onCreate()
@@ -126,6 +130,9 @@ class BlindPathApp : Application() {
             
             // 启动增强版语音唤醒服务
             startWakeWordService()
+
+            // 初始化全链路语音交互管道（动态注册 BroadcastReceiver 监听唤醒词）
+            voiceInteractionPipeline.initialize()
             
             Timber.d("Voice service initialized successfully")
         } catch (e: Exception) {

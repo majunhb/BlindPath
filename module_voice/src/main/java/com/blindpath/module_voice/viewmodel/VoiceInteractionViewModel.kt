@@ -4,9 +4,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.blindpath.base.common.Result
 import com.blindpath.module_voice.domain.VoiceCommandExecutor
+import com.blindpath.module_voice.domain.VoiceCommandRepository
 import com.blindpath.module_voice.domain.VoiceInteractionManager
 import com.blindpath.module_voice.domain.model.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -16,10 +18,13 @@ import javax.inject.Inject
  * 语音交互 ViewModel
  * 
  * 管理 UI 层的语音交互状态
+ * 同时观察 VoiceInteractionManager 和 VoiceCommandRepository 两个状态流
+ * 确保唤醒词检测事件能正确触发 TTS 响应
  */
 @HiltViewModel
 class VoiceInteractionViewModel @Inject constructor(
-    private val interactionManager: VoiceInteractionManager
+    private val interactionManager: VoiceInteractionManager,
+    private val voiceCommandRepository: VoiceCommandRepository
 ) : ViewModel(), VoiceCommandExecutor {
     
     private val _uiState = MutableStateFlow(VoiceInteractionUiState())
@@ -30,6 +35,7 @@ class VoiceInteractionViewModel @Inject constructor(
     
     init {
         observeInteractionState()
+        observeWakeWordState()
     }
     
     /**
@@ -142,6 +148,41 @@ class VoiceInteractionViewModel @Inject constructor(
                         lastCommand = state.lastCommand,
                         error = state.lastError
                     )
+                }
+            }
+        }
+    }
+
+    /**
+     * 观察唤醒词检测状态（来自 WakeWordBridgeService → VoiceCommandRepository）
+     *
+     * 当百度唤醒引擎在独立进程检测到唤醒词后，
+     * 通过广播 → WakeWordBridgeService → VoiceCommandRepository.triggerWakeWordDetected()
+     * 写入 interactionState.isWakeWordDetected = true
+     *
+     * 此处消费该标志，触发 TTS 播报和语音识别
+     */
+    private fun observeWakeWordState() {
+        viewModelScope.launch {
+            voiceCommandRepository.interactionState.collect { state ->
+                if (state.isWakeWordDetected) {
+                    Timber.i("VoiceInteractionViewModel: 唤醒词检测到: ${state.wakeWord}")
+
+                    // 1. 播报响应（TTS 线路，不阻塞后续流程）
+                    launch {
+                        interactionManager.speak("我在，请说指令", VoiceType.SYSTEM_STATUS)
+                    }
+
+                    // 2. 开始监听语音指令
+                    // 短暂延迟让 TTS 播完"我在"后再开始识别
+                    launch {
+                        delay(300L)
+                        interactionManager.startListening()
+                    }
+
+                    // 3. 消费唤醒词标志（VoiceCommandRepositoryImpl 内部自动重置）
+                    // consumeWakeWordDetected() 确保不会重复处理
+                    voiceCommandRepository.consumeLastCommand()
                 }
             }
         }
