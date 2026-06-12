@@ -8,6 +8,7 @@ on:
     paths:
       - 'scripts/export_model.py'
       - 'scripts/download_model.py'
+      - '.github/workflows/generate-model.yml'
 
 jobs:
   generate-model:
@@ -39,12 +40,24 @@ jobs:
           retention-days: 30
 
       - name: Create Release with model
-        if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: models-v1
-          name: Models v1
-          draft: true
+          name: YOLOv8n Detection Model
+          body: |
+            ## YOLOv8n 障碍物检测模型
+            
+            用于 BlindPath 应用的障碍物检测功能。
+            
+            - 模型大小: ~6MB
+            - 输入尺寸: 320x320
+            - 格式: TensorFlow Lite (float32)
+            
+            ### 使用方法
+            1. 下载 `yolov8n.tflite` 文件
+            2. 放入应用 `assets` 目录
+            3. 或让应用自动从 GitHub Releases 下载
+          draft: false
           files: |
             app/src/main/assets/yolov8n.tflite
         env:
