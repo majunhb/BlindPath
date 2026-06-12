@@ -49,8 +49,10 @@ class NavigationService : LifecycleService() {
     @Inject
     lateinit var voiceRepository: VoiceRepository
 
-    @Inject
-    lateinit var vibrator: Vibrator
+    // Vibrator 通过系统服务获取（不使用Hilt注入）
+    private val vibrator: Vibrator by lazy {
+        getSystemService(VIBRATOR_SERVICE) as Vibrator
+    }
 
     // lifecycleScope inherited from LifecycleService
     private var isRunning = false
