@@ -12,7 +12,7 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.camera.core.ImageProxy
-import androidx.core.graphics.rotateBitmap
+// rotateBitmap 使用本文件内定义的 private 函数
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -45,7 +45,7 @@ import com.blindpath.module_obstacle.domain.model.ObstacleState
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.receiveCatching
+import kotlinx.coroutines.channels.ChannelResult
 import timber.log.Timber
 import java.util.concurrent.Executors
 
@@ -142,7 +142,8 @@ fun ScenePerceptionScreen(
         if (!isDetecting) return@LaunchedEffect
         var lastAnnounceTime = 0L
         while (!frameChannel.isClosedForReceive) {
-            val bitmap = frameChannel.receiveCatching { it.getOrNull() } ?: continue
+            val result = frameChannel.receiveCatching()
+            val bitmap = result.getOrNull() ?: continue
             try {
                 val scene: IndoorScene = indoorDetector.detect(bitmap)
                 bitmap.recycle()
