@@ -16,6 +16,7 @@ import com.blindpath.base.error.DegradationManager
 import com.blindpath.module_navigation.data.GpsQuality
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.NavigationObstacle
+import com.blindpath.module_obstacle.data.detection.ObstacleTracker
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.domain.VoiceRepository
 import dagger.hilt.android.AndroidEntryPoint
@@ -148,10 +149,8 @@ class NavigationService : LifecycleService() {
 
     // ==================== 新增：障碍物感知桥接 ====================
 
-    /** 障碍物播报冷却（避免重复播报同一障碍物） */
-    private var lastObstacleAnnounceTime = 0L
-    private var lastObstacleAnnounceKey: String? = null
-    private val OBSTACLE_ANNOUNCE_INTERVAL_MS = 5000L  // 5秒内不重复播报同类障碍物
+    /** 障碍物追踪器（跨帧去重，避免重复播报同一物体） */
+    private val obstacleTracker = ObstacleTracker.getInstance()
 
     /** 障碍物监听协程Job */
     private var obstacleListenJob: Job? = null
@@ -562,23 +561,31 @@ class NavigationService : LifecycleService() {
                             return@collectLatest
                         }
 
-                        // 转换为NavigationObstacle
-                        val navObstacles = obstacles.map { obs ->
+                        // ★ 使用ObstacleTracker进行跨帧追踪去重
+                        val trackedObstacles = obstacleTracker.update(obstacles)
+
+                        // 转换为NavigationObstacle（只转换需要播报的，减少UI刷新）
+                        val navObstacles = trackedObstacles.map { tracked ->
                             NavigationObstacle(
-                                type = obs.type.chineseName,
-                                distance = obs.distance,
-                                direction = obs.direction.getChineseName(),
-                                confidence = obs.confidence,
-                                isDangerous = obs.distance < 1.0f,
-                                timestamp = obs.timestamp
+                                type = tracked.obstacle.type.chineseName,
+                                distance = tracked.obstacle.distance,
+                                direction = tracked.obstacle.direction.getChineseName(),
+                                confidence = tracked.obstacle.confidence,
+                                isDangerous = tracked.obstacle.distance < 1.0f,
+                                timestamp = tracked.obstacle.timestamp
                             )
                         }
 
                         // 找到最近的障碍物
                         val nearest = navObstacles.minByOrNull { it.distance }
 
-                        // 生成导航级语音播报
-                        val alertMessage = generateNavigationObstacleAlert(navObstacles, nearest)
+                        // 生成导航级语音播报（只播报追踪器标记为shouldAnnounce的）
+                        val announceable = trackedObstacles.filter { it.shouldAnnounce }
+                        val alertMessage = if (announceable.isNotEmpty()) {
+                            // 优先播报最近的、需要播报的障碍物
+                            val target = announceable.minByOrNull { it.obstacle.distance }
+                            target?.let { generateNavigationObstacleAlertForTracked(it) }
+                        } else null
 
                         // 推送到NavigationState
                         navigationRepository.updateObstacleData(
@@ -588,9 +595,10 @@ class NavigationService : LifecycleService() {
                             alertMessage = alertMessage
                         )
 
-                        // 语音播报（带节流）
-                        if (alertMessage != null) {
-                            announceObstacleInNavigation(alertMessage, nearest)
+                        // 语音播报（追踪器已去重，直接播报）
+                        if (alertMessage != null && announceable.isNotEmpty()) {
+                            val target = announceable.minByOrNull { it.obstacle.distance }!!
+                            announceTrackedObstacle(target)
                         }
                     } catch (e: Exception) {
                         Timber.e(e, "Error processing obstacle state in navigation")
@@ -643,38 +651,49 @@ class NavigationService : LifecycleService() {
     }
 
     /**
-     * 播报导航级障碍物预警（带冷却机制）
+     * 为追踪到的障碍物生成导航级预警文案
+     */
+    private fun generateNavigationObstacleAlertForTracked(tracked: com.blindpath.module_obstacle.data.detection.TrackedObstacle): String {
+        val obs = tracked.obstacle
+        val distStr = String.format("%.1f", obs.distance)
+        val dirStr = obs.direction.getChineseName()
+        val typeStr = obs.type.chineseName
+
+        return when {
+            obs.distance < 1.0f -> "紧急！${dirStr}${distStr}米有${typeStr}，请立即停下"
+            obs.distance < 2.0f -> "注意，${dirStr}${distStr}米有${typeStr}，请小心避让"
+            obs.distance < 3.0f -> "${dirStr}${distStr}米有${typeStr}"
+            else -> "前方${String.format("%.0f", obs.distance)}米有${typeStr}"
+        }
+    }
+
+    /**
+     * 播报追踪到的障碍物（追踪器已完成去重）
      *
      * 使用分层语音队列：
      * - 危险障碍物 → URGENT（立即打断）
      * - 警告障碍物 → EVENT（打断ROUTINE）
      * - 提示障碍物 → ROUTINE（排队等待）
      */
-    private fun announceObstacleInNavigation(message: String, obstacle: NavigationObstacle?) {
-        if (obstacle == null) return
-
-        val now = System.currentTimeMillis()
-        // 冷却：同类同方向的障碍物5秒内不重复播报
-        val key = "${obstacle.type}_${obstacle.direction}"
-        if (key == lastObstacleAnnounceKey && now - lastObstacleAnnounceTime < OBSTACLE_ANNOUNCE_INTERVAL_MS) {
-            return
-        }
-        lastObstacleAnnounceKey = key
-        lastObstacleAnnounceTime = now
+    private fun announceTrackedObstacle(tracked: com.blindpath.module_obstacle.data.detection.TrackedObstacle) {
+        val obs = tracked.obstacle
+        val message = generateNavigationObstacleAlertForTracked(tracked)
 
         val priority = when {
-            obstacle.isDangerous -> VoiceGuidancePriority.URGENT
-            obstacle.distance < 2f -> VoiceGuidancePriority.EVENT
+            obs.distance < 1.0f -> VoiceGuidancePriority.URGENT
+            obs.distance < 2.0f -> VoiceGuidancePriority.EVENT
             else -> VoiceGuidancePriority.ROUTINE
         }
 
         announceWithPriority(message, priority)
 
         // 危险和警告级别触发振动
-        if (obstacle.distance < 2f) {
-            val pattern = if (obstacle.isDangerous) VibrationPattern.RAPID_3X else VibrationPattern.LONG_500MS
+        if (obs.distance < 2.0f) {
+            val pattern = if (obs.distance < 1.0f) VibrationPattern.RAPID_3X else VibrationPattern.LONG_500MS
             triggerVibration(pattern)
         }
+
+        Timber.d("ObstacleTracker: Announced track #${tracked.trackId} ${obs.type.chineseName} at ${String.format("%.1f", obs.distance)}m (new=${tracked.isNew})")
     }
 
     // ==================== 原有：TTC 碰撞预测 ====================
