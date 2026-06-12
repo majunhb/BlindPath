@@ -47,7 +47,7 @@ class AlertExecutor @Inject constructor(
         LatencyTracker.endSpan("alert_output", LatencyTracker.ALERT_OUTPUT_BUDGET_MS)
     }
 
-    private fun speakAlert(level: AlertLevel, description: String) {
+    private suspend fun speakAlert(level: AlertLevel, description: String) {
         try {
             val voiceType = when (level) {
                 AlertLevel.DANGER -> VoiceType.OBSTACLE_DANGER

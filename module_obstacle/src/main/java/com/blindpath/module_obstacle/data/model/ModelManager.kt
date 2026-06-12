@@ -303,7 +303,7 @@ class ModelManager @Inject constructor(
             return downloadUrl
         } catch (e: Exception) {
             Timber.w(e, "$TAG: Failed to extract asset URL")
-            null
+            return null
         }
     }
 
