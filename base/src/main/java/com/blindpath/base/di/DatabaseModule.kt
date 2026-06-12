@@ -2,6 +2,7 @@ package com.blindpath.base.di
 
 import com.blindpath.base.data.local.BlindPathDatabase
 import com.blindpath.base.data.local.EncryptedDatabaseFactory
+import com.blindpath.base.data.local.NavigationHistoryDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -22,5 +23,11 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(factory: EncryptedDatabaseFactory): BlindPathDatabase {
         return factory.createDatabase()
+    }
+
+    @Provides
+    @Singleton
+    fun provideNavigationHistoryDao(database: BlindPathDatabase): NavigationHistoryDao {
+        return database.navigationHistoryDao()
     }
 }

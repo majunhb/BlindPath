@@ -8,6 +8,7 @@ import com.blindpath.base.tts.VibrationHelper
 import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.domain.model.VoiceRequest
 import com.blindpath.module_voice.domain.model.VoiceType
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,7 +27,7 @@ import javax.inject.Singleton
 @Singleton
 class AlertExecutor @Inject constructor(
     private val voiceRepository: VoiceRepository,
-    private val applicationContext: Context
+    @ApplicationContext private val applicationContext: Context
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 

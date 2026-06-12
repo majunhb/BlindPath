@@ -2,6 +2,7 @@ package com.blindpath.module_obstacle.data.model
 
 import android.content.Context
 import com.blindpath.base.reliability.ReliabilityLogger
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -22,7 +23,7 @@ import javax.inject.Singleton
  */
 @Singleton
 class ModelManager @Inject constructor(
-    private val context: Context
+    @ApplicationContext private val context: Context
 ) {
     companion object {
         private const val TAG = "ModelManager"
