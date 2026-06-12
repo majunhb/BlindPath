@@ -9,6 +9,9 @@ import android.os.Build
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.amap.api.location.AMapLocationClient
 import com.blindpath.base.error.GlobalExceptionHandler
+import com.blindpath.base.reliability.CrashlyticsTree
+import com.blindpath.base.reliability.DetectionServiceWatchdog
+import com.blindpath.base.reliability.ReliabilityLogger
 import com.blindpath.module_voice.config.VoiceServiceConfig
 import com.blindpath.module_voice.service.BluetoothDeviceMonitor
 import com.blindpath.module_voice.service.PerformanceMonitor
@@ -31,6 +34,9 @@ class BlindPathApp : Application() {
     @Inject
     lateinit var performanceMonitor: PerformanceMonitor
 
+    @Inject
+    lateinit var watchdog: DetectionServiceWatchdog
+
     override fun onCreate() {
         super.onCreate()
 
@@ -46,6 +52,9 @@ class BlindPathApp : Application() {
 
         // 初始化 Timber 日志
         initTimber()
+
+        // Phase 2: 初始化可靠性日志
+        ReliabilityLogger.initialize(this)
         
         // 初始化全局异常捕获器
         GlobalExceptionHandler.initialize(this)
@@ -55,6 +64,10 @@ class BlindPathApp : Application() {
         
         // 初始化语音服务
         initVoiceService()
+
+        // Phase 1: 启动检测服务看门狗
+        watchdog.start()
+        Timber.i("Detection service watchdog started")
         
         // 确保 ProcessLifecycleOwner 被初始化，供 CameraX 等组件使用
         ProcessLifecycleOwner.get()
@@ -70,8 +83,8 @@ class BlindPathApp : Application() {
             // Debug 模式：打印到 Logcat
             Timber.plant(Timber.DebugTree())
         } else {
-            // Release 模式：可以接入 Crashlytics 等服务
-            // Timber.plant(CrashlyticsTree())
+            // Release 模式：Crashlytics 上报 + 本地文件兜底
+            Timber.plant(CrashlyticsTree())
         }
     }
     

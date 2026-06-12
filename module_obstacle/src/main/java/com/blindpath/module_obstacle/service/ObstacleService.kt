@@ -5,13 +5,11 @@ import android.app.PendingIntent
 import android.content.Intent
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.common.ObstacleAlert
+import com.blindpath.base.reliability.DetectionServiceWatchdog
 import com.blindpath.base.tts.VibrationHelper
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_voice.domain.VoiceRepository
-import com.blindpath.module_voice.domain.model.VoiceRequest
-import com.blindpath.module_voice.domain.model.VoiceType
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
@@ -41,6 +39,12 @@ class ObstacleService : LifecycleService() {
 
     @Inject
     lateinit var voiceRepository: VoiceRepository
+
+    @Inject
+    lateinit var watchdog: DetectionServiceWatchdog
+
+    @Inject
+    lateinit var alertExecutor: AlertExecutor
 
     // lifecycleScope inherited from LifecycleService
     private var isRunning = false
@@ -98,6 +102,9 @@ class ObstacleService : LifecycleService() {
         val notification = createNotification()
         startForeground(NOTIFICATION_ID, notification)
 
+        // 启动看门狗心跳
+        watchdog.start()
+
         detectionJob = serviceScope.launch {
             try {
                 // 初始化检测器
@@ -119,6 +126,9 @@ class ObstacleService : LifecycleService() {
                 // 监听检测结果 - 关键修复：监听 obstacleState 变化触发语音播报
                 obstacleRepository.obstacleState.collectLatest { state ->
                     try {
+                        // 记录看门狗心跳
+                        watchdog.recordHeartbeat()
+
                         // 更新通知
                         val alertText = state.currentAlert?.description ?: "正在检测障碍物"
                         updateNotification(alertText)
@@ -141,7 +151,10 @@ class ObstacleService : LifecycleService() {
 
     private fun stopObstacle() {
         isRunning = false
-        
+
+        // 停止看门狗心跳
+        watchdog.stop()
+
         // 取消协程
         detectionJob?.cancel()
         detectionJob = null
@@ -162,12 +175,12 @@ class ObstacleService : LifecycleService() {
     }
 
     /**
-     * 处理障碍物预警：语音播报 + 振动反馈
-     * 
-     * 关键修复：
-     * 1. 根据 AlertLevel 选择正确的 VoiceType
-     * 2. 使用 voiceRepository.announce() 触发语音播报
-     * 3. 危险告警立即打断当前播报
+     * 处理障碍物预警：通过 AlertExecutor 三路并行输出（语音+振动）
+     *
+     * 使用 AlertExecutor 替代直接调用，确保：
+     * 1. 语音和振动互不依赖，独立 try-catch
+     * 2. 单路失败不影响其他通道
+     * 3. 冷却机制仍在此层控制
      */
     private fun handleAlert(alert: ObstacleAlert) {
         val currentTime = System.currentTimeMillis()
@@ -180,33 +193,8 @@ class ObstacleService : LifecycleService() {
         lastAlertMessage = alert.description
         lastAlertTime = currentTime
 
-        // 关键修复：根据危险等级选择播报类型
-        val voiceType = when (alert.level) {
-            AlertLevel.DANGER -> VoiceType.OBSTACLE_DANGER    // 危险：立即打断
-            AlertLevel.WARNING -> VoiceType.OBSTACLE_NORMAL   // 警告：等待当前播报
-            AlertLevel.SAFE -> VoiceType.OBSTACLE_LOW        // 安全：低优先级
-            AlertLevel.UNKNOWN -> VoiceType.SYSTEM_STATUS     // 未知：系统状态播报
-        }
-
-        // 使用 voiceRepository.announce() 触发语音播报
-        serviceScope.launch {
-            try {
-                val request = VoiceRequest(
-                    text = alert.description,
-                    type = voiceType,
-                    // 危险预警需要打断当前播报
-                    interruptCurrent = alert.level == AlertLevel.DANGER
-                )
-                voiceRepository.announce(request)
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to announce obstacle alert")
-            }
-        }
-
-        // 振动反馈（危险和警告级别）
-        if (alert.level != AlertLevel.SAFE) {
-            VibrationHelper.vibrate(this, alert.level)
-        }
+        // 委托给 AlertExecutor 三路并行执行
+        alertExecutor.executeAlert(alert.level, alert.description)
     }
 
     private fun createNotification(): Notification {

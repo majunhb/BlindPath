@@ -40,7 +40,9 @@ import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.common.ObstacleAlert
 import com.blindpath.base.common.Result
 import com.blindpath.base.config.AppConfig
+import com.blindpath.module_obstacle.data.detection.AIDetectionStrategy
 import com.blindpath.module_obstacle.data.detection.AIDetector
+import com.blindpath.module_obstacle.data.detection.CompositeDetectionPipeline
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.BusGuideManager
 import com.blindpath.module_obstacle.domain.ItemSearchManager
@@ -60,6 +62,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
+import com.blindpath.base.reliability.LatencyTracker
+import com.blindpath.base.reliability.ReliabilityLogger
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -81,6 +85,8 @@ import javax.inject.Singleton
 class ObstacleRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val aiDetector: AIDetector,
+    private val aiDetectionStrategy: AIDetectionStrategy,
+    private val compositeDetectionPipeline: CompositeDetectionPipeline,
     private val sceneClassifier: SceneClassifier,
     private val itemSearchManager: ItemSearchManager,
     private val busGuideManager: BusGuideManager
@@ -168,6 +174,7 @@ class ObstacleRepositoryImpl @Inject constructor(
             val loadResult = aiDetector.loadModel()
             if (!loadResult) {
                 Timber.w("ObstacleRepository: AI model not available, using assisted detection")
+                ReliabilityLogger.logFallback("ai_model_load", "AI model not available, using assisted detection")
                 _obstacleState.value = _obstacleState.value.copy(
                     isModelLoaded = false,
                     isModelInitComplete = false,  // 未完成，等后面的 copy 统一设置
@@ -183,11 +190,19 @@ class ObstacleRepositoryImpl @Inject constructor(
                 lastError = null
             )
 
+            // 同步 AI 检测策略的可用状态
+            if (aiDetector.isModelLoaded()) {
+                aiDetectionStrategy.markAvailable()
+            } else {
+                aiDetectionStrategy.markUnavailable()
+            }
+
             Timber.d("ObstacleRepository: Initialized successfully")
             Result.Success(true)
 
         } catch (e: Exception) {
             Timber.e(e, "ObstacleRepository: Initialization failed")
+            ReliabilityLogger.logFallback("ai_model_load", e.message)
             _obstacleState.value = _obstacleState.value.copy(
                 isModelInitComplete = true,
                 lastError = "初始化失败: ${e.message}"
@@ -216,9 +231,16 @@ class ObstacleRepositoryImpl @Inject constructor(
             try {
                 val loaded = aiDetector.loadModel()
                 _obstacleState.value = _obstacleState.value.copy(isModelLoaded = loaded)
+                // 同步 AI 检测策略的可用状态
+                if (loaded) {
+                    aiDetectionStrategy.markAvailable()
+                } else {
+                    aiDetectionStrategy.markUnavailable()
+                }
                 Timber.d("ObstacleRepository: Model load result: $loaded")
             } catch (e: Exception) {
                 Timber.e(e, "ObstacleRepository: Model load failed, continuing with assisted detection")
+                aiDetectionStrategy.markUnavailable()
             }
         }
 
@@ -315,6 +337,7 @@ class ObstacleRepositoryImpl @Inject constructor(
     override suspend fun unloadModel() {
         withContext(Dispatchers.IO) {
             aiDetector.unloadModel()
+            aiDetectionStrategy.markUnavailable()
             _obstacleState.value = _obstacleState.value.copy(isModelLoaded = false)
         }
     }
@@ -369,7 +392,7 @@ class ObstacleRepositoryImpl @Inject constructor(
             try {
                 val bitmap = rawToBitmap(imageData, width, height)
                 if (bitmap != null) {
-                    val obstacles = aiDetector.detect(bitmap)
+                    val obstacles = compositeDetectionPipeline.detect(bitmap)
                     bitmap.recycle()
                     obstacles
                 } else {
@@ -506,8 +529,10 @@ class ObstacleRepositoryImpl @Inject constructor(
                 return
             }
 
-            // 核心修复：调用 AIDetector 进行真正的障碍物检测
-            val obstacles = aiDetector.detect(bitmap)
+            // 核心修复：通过组合检测管道执行障碍物检测（三层降级链）
+            LatencyTracker.beginSpan("detection")
+            val obstacles = compositeDetectionPipeline.detect(bitmap)
+            LatencyTracker.endSpan("detection", LatencyTracker.DETECTION_BUDGET_MS)
 
             // 更新 FPS
             updateFps()
@@ -784,6 +809,7 @@ class ObstacleRepositoryImpl @Inject constructor(
 
         // 释放 AI 模型
         aiDetector.unloadModel()
+        aiDetectionStrategy.markUnavailable()
 
         // 释放上一帧
         synchronized(this@ObstacleRepositoryImpl) {
