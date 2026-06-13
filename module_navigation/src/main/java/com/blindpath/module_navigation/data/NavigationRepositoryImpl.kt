@@ -135,6 +135,12 @@ class NavigationRepositoryImpl @Inject constructor(
     /** 当前平滑后的位置 */
     private var smoothedLocation: SmoothedLocation? = null
 
+    /** ★ GPS坐标跳变过滤器：记录上一个有效坐标 */
+    private var lastValidLat: Double? = null
+    private var lastValidLon: Double? = null
+    /** 坐标跳变阈值：0.001° ≈ 111m，步行速度下合理 */
+    private val gpsJumpThreshold = 0.001
+
     // ==================== 新增：路径偏好 ====================
 
     /** 当前路径偏好（默认最安全无障碍路径优先） */
@@ -851,6 +857,33 @@ class NavigationRepositoryImpl @Inject constructor(
      */
     private fun onLocationReceived(aMapLocation: AMapLocation) {
         currentAMapLocation = aMapLocation
+
+        // ★ 【关键修复】GPS坐标跳变过滤器
+        // 诊断报告发现：经度从106°跳到112°（跨度600km），但精度声称3.79m
+        // 修复：添加坐标合理性检查，跳变超过阈值则丢弃
+        val rawLat = aMapLocation.latitude
+        val rawLon = aMapLocation.longitude
+
+        // 1. 中国大陆坐标范围检查
+        if (rawLat < 18.0 || rawLat > 53.0 || rawLon < 73.0 || rawLon > 135.0) {
+            Timber.w("GPS out of China range: lat=%.4f, lon=%.4f, discarding", rawLat, rawLon)
+            return
+        }
+
+        // 2. 相邻帧跳变检查
+        val lastLat = lastValidLat
+        val lastLon = lastValidLon
+        if (lastLat != null && lastLon != null) {
+            val latDelta = kotlin.math.abs(rawLat - lastLat)
+            val lonDelta = kotlin.math.abs(rawLon - lastLon)
+            if (latDelta > gpsJumpThreshold || lonDelta > gpsJumpThreshold) {
+                Timber.w("GPS jump detected: latΔ=%.4f lonΔ=%.4f (from %.4f,%.4f to %.4f,%.4f), discarding",
+                    latDelta, lonDelta, lastLat, lastLon, rawLat, rawLon)
+                return
+            }
+        }
+        lastValidLat = rawLat
+        lastValidLon = rawLon
 
         // 确定定位来源
         val locationSource = when {

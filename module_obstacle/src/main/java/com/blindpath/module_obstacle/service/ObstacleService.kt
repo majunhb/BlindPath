@@ -68,7 +68,8 @@ class ObstacleService : LifecycleService() {
 
     override fun onBind(intent: Intent): IBinder {
         super.onBind(intent)
-        return null!!
+        // ObstacleService 仅作为 Started Service 使用，不支持绑定
+        throw UnsupportedOperationException("ObstacleService does not support binding")
     }
 
     override fun onCreate() {
@@ -104,6 +105,11 @@ class ObstacleService : LifecycleService() {
 
         // 启动看门狗心跳
         watchdog.start()
+
+        // ★ 【关键修复】设置 LifecycleOwner，使 CameraX 能绑定到 Service 生命周期
+        // 诊断报告发现：未设置此属性导致 bindCameraUseCases() 中 lifecycleOwner==null 直接 return
+        // 摄像头从未采集过一帧画面，障碍物检测功能完全瘫痪
+        obstacleRepository.setLifecycleOwner(this)
 
         detectionJob = serviceScope.launch {
             try {

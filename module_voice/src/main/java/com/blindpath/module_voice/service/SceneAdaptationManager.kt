@@ -67,6 +67,11 @@ class SceneAdaptationManager @Inject constructor(
     
     // 场景切换监听器
     private var sceneChangeListener: ((SceneType, SceneConfig) -> Unit)? = null
+
+    /** ★ 场景切换防抖：记录上次切换时间 */
+    private var lastSceneSwitchTime: Long = 0L
+    /** 场景切换冷却期（毫秒） */
+    private val sceneSwitchCooldownMs: Long = 10_000L  // 10秒
     
     // 音频录制器（用于噪音检测）
     private var noiseDetector: MediaRecorder? = null
@@ -206,6 +211,16 @@ class SceneAdaptationManager @Inject constructor(
         if (currentScene.get() == sceneType) {
             return
         }
+
+        // ★ 【防抖修复】10秒冷却期内不切换场景
+        // 诊断报告发现：5秒内场景切换2次，导致语音不连贯
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - lastSceneSwitchTime < sceneSwitchCooldownMs) {
+            Timber.d("Scene switch debounced: %s (cooldown remaining: %dms)",
+                sceneType, sceneSwitchCooldownMs - (now - lastSceneSwitchTime))
+            return
+        }
+        lastSceneSwitchTime = now
         
         val oldScene = currentScene.get()
         currentScene.set(sceneType)

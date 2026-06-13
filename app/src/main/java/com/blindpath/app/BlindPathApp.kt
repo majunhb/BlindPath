@@ -69,6 +69,9 @@ class BlindPathApp : Application() {
         // 初始化语音服务
         initVoiceService()
 
+        // ★ 【修复】初始化SOS紧急联系人持久化
+        com.blindpath.base.sos.SosHelper.init(this)
+
         // Phase 1: 启动检测服务看门狗
         watchdog.start()
         Timber.i("Detection service watchdog started")
