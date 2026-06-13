@@ -38,7 +38,7 @@ import com.blindpath.base.sos.SosHelper
 
 import com.blindpath.module_indoor.data.IndoorDetector
 import com.blindpath.module_navigation.domain.NavigationRepository
-
+import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 
 import com.blindpath.module_voice.domain.VoiceRepository
@@ -76,6 +76,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var indoorDetector: IndoorDetector
+
+    @Inject
+    lateinit var sceneClassifier: SceneClassifier
 
 
 
@@ -165,6 +168,7 @@ class MainActivity : ComponentActivity() {
                         obstacleRepository = obstacleRepository,
                         navigationRepository = navigationRepository,
                         indoorDetector = indoorDetector,
+                        sceneClassifier = sceneClassifier,
                         onObstacleDetectionClick = { requestPermissionAndAction("obstacle") },
 
                         onLocationClick = { requestPermissionAndAction("location") },

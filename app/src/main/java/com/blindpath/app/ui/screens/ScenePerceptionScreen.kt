@@ -40,7 +40,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.blindpath.module_indoor.data.IndoorDetector
 import com.blindpath.module_indoor.domain.model.IndoorScene
+import com.blindpath.module_obstacle.data.detection.SceneClassifier
+import com.blindpath.module_obstacle.data.detection.SceneRecognitionResult
+import com.blindpath.module_obstacle.data.detection.SceneType
 import com.blindpath.module_obstacle.domain.ObstacleRepository
+import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_obstacle.domain.model.ObstacleState
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
 import kotlinx.coroutines.*
@@ -64,6 +68,7 @@ import java.util.concurrent.Executors
 fun ScenePerceptionScreen(
     obstacleRepository: ObstacleRepository,
     indoorDetector: IndoorDetector,
+    sceneClassifier: SceneClassifier,
     onBack: () -> Unit,
     viewModel: VoiceInteractionViewModel
 ) {
@@ -113,31 +118,28 @@ fun ScenePerceptionScreen(
         }
     }
 
-    // 场景检测（使用IndoorDetector）
+    // 场景检测（使用SceneClassifier + ObstacleRepository）
     LaunchedEffect(isDetecting) {
         if (isDetecting) {
             isModelLoading = true
             currentSceneDescription = "正在加载场景感知模型..."
             viewModel.speak("正在加载场景感知模型")
             
-            // 加载IndoorDetector
-            val loaded = indoorDetector.loadModel()
+            // 加载障碍物检测模型和场景识别器
+            val modelLoaded = obstacleRepository.loadModel()
             isModelLoading = false
             
-            if (!loaded) {
-                currentSceneDescription = "模型加载失败，使用辅助检测模式"
+            if (modelLoaded is com.blindpath.base.common.Result.Error) {
+                currentSceneDescription = "AI模型加载失败，使用视觉算法识别场景"
                 viewModel.speak("模型加载失败，使用辅助检测模式")
             } else {
                 currentSceneDescription = "场景感知已启动，正在分析周围环境"
-                viewModel.speak("场景感知已启动，正在分析周围环境")
+                viewModel.speak("场景感知已启动")
             }
-            
-            // 使用帧分析回调进行真实检测
-            // 检测结果通过frameChannel传递
         }
     }
 
-    // 帧处理协程：从frameChannel获取帧并调用IndoorDetector
+    // 帧处理协程：从frameChannel获取帧，调用SceneClassifier + ObstacleRepository
     LaunchedEffect(isDetecting) {
         if (!isDetecting) return@LaunchedEffect
         var lastAnnounceTime = 0L
@@ -145,29 +147,46 @@ fun ScenePerceptionScreen(
             val result = frameChannel.receiveCatching()
             val bitmap = result.getOrNull() ?: continue
             try {
-                val scene: IndoorScene = indoorDetector.detect(bitmap)
+                // 1. 障碍物检测（通过ObstacleRepository的AI模型）
+                val obstacles: List<DetectedObstacle> = try {
+                    val bytes = ByteArray(bitmap.width * bitmap.height * 4)
+                    bitmap.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(bytes))
+                    obstacleRepository.processFrame(bytes, bitmap.width, bitmap.height)
+                } catch (e: Exception) {
+                    emptyList()
+                }
+
+                // 2. 场景识别（通过SceneClassifier视觉算法）
+                val sceneResult: SceneRecognitionResult? = sceneClassifier.recognizeScene(bitmap, obstacles)
+
+                // 3. 转换为UI显示数据
+                if (sceneResult != null) {
+                    environmentType = sceneResult.sceneType.chineseName
+                    currentSceneDescription = buildSceneDescription(sceneResult, obstacles, currentMode)
+
+                    // 更新检测物体列表
+                    detectedObjects = buildDetectedObjectsList(sceneResult, obstacles)
+
+                    // 人物检测
+                    detectedPeople = obstacles.count { it.type.name.contains("person", ignoreCase = true) }
+
+                    // 语音播报（8秒冷却）
+                    val now = System.currentTimeMillis()
+                    if (now - lastAnnounceTime > 8000L) {
+                        lastAnnounceTime = now
+                        val announcement = buildSceneAnnouncement(sceneResult, obstacles, currentMode)
+                        if (announcement.isNotEmpty()) {
+                            lastAnnouncement = announcement
+                            viewModel.speak(announcement)
+                        }
+                    }
+                } else {
+                    // 无场景识别结果时的兜底
+                    environmentType = "未知环境"
+                    currentSceneDescription = "正在分析场景中..."
+                }
+
                 bitmap.recycle()
-
-                // 更新UI
-                currentSceneDescription = scene.spatialDescription
-                environmentType = scene.roomType.chineseName
-
-                // 转换为DetectedObjectInfo列表
-                detectedObjects = scene.obstacles.map { obs ->
-                    DetectedObjectInfo(
-                        obs.type.chineseName,
-                        "家具",
-                        obs.distance,
-                        obs.confidence
-                    )
-                }
-
-                // 语音播报（8秒冷却）
-                val now = System.currentTimeMillis()
-                if (now - lastAnnounceTime > 8000L && scene.spatialDescription.isNotEmpty()) {
-                    lastAnnounceTime = now
-                    viewModel.speak(scene.spatialDescription)
-                }
             } catch (e: Exception) {
                 Timber.w(e, "场景检测失败")
                 bitmap.recycle()
@@ -432,8 +451,83 @@ data class DetectedObjectInfo(
 )
 
 /**
- * 生成模拟场景描述（实际应接入AI模型）
+ * 构建场景描述文本
  */
+private fun buildSceneDescription(
+    sceneResult: SceneRecognitionResult,
+    obstacles: List<DetectedObstacle>,
+    mode: ScenePerceptionMode
+): String {
+    val base = when (mode) {
+        ScenePerceptionMode.GENERAL -> {
+            sceneResult.sceneType.description.ifEmpty { "当前位于${sceneResult.sceneType.chineseName}" }
+        }
+        ScenePerceptionMode.OBJECT -> {
+            if (obstacles.isEmpty()) "未检测到明显物体"
+            else obstacles.take(5).joinToString("；") { obs ->
+                "${obs.type.chineseName}（${obs.direction.getChineseName()}${obs.distance.toInt()}米）"
+            }
+        }
+        ScenePerceptionMode.TEXT -> "文字朗读模式：请对准文字"
+        ScenePerceptionMode.SOCIAL -> {
+            val people = obstacles.count { it.type.name.contains("person", true) }
+            if (people > 0) "检测到${people}人在附近" else "附近未检测到行人"
+        }
+    }
+    return base
+}
+
+/**
+ * 构建检测物体列表
+ */
+private fun buildDetectedObjectsList(
+    sceneResult: SceneRecognitionResult,
+    obstacles: List<DetectedObstacle>
+): List<DetectedObjectInfo> {
+    return obstacles.map { obs ->
+        DetectedObjectInfo(
+            name = obs.type.chineseName,
+            category = when {
+                obs.type.name.contains("person", true) -> "行人"
+                obs.type.name.contains("car") || obs.type.name.contains("vehicle", true) -> "车辆"
+                obs.type.name.contains("bicycle") || obs.type.name.contains("motorcycle", true) -> "交通工具"
+                obs.distance < 1.0f -> "危险障碍"
+                else -> "环境物体"
+            },
+            distance = obs.distance,
+            confidence = obs.confidence
+        )
+    }.sortedBy { it.distance }.take(8)
+}
+
+/**
+ * 构建语音播报文本
+ */
+private fun buildSceneAnnouncement(
+    sceneResult: SceneRecognitionResult,
+    obstacles: List<DetectedObstacle>,
+    mode: ScenePerceptionMode
+): String {
+    return when (mode) {
+        ScenePerceptionMode.GENERAL -> {
+            val parts = mutableListOf(sceneResult.sceneType.description)
+            val warn = obstacles.filter { it.distance < 2.0f }
+            if (warn.isNotEmpty()) {
+                parts.add("注意${warn.first().type.chineseName}在${warn.first().direction.getChineseName()}${warn.first().distance.toInt()}米")
+            }
+            parts.joinToString("。")
+        }
+        ScenePerceptionMode.OBJECT -> {
+            if (obstacles.isEmpty()) "无检测到物体"
+            else obstacles.take(3).joinToString("；") { "${it.type.chineseName}${it.distance.toInt()}米" }
+        }
+        ScenePerceptionMode.TEXT -> "文字识别结果待读"
+        ScenePerceptionMode.SOCIAL -> {
+            val people = obstacles.count { it.type.name.contains("person", true) }
+            if (people > 0) "前方${people}人" else "附近无人"
+        }
+    }
+}
 private fun generateMockSceneDescription(mode: ScenePerceptionMode): String {
     return when (mode) {
         ScenePerceptionMode.GENERAL -> {

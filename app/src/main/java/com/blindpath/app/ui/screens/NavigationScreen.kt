@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,7 +37,13 @@ import com.amap.api.maps.model.*
 import com.amap.api.services.core.LatLonPoint
 import com.blindpath.app.ui.viewmodel.NavigationViewModel
 import com.blindpath.module_navigation.domain.model.RouteStep
+import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import androidx.hilt.navigation.compose.hiltViewModel
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.android.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+import com.blindpath.module_obstacle.domain.ObstacleRepository
 import timber.log.Timber
 
 /**
@@ -55,6 +62,16 @@ fun NavigationScreen(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 障碍物检测入口（Hilt EntryPoint）
+    val obstacleRepo = remember {
+        val ctx = context.applicationContext
+        EntryPointAccessors.fromApplication(ctx, NavigationObstacleEntryPoint::class.java)
+            .obstacleRepository()
+    }
+    val obstacleState by obstacleRepo.obstacleState.collectAsStateWithLifecycle(
+        initialValue = com.blindpath.module_obstacle.domain.model.ObstacleState()
+    )
 
     // 从 ViewModel 收集状态
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -257,6 +274,34 @@ fun NavigationScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                     }
+                    // 障碍物检测提示
+                    val nearObstacles = obstacleState.detectedObstacles.filter { it.distance < 5.0f }
+                    if (nearObstacles.isNotEmpty()) {
+                        val dangerObstacles = nearObstacles.filter { it.distance < 1.0f }
+                        val bgColor = if (dangerObstacles.isNotEmpty()) ComposeColor(0xFFFFEBEE)
+                            else ComposeColor(0xFFFFF3E0)
+                        val textColor = if (dangerObstacles.isNotEmpty()) ComposeColor(0xFFD32F2F)
+                            else ComposeColor(0xFFF57C00)
+                        Card(modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = bgColor)) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Warning, contentDescription = null, tint = textColor)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("环境感知提醒", fontWeight = FontWeight.Bold, color = textColor)
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                nearObstacles.take(3).forEach { obs ->
+                                    Text(
+                                        "${obs.type.chineseName} ${obs.direction.getChineseName()}${obs.distance.toInt()}米",
+                                        color = textColor,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Button(
                             onClick = {
@@ -342,4 +387,13 @@ fun NavigationScreen(
         if (isCurrent) Box(modifier = Modifier.background(MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) { Text("当前", color = ComposeColor.White, fontSize = 11.sp, fontWeight = FontWeight.Bold) }
         else if (isCompleted) Text("done", color = ComposeColor.Green, fontSize = 18.sp)
     }
+}
+
+/**
+ * Hilt EntryPoint for ObstacleRepository in NavigationScreen
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface NavigationObstacleEntryPoint {
+    fun obstacleRepository(): ObstacleRepository
 }

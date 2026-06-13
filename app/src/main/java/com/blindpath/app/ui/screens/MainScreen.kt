@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.ObstacleState
 import com.blindpath.module_navigation.domain.NavigationRepository
@@ -82,6 +83,7 @@ fun MainScreen(
     obstacleRepository: ObstacleRepository,
     navigationRepository: NavigationRepository,
     indoorDetector: IndoorDetector,
+    sceneClassifier: SceneClassifier,
     onObstacleDetectionClick: () -> Unit = {},
     onLocationClick: () -> Unit = {},
     onSosClick: () -> Unit = {},
@@ -185,6 +187,7 @@ fun MainScreen(
             ScenePerceptionScreen(
                 obstacleRepository = obstacleRepository,
                 indoorDetector = indoorDetector,
+                sceneClassifier = sceneClassifier,
                 onBack = { showScenePerception = false },
                 viewModel = viewModel
             )
