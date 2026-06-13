@@ -73,6 +73,16 @@ class VoiceInteractionPipeline @Inject constructor(
         
         Timber.i("VoiceInteractionPipeline: Initializing")
         
+        // 初始化语音识别器
+        scope.launch {
+            val result = commandRepository.initialize()
+            if (result is com.blindpath.base.common.Result.Success) {
+                Timber.i("VoiceInteractionPipeline: CommandRepository initialized")
+            } else {
+                Timber.w("VoiceInteractionPipeline: CommandRepository init failed: ${(result as? com.blindpath.base.common.Result.Error)?.message}")
+            }
+        }
+        
         // 注册唤醒词广播接收器
         registerWakeWordReceiver()
         
@@ -188,24 +198,20 @@ class VoiceInteractionPipeline @Inject constructor(
     
     /**
      * 处理语音指令
+     *
+     * 只负责 TTS 播报识别结果，不直接执行指令。
+     * 指令执行由 VoiceInteractionViewModel 通过观察 commandRepository 状态完成。
      */
     private suspend fun processCommand(command: VoiceCommand) {
         Timber.i("VoiceInteractionPipeline: Processing command - ${command.name}")
-        
+
         _sessionState.value = SessionState.Processing
-        
-        // 播报执行状态
-        speakWithResourceManagement("正在执行：${command.spokenText}", VoiceType.SYSTEM_STATUS)
-        
-        // 执行指令
-        val success = commandExecutor?.invoke(command) ?: false
-        
-        // 播报执行结果
-        if (success) {
-            speakWithResourceManagement("指令执行成功", VoiceType.SYSTEM_STATUS)
-        } else {
-            speakWithResourceManagement("指令执行失败", VoiceType.SYSTEM_STATUS)
-        }
+
+        // 播报识别结果
+        speakWithResourceManagement("${command.spokenText}", VoiceType.SYSTEM_STATUS)
+
+        // 指令执行由 ViewModel 通过 commandRepository.interactionState 观察 lastCommand 来完成
+        // 此处不调用 commandExecutor，避免与 ViewModel 的执行逻辑冲突
     }
     
     /**

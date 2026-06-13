@@ -475,7 +475,7 @@ class WakeWordServiceEnhanced : Service() {
     private fun onWakeWordDetected(wakeWord: String) {
         if (isWakeWordDetected) return
 
-        Timber.i("WakeWordServiceEnhanced: Wake word detected - $wakeWord")
+        Timber.i("WakeWordServiceEnhanced: Wake word detected - $wakeWord (engine: $currentEngineType)")
         isWakeWordDetected = true
 
         // 发送广播通知主进程
@@ -489,11 +489,12 @@ class WakeWordServiceEnhanced : Service() {
         // 触觉反馈
         triggerHapticFeedback()
 
-        // 短暂暂停后恢复监听
+        // 冷却时间：ENERGY 模式需要更长冷却，防止用户说指令时被误触发
+        val cooldownMs = if (currentEngineType == "ENERGY") 10_000L else 3_000L
         serviceScope.launch {
-            delay(3000) // 3秒冷却时间
+            delay(cooldownMs)
             isWakeWordDetected = false
-            Timber.d("WakeWordServiceEnhanced: Resumed listening")
+            Timber.d("WakeWordServiceEnhanced: Resumed listening (cooldown: ${cooldownMs}ms)")
         }
     }
 

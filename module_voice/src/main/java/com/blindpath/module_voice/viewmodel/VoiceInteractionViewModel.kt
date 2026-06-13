@@ -8,7 +8,6 @@ import com.blindpath.module_voice.domain.VoiceCommandRepository
 import com.blindpath.module_voice.domain.VoiceInteractionManager
 import com.blindpath.module_voice.domain.model.*
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -16,50 +15,52 @@ import javax.inject.Inject
 
 /**
  * 语音交互 ViewModel
- * 
- * 管理 UI 层的语音交互状态
- * 同时观察 VoiceInteractionManager 和 VoiceCommandRepository 两个状态流
- * 确保唤醒词检测事件能正确触发 TTS 响应
+ *
+ * 职责：
+ * - 管理 UI 层的语音交互状态显示
+ * - 提供指令执行回调
+ * - 唤醒词→识别→执行的完整链路由 VoiceInteractionPipeline 处理
+ * - 本 ViewModel 仅同步状态用于 UI 展示
  */
 @HiltViewModel
 class VoiceInteractionViewModel @Inject constructor(
     private val interactionManager: VoiceInteractionManager,
     private val voiceCommandRepository: VoiceCommandRepository
 ) : ViewModel(), VoiceCommandExecutor {
-    
+
     private val _uiState = MutableStateFlow(VoiceInteractionUiState())
     val uiState: StateFlow<VoiceInteractionUiState> = _uiState.asStateFlow()
-    
+
     // 指令执行回调（由外部设置）
     private var commandHandler: ((VoiceCommand) -> Boolean)? = null
-    
+
     init {
         observeInteractionState()
-        observeWakeWordState()
+        observeCommandRepositoryState()
     }
-    
+
     /**
      * 初始化语音交互
      */
     fun initialize() {
         viewModelScope.launch {
             _uiState.update { it.copy(isInitializing = true) }
-            
+
             when (val result = interactionManager.initialize()) {
                 is Result.Success -> {
-                    _uiState.update { 
+                    _uiState.update {
                         it.copy(
                             isInitialized = true,
                             isInitializing = false,
                             error = null
                         )
                     }
-                    
+
                     // 播报欢迎消息
                     interactionManager.speakWelcome()
                 }
                 is Result.Error -> {
-                    _uiState.update { 
+                    _uiState.update {
                         it.copy(
                             isInitialized = false,
                             isInitializing = false,
@@ -73,7 +74,7 @@ class VoiceInteractionViewModel @Inject constructor(
             }
         }
     }
-    
+
     /**
      * 开始监听语音指令
      */
@@ -86,13 +87,11 @@ class VoiceInteractionViewModel @Inject constructor(
                 is Result.Error -> {
                     _uiState.update { it.copy(error = "启动语音识别失败") }
                 }
-                is Result.Loading -> {
-                    // 启动监听不会返回 Loading 状态
-                }
+                is Result.Loading -> {}
             }
         }
     }
-    
+
     /**
      * 停止监听
      */
@@ -102,7 +101,7 @@ class VoiceInteractionViewModel @Inject constructor(
             _uiState.update { it.copy(isListening = false) }
         }
     }
-    
+
     /**
      * 播报文本
      */
@@ -111,7 +110,7 @@ class VoiceInteractionViewModel @Inject constructor(
             interactionManager.speak(text, type)
         }
     }
-    
+
     /**
      * 播报帮助信息
      */
@@ -120,7 +119,7 @@ class VoiceInteractionViewModel @Inject constructor(
             interactionManager.speakHelp()
         }
     }
-    
+
     /**
      * 设置指令处理器
      */
@@ -128,21 +127,21 @@ class VoiceInteractionViewModel @Inject constructor(
         this.commandHandler = handler
         interactionManager.setCommandExecutor(this)
     }
-    
+
     /**
      * 执行指令（实现 VoiceCommandExecutor 接口）
      */
     override suspend fun executeCommand(command: VoiceCommand): Boolean {
         return commandHandler?.invoke(command) ?: false
     }
-    
+
     /**
-     * 观察语音交互状态
+     * 观察 VoiceInteractionManager 的交互状态
      */
     private fun observeInteractionState() {
         viewModelScope.launch {
             interactionManager.interactionState.collect { state ->
-                _uiState.update { 
+                _uiState.update {
                     it.copy(
                         isListening = state.isListening,
                         lastCommand = state.lastCommand,
@@ -154,40 +153,37 @@ class VoiceInteractionViewModel @Inject constructor(
     }
 
     /**
-     * 观察唤醒词检测状态（来自 WakeWordBridgeService → VoiceCommandRepository）
+     * 观察 VoiceCommandRepository 的唤醒词/识别状态
      *
-     * 当百度唤醒引擎在独立进程检测到唤醒词后，
-     * 通过广播 → WakeWordBridgeService → VoiceCommandRepository.triggerWakeWordDetected()
-     * 写入 interactionState.isWakeWordDetected = true
-     *
-     * 此处消费该标志，触发 TTS 播报和语音识别
+     * 1. 同步 UI 展示字段（isWakeWordDetected、wakeWord）
+     * 2. 当识别到指令时（lastCommand 非空），通过 commandHandler 执行
      */
-    private fun observeWakeWordState() {
+    private fun observeCommandRepositoryState() {
         viewModelScope.launch {
             voiceCommandRepository.interactionState.collect { state ->
-                if (state.isWakeWordDetected) {
-                    Timber.i("VoiceInteractionViewModel: 唤醒词检测到: ${state.wakeWord}")
+                _uiState.update {
+                    it.copy(
+                        isWakeWordDetected = state.isWakeWordDetected,
+                        wakeWord = state.wakeWord
+                    )
+                }
 
-                    // 1. 播报响应（TTS 线路，不阻塞后续流程）
-                    launch {
-                        interactionManager.speak("我在，请说指令", VoiceType.SYSTEM_STATUS)
-                    }
+                // 检测到新指令，执行并消费
+                val cmd = state.lastCommand
+                if (cmd != null && cmd.command != null) {
+                    Timber.i("VoiceInteractionViewModel: 执行指令: ${cmd.command.name} (\"${cmd.rawText}\")")
 
-                    // 2. 开始监听语音指令
-                    // 短暂延迟让 TTS 播完"我在"后再开始识别
-                    launch {
-                        delay(300L)
-                        interactionManager.startListening()
-                    }
-
-                    // 3. 消费唤醒词标志（VoiceCommandRepositoryImpl 内部自动重置）
-                    // consumeWakeWordDetected() 确保不会重复处理
+                    // 消费指令（防止重复处理）
                     voiceCommandRepository.consumeLastCommand()
+
+                    // 执行指令
+                    val success = commandHandler?.invoke(cmd.command) ?: false
+                    Timber.i("VoiceInteractionViewModel: 指令执行结果: $success")
                 }
             }
         }
     }
-    
+
     override fun onCleared() {
         super.onCleared()
         interactionManager.release()
@@ -201,6 +197,8 @@ data class VoiceInteractionUiState(
     val isInitialized: Boolean = false,
     val isInitializing: Boolean = false,
     val isListening: Boolean = false,
+    val isWakeWordDetected: Boolean = false,
+    val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD,
     val lastCommand: VoiceCommandResult? = null,
     val error: String? = null
 )
