@@ -41,10 +41,10 @@ import androidx.core.content.ContextCompat
 import com.blindpath.module_indoor.data.IndoorDetector
 import com.blindpath.module_indoor.domain.model.IndoorScene
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
-import com.blindpath.module_obstacle.data.detection.SceneRecognitionResult
-import com.blindpath.module_obstacle.data.detection.SceneType
-import com.blindpath.module_obstacle.domain.ObstacleRepository
+import com.blindpath.module_obstacle.domain.model.SceneRecognitionResult
+import com.blindpath.module_obstacle.domain.model.SceneType
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
+import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.ObstacleState
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
 import kotlinx.coroutines.*
