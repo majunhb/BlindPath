@@ -71,7 +71,7 @@ android {
                 "proguard-rules.pro"
             )
             // ★ 仅保留中文和英文资源，移除其他语言（可减少1-3MB）
-            resourceConfigurations += listOf("zh", "en")
+            resConfigs("zh", "en")
 
             // ★ Release签名配置（支持CI环境变量和本地keystore）
             val ksPath = System.getenv("RELEASE_KEYSTORE_PATH") ?: "release.keystore"
