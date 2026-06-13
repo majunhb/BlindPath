@@ -40,7 +40,7 @@ import com.blindpath.module_navigation.domain.model.RouteStep
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import androidx.hilt.navigation.compose.hiltViewModel
 import dagger.hilt.android.EntryPointAccessors
-import dagger.hilt.android.EntryPoint
+import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import com.blindpath.module_obstacle.domain.ObstacleRepository
