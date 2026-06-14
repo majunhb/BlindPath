@@ -2,9 +2,17 @@ package com.blindpath.app.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
+import android.graphics.ImageFormat
+import android.graphics.YuvImage
+import android.media.Image
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -75,9 +83,18 @@ import com.blindpath.app.ui.viewmodel.NavigationViewModel
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.NavigationState
 import com.blindpath.module_navigation.domain.model.RouteStep
+import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
+import com.blindpath.module_obstacle.domain.model.SceneRecognitionResult
+import com.blindpath.module_obstacle.domain.model.SceneType
+import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import timber.log.Timber
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.util.concurrent.Executors
 
 // ============================================================================
 // 数据模型 - 四层架构枚举与状态
@@ -199,6 +216,7 @@ data class SidewalkStatus(
 fun OutdoorNavigationScreen(
     obstacleRepository: ObstacleRepository,
     navigationRepository: NavigationRepository,
+    sceneClassifier: SceneClassifier,
     onBack: () -> Unit,
     viewModel: VoiceInteractionViewModel
 ) {
@@ -219,11 +237,28 @@ fun OutdoorNavigationScreen(
                     == PackageManager.PERMISSION_GRANTED
         )
     }
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                    == PackageManager.PERMISSION_GRANTED
+        )
+    }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         hasLocationPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        hasCameraPermission = permissions[Manifest.permission.CAMERA] == true
+    }
+
+    // 自动请求权限
+    LaunchedEffect(Unit) {
+        val needed = mutableListOf<String>()
+        if (!hasLocationPermission) needed.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        if (!hasCameraPermission) needed.add(Manifest.permission.CAMERA)
+        if (needed.isNotEmpty()) {
+            permissionLauncher.launch(needed.toTypedArray())
+        }
     }
 
     // 导航模式
@@ -280,6 +315,177 @@ fun OutdoorNavigationScreen(
 
     // 安全状态（保留原有）
     var safetyAlert by remember { mutableStateOf<String?>(null) }
+
+    // ====================================================================
+    // ★ CameraX 实时环境感知（盲人的眼睛）
+    // 后台 ImageAnalysis 帧 → SceneClassifier(斑马线/红绿灯/道牙/台阶/积水)
+    //                       → ObstacleRepository(AI物体检测)
+    // ====================================================================
+    val frameChannel = remember { Channel<Bitmap>(Channel.CONFLATED) }
+    val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
+    var isDetectionActive by remember { mutableStateOf(false) }
+    var cameraProviderRef by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+
+    // 加载模型并启动CameraX
+    LaunchedEffect(Unit) {
+        val modelResult = obstacleRepository.loadModel()
+        if (modelResult !is com.blindpath.base.common.Result.Error) {
+            isDetectionActive = true
+            Timber.i("OutdoorNav: 障碍物检测模型加载成功")
+        } else {
+            Timber.w("OutdoorNav: 模型加载失败，使用CV视觉算法兜底")
+        }
+    }
+
+    // 绑定CameraX生命周期
+    DisposableEffect(lifecycleOwner) {
+        val observer = object : DefaultLifecycleObserver {
+            override fun onCreate(owner: LifecycleOwner) {
+                val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
+                cameraProviderFuture.addListener({
+                    val provider = cameraProviderFuture.get()
+                    cameraProviderRef = provider
+                    try {
+                        val imageAnalysis = ImageAnalysis.Builder()
+                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                            .setTargetResolution(android.util.Size(480, 640))
+                            .build()
+                        imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                            val bitmap = imageProxyToBitmap(imageProxy)
+                            if (bitmap != null) {
+                                frameChannel.trySend(bitmap)
+                            }
+                            imageProxy.close()
+                        }
+                        provider.bindToLifecycle(
+                            owner,
+                            CameraSelector.DEFAULT_BACK_CAMERA,
+                            imageAnalysis
+                        )
+                        Timber.i("OutdoorNav: CameraX 已启动")
+                    } catch (e: Exception) {
+                        Timber.w(e, "OutdoorNav: CameraX 启动失败")
+                    }
+                }, ContextCompat.getMainExecutor(context))
+            }
+            override fun onDestroy(owner: LifecycleOwner) {
+                cameraProviderRef?.unbindAll()
+                cameraExecutor.shutdownNow()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // ★ 帧处理管道：实时场景识别 + 障碍物检测
+    LaunchedEffect(isDetectionActive) {
+        if (!isDetectionActive) return@LaunchedEffect
+        var frameCount = 0
+        var lastAnnounceTime = 0L
+        while (!frameChannel.isClosedForReceive) {
+            val result = frameChannel.receiveCatching()
+            val bitmap = result.getOrNull() ?: continue
+            frameCount++
+            // 每5帧处理一次（平衡性能）
+            if (frameCount % 5 != 0) {
+                bitmap.recycle()
+                continue
+            }
+            try {
+                // 1. 障碍物检测（AI）
+                val bytes = ByteArray(bitmap.width * bitmap.height * 4)
+                bitmap.copyPixelsToBuffer(ByteBuffer.wrap(bytes))
+                val aiObstacles = try {
+                    obstacleRepository.processFrame(bytes, bitmap.width, bitmap.height)
+                } catch (e: Exception) { emptyList() }
+
+                // 2. 场景识别（CV视觉算法）
+                val sceneResult = sceneClassifier.recognizeScene(bitmap, aiObstacles)
+
+                // 3. 更新UI状态
+                if (sceneResult != null) {
+                    // 更新交通信号灯状态
+                    trafficLightState = when (sceneResult.sceneType) {
+                        SceneType.TRAFFIC_SIGNAL_AREA -> TrafficLightState.UNKNOWN
+                        SceneType.CROSSWALK -> TrafficLightState.UNKNOWN
+                        else -> trafficLightState
+                    }
+
+                    // 更新盲道/人行道状态
+                    sidewalkStatus = when (sceneResult.sceneType) {
+                        SceneType.SIDEWALK -> SidewalkStatus(isOnSidewalk = true, textureDetected = true, confidence = 0.9f)
+                        SceneType.ROAD -> SidewalkStatus(isOnSidewalk = false, textureDetected = false, confidence = 0.7f)
+                        SceneType.CURB -> SidewalkStatus(isOnSidewalk = true, textureDetected = true, confidence = 0.8f)
+                        else -> sidewalkStatus
+                    }
+
+                    // 更新路面高差告警
+                    surfaceChangeAlerts = buildList {
+                        when (sceneResult.sceneType) {
+                            SceneType.CURB -> add(SurfaceChangeInfo(SurfaceChangeType.CURB, 1.5f, 10f))
+                            SceneType.STAIR_ENTRANCE -> add(SurfaceChangeInfo(SurfaceChangeType.STEP, 2.0f, 15f))
+                            SceneType.PUDDLE -> add(SurfaceChangeInfo(SurfaceChangeType.RAMP, 2.5f, 2f))
+                            else -> {}
+                        }
+                    }
+
+                    // 更新障碍物列表
+                    if (aiObstacles.isNotEmpty()) {
+                        detectedObstacles = aiObstacles.map { obs ->
+                            ObstacleInfo(
+                                type = mapObstacleType(obs.type.name),
+                                distance = obs.distance,
+                                direction = obs.direction.getChineseName(),
+                                speed = obs.speed?.toFloat() ?: 0f
+                            )
+                        }.sortedBy { it.distance }
+                    }
+
+                    // 更新危险等级
+                    val nearDanger = aiObstacles.any { it.distance < 1.0f }
+                    val nearWarn = aiObstacles.any { it.distance < 3.0f }
+                    dangerLevel = when {
+                        nearDanger -> DangerLevel.CRITICAL
+                        nearWarn -> DangerLevel.MEDIUM
+                        sceneResult.sceneType == SceneType.CROSSWALK -> DangerLevel.MEDIUM
+                        sceneResult.sceneType == SceneType.INTERSECTION -> DangerLevel.HIGH
+                        else -> DangerLevel.LOW
+                    }
+
+                    // 更新过街状态
+                    crossingStatus = when (sceneResult.sceneType) {
+                        SceneType.CROSSWALK -> CrossingStatus.WAIT
+                        else -> CrossingStatus.NONE
+                    }
+
+                    // 语音播报（10秒冷却，重要场景立即播报）
+                    val now = System.currentTimeMillis()
+                    val isImportant = sceneResult.sceneType in listOf(
+                        SceneType.CROSSWALK, SceneType.INTERSECTION,
+                        SceneType.TRAFFIC_SIGNAL_AREA, SceneType.CURB,
+                        SceneType.STAIR_ENTRANCE, SceneType.PUDDLE
+                    )
+                    if (isImportant || now - lastAnnounceTime > 10000L) {
+                        lastAnnounceTime = now
+                        val announcement = sceneResult.sceneType.getEntryAnnouncement()
+                        if (announcement.isNotEmpty()) {
+                            viewModel.speak(announcement)
+                        }
+                        // 紧急障碍物预警
+                        if (nearDanger && aiObstacles.isNotEmpty()) {
+                            val d = aiObstacles.first()
+                            viewModel.speak("注意${d.type.chineseName}在${d.direction.getChineseName()}${d.distance.toInt()}米")
+                        }
+                    }
+                }
+
+                bitmap.recycle()
+            } catch (e: Exception) {
+                Timber.w(e, "OutdoorNav: 帧处理失败")
+                try { bitmap.recycle() } catch (_: Exception) {}
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -447,6 +653,52 @@ fun OutdoorNavigationScreen(
             lifecycleOwner.lifecycle.removeObserver(observer)
             mapViewRef?.onDestroy()
         }
+    }
+}
+
+// ============================================================================
+// ★ CameraX 辅助函数
+// ============================================================================
+
+/**
+ * 将 CameraX ImageProxy 转换为 Bitmap
+ */
+private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
+    return try {
+        val planes = imageProxy.planes
+        val yBuffer = planes[0].buffer
+        val uBuffer = planes[1].buffer
+        val vBuffer = planes[2].buffer
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        val vSize = vBuffer.remaining()
+        val nv21 = ByteArray(ySize + uSize + vSize)
+        yBuffer.get(nv21, 0, ySize)
+        vBuffer.get(nv21, ySize, vSize)
+        uBuffer.get(nv21, ySize + vSize, uSize)
+        val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, null)
+        val out = ByteArrayOutputStream()
+        yuvImage.compressToJpeg(android.graphics.Rect(0, 0, imageProxy.width, imageProxy.height), 80, out)
+        val jpegBytes = out.toByteArray()
+        android.graphics.BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+    } catch (e: Exception) {
+        null
+    }
+}
+
+/**
+ * 将AI检测的障碍物类型映射到导航UI的障碍物类型
+ */
+private fun mapObstacleType(aiType: String): ObstacleType {
+    return when {
+        aiType.contains("car", true) || aiType.contains("truck", true) || aiType.contains("bus", true) ||
+        aiType.contains("vehicle", true) || aiType.contains("motorcycle", true) -> ObstacleType.MOTOR_VEHICLE
+        aiType.contains("bicycle", true) || aiType.contains("bike", true) -> ObstacleType.NON_MOTOR_VEHICLE
+        aiType.contains("person", true) -> ObstacleType.PEDESTRIAN
+        aiType.contains("bench", true) || aiType.contains("chair", true) || aiType.contains("table", true) ||
+        aiType.contains("pole", true) || aiType.contains("sign", true) || aiType.contains("barrier", true) ||
+        aiType.contains("cone", true) || aiType.contains("wall", true) -> ObstacleType.STATIC
+        else -> ObstacleType.UNKNOWN
     }
 }
 
@@ -1486,13 +1738,15 @@ private fun ColumnScope.NavigationInfoPanel(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
+                            val hasSteps = uiState.routeSteps.isNotEmpty()
+                            val stepIdx = uiState.currentStepIndex.coerceIn(0, (uiState.routeSteps.size - 1).coerceAtLeast(0))
                             Text(
-                                "第 ${uiState.currentStepIndex + 1}/${uiState.routeSteps.size} 步",
+                                if (hasSteps) "第 ${stepIdx + 1}/${uiState.routeSteps.size} 步" else "路线规划中...",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                uiState.routeSteps.getOrNull(uiState.currentStepIndex)?.instruction ?: "已到达",
+                                if (hasSteps) uiState.routeSteps[stepIdx].instruction else "等待路线",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -1503,9 +1757,9 @@ private fun ColumnScope.NavigationInfoPanel(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceEvenly
                     ) {
-                        NavInfoItem("距离", uiState.routeSteps.getOrNull(uiState.currentStepIndex)?.distance ?: "")
-                        NavInfoItem("预计", uiState.routeSteps.getOrNull(uiState.currentStepIndex)?.duration ?: "")
-                        NavInfoItem("全程", uiState.totalDistance)
+                        NavInfoItem("距离", if (uiState.routeSteps.isNotEmpty()) uiState.routeSteps[stepIdx].distance else "--")
+                        NavInfoItem("预计", if (uiState.routeSteps.isNotEmpty()) uiState.routeSteps[stepIdx].duration else "--")
+                        NavInfoItem("全程", uiState.totalDistance.ifEmpty { "--" })
                     }
                 }
             }

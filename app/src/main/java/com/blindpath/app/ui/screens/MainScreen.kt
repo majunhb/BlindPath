@@ -178,6 +178,7 @@ fun MainScreen(
             OutdoorNavigationScreen(
                 obstacleRepository = obstacleRepository,
                 navigationRepository = navigationRepository,
+                sceneClassifier = sceneClassifier,
                 onBack = { showOutdoorNavigation = false },
                 viewModel = viewModel
             )
