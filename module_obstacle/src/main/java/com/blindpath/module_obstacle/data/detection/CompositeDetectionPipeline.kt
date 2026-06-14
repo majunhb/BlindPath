@@ -29,6 +29,10 @@ class CompositeDetectionPipeline @Inject constructor(
      * 执行检测，自动降级
      */
     fun detect(bitmap: Bitmap): List<DetectedObstacle> {
+        val allResults = mutableListOf<DetectedObstacle>()
+
+        // [修复] 并行执行所有可用策略，合并结果
+        // 根因: 原逻辑 AI有结果就return → AssistedDetector.detectWalls() 永远不被调用
         for (strategy in strategies) {
             if (!strategy.isAvailable) {
                 Timber.d("Detection strategy '%s' not available, skipping", strategy.name)
@@ -36,19 +40,36 @@ class CompositeDetectionPipeline @Inject constructor(
             }
             try {
                 val result = strategy.detect(bitmap)
-                if (result.isNotEmpty()) {
-                    return result
-                }
-                Timber.d("Detection strategy '%s' returned empty, trying next", strategy.name)
+                allResults.addAll(result)
+                Timber.d("Detection strategy '%s' returned %d results", strategy.name, result.size)
             } catch (e: Exception) {
                 Timber.w(e, "Detection strategy '%s' failed, falling back", strategy.name)
                 ReliabilityLogger.logFallback(strategy.name, e.message)
             }
         }
 
-        // 所有策略都失败，返回传感器最后已知数据
-        Timber.w("All detection strategies failed, using sensor fallback")
+        // 去重：相同类型和方向的障碍物只保留置信度最高的
+        val deduplicated = deduplicateResults(allResults)
+
+        if (deduplicated.isNotEmpty()) {
+            Timber.d("检测总结果: %d 个 → 去重后 %d 个", allResults.size, deduplicated.size)
+            return deduplicated
+        }
+
+        // 如果所有策略都失败，使用传感器兜底
+        Timber.w("All detection strategies returned empty, using sensor fallback")
         return sensorFallbackStrategy.detect(bitmap)
+    }
+
+    /**
+     * [修复] 去重：相同类型和方向的障碍物只保留置信度最高的
+     * 防止 AI 检测 和 AssistedDetector.detectWalls() 同时检测到墙壁时重复报警
+     */
+    private fun deduplicateResults(results: List<DetectedObstacle>): List<DetectedObstacle> {
+        if (results.isEmpty()) return emptyList()
+        return results
+            .groupBy { "${it.type}_${it.direction}" }
+            .map { (_, obstacles) -> obstacles.maxByOrNull { it.confidence }!! }
     }
 
     /**
