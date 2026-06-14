@@ -545,6 +545,8 @@ fun OutdoorNavigationScreen(
                 AndroidView(
                     factory = { ctx ->
                         MapView(ctx).apply {
+                            // ★ P0 修复：在 factory 中立即调用 onCreate，初始化 OpenGL 渲染上下文
+                            onCreate(null)
                             mapViewRef = this
                             val aMap = this.map
                             aMapRef = aMap
@@ -565,7 +567,10 @@ fun OutdoorNavigationScreen(
                         }
                     },
                     modifier = Modifier.fillMaxSize(),
-                    update = { /* 生命周期由 LifecycleObserver 管理 */ }
+                    update = { mapView ->
+                        // ★ 重组时同步生命周期
+                        mapView.onResume()
+                    }
                 )
 
                 // 规划中遮罩
@@ -648,11 +653,10 @@ fun OutdoorNavigationScreen(
         }
     }
 
-    // MapView 生命周期管理
-    val savedState = remember { android.os.Bundle() }
+    // ★ P0 修复：MapView 生命周期管理
+    // onCreate 已在 AndroidView.factory 中调用，这里只管理 onResume/onPause/onDestroy
     DisposableEffect(lifecycleOwner) {
         val observer = object : DefaultLifecycleObserver {
-            override fun onCreate(owner: LifecycleOwner) { mapViewRef?.onCreate(savedState) }
             override fun onResume(owner: LifecycleOwner) { mapViewRef?.onResume() }
             override fun onPause(owner: LifecycleOwner) { mapViewRef?.onPause() }
             override fun onDestroy(owner: LifecycleOwner) { mapViewRef?.onDestroy() }
