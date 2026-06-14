@@ -349,7 +349,7 @@ class AssistedDetector @Inject constructor(
             }
 
             // 中央区域有大量垂直边缘 → 可能是墙壁
-            if (verticalEdgeCount > width / 16) {
+            if (verticalEdgeCount > width / 32) {  // [修复] 降低阈值：640/32=20，提高墙壁检测灵敏度
                 val coverageRatio = verticalEdgeCount.toFloat() / (width / 2)
                 val distance = when {
                     coverageRatio > 0.8f -> 0.3f
