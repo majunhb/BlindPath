@@ -220,7 +220,7 @@ class WakeWordServiceEnhanced : Service() {
         val xfApiSecret = getCredential(BuildConfig.IFLYTEK_API_SECRET, "IFLYTEK_API_SECRET", localProps)
 
         val config = WakeWordEngineManager.EngineConfig(
-            primaryEngine = WakeWordEngineManager.EngineType.BAIDU,
+            primaryEngine = WakeWordEngineManager.EngineType.XF_IFLYTEK,
             fallbackEnabled = true,
             baiduAppId = baiduAppId,
             baiduApiKey = baiduApiKey,
