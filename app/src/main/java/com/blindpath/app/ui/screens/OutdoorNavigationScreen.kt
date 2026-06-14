@@ -436,7 +436,7 @@ fun OutdoorNavigationScreen(
                                 type = mapObstacleType(obs.type.name),
                                 distance = obs.distance,
                                 direction = obs.direction.getChineseName(),
-                                speed = obs.speed?.toFloat() ?: 0f
+                                speed = 0f  // DetectedObstacle 无速度字段
                             )
                         }.sortedBy { it.distance }
                     }
@@ -1729,6 +1729,10 @@ private fun ColumnScope.NavigationInfoPanel(
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF4CAF50).copy(alpha = 0.1f))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
+                    val hasSteps = uiState.routeSteps.isNotEmpty()
+                    val stepIdx = if (hasSteps)
+                        uiState.currentStepIndex.coerceIn(0, uiState.routeSteps.size - 1)
+                    else 0
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
                             Icons.Default.Menu,
@@ -1738,8 +1742,6 @@ private fun ColumnScope.NavigationInfoPanel(
                         )
                         Spacer(modifier = Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            val hasSteps = uiState.routeSteps.isNotEmpty()
-                            val stepIdx = uiState.currentStepIndex.coerceIn(0, (uiState.routeSteps.size - 1).coerceAtLeast(0))
                             Text(
                                 if (hasSteps) "第 ${stepIdx + 1}/${uiState.routeSteps.size} 步" else "路线规划中...",
                                 style = MaterialTheme.typography.bodySmall,
