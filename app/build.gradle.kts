@@ -66,11 +66,11 @@ android {
         debug {
             // ★ 使用固定 debug.keystore（SHA1: 80:E8:52:E7:...）
             // 确保CI和本地构建使用相同签名，高德地图Key验证通过
-            signingConfig = signingConfigs.create("debug") {
-                storeFile = file("debug.keystore")
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
+            signingConfig = signingConfigs.getByName("debug").also {
+                it.storeFile = file("debug.keystore")
+                it.storePassword = "android"
+                it.keyAlias = "androiddebugkey"
+                it.keyPassword = "android"
             }
         }
         release {
