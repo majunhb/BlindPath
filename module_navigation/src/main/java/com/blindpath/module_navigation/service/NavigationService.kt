@@ -841,6 +841,9 @@ class NavigationService : LifecycleService() {
      * [修复] 播报当前位置地址信息（街道名称，带节流）
      */
     private fun announceLocationAddressIfNeeded(location: com.blindpath.module_navigation.domain.model.LocationInfo) {
+        // [修复] 添加调试日志 - 确认高德SDK返回的地址字段
+        Timber.d("Address debug: address='%s', road='%s', street='%s', poiName='%s'",
+            location.address, location.road, location.street, location.poiName)
         val now = System.currentTimeMillis()
         if (now - lastAddressAnnounceTime < ADDRESS_ANNOUNCE_INTERVAL_MS) return
 
