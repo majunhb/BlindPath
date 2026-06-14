@@ -97,6 +97,7 @@ fun MainScreen(
     var showIndoorPerception by remember { mutableStateOf(false) }
     var showOutdoorNavigation by remember { mutableStateOf(false) }
     var showScenePerception by remember { mutableStateOf(false) }
+    var showNavigationGuide by remember { mutableStateOf(false) }
 
     val obstacleState by obstacleRepository.obstacleState.collectAsStateWithLifecycle(
         initialValue = ObstacleState()
@@ -180,8 +181,13 @@ fun MainScreen(
                 navigationRepository = navigationRepository,
                 sceneClassifier = sceneClassifier,
                 onBack = { showOutdoorNavigation = false },
+                onHelpClick = { showNavigationGuide = true },
                 viewModel = viewModel
             )
+            return
+        }
+        showNavigationGuide -> {
+            NavigationGuideScreen(onBack = { showNavigationGuide = false })
             return
         }
         showScenePerception -> {

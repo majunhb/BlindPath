@@ -218,6 +218,7 @@ fun OutdoorNavigationScreen(
     navigationRepository: NavigationRepository,
     sceneClassifier: SceneClassifier,
     onBack: () -> Unit,
+    onHelpClick: () -> Unit = {},
     viewModel: VoiceInteractionViewModel
 ) {
     val context = LocalContext.current
@@ -511,6 +512,14 @@ fun OutdoorNavigationScreen(
                     }
                 },
                 actions = {
+                    // 帮助按钮
+                    IconButton(onClick = onHelpClick) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = "使用帮助",
+                            tint = Color(0xFF4CAF50)
+                        )
+                    }
                     // 导航模式切换
                     NavigationModeSelector(
                         currentMode = currentNavMode,
@@ -1684,43 +1693,6 @@ private fun ColumnScope.NavigationInfoPanel(
                 }
             }
 
-            // 使用说明（保留原有）
-            Spacer(modifier = Modifier.height(12.dp))
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Default.LocationOn,
-                            contentDescription = null,
-                            tint = Color(0xFF4CAF50)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("使用说明", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("需要开启GPS定位和位置权限", style = MaterialTheme.typography.bodySmall)
-                    Text("优先规划盲道和平缓路段", style = MaterialTheme.typography.bodySmall)
-                    Text("提供语音播报和振动提示", style = MaterialTheme.typography.bodySmall)
-                    Text("偏离盲道时会自动预警", style = MaterialTheme.typography.bodySmall)
-                    Text("路口提供红绿灯和斑马线辅助", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-
-            // 交互层：语音指令快捷面板（非导航时也可用）
-            Spacer(modifier = Modifier.height(12.dp))
-            VoiceCommandPanel(
-                isListening = isListening,
-                lastCommand = lastVoiceCommand,
-                onVoiceCommand = onVoiceCommand
-            )
-
-            // 交互层：实体按键操作说明
-            Spacer(modifier = Modifier.height(12.dp))
-            HardwareKeyGuide()
-
         } else if (uiState.isRunning) {
             // ========== 导航运行中 ==========
             // 当前导航指令（保留原有）
@@ -1852,20 +1824,6 @@ private fun ColumnScope.NavigationInfoPanel(
                 }
                 Spacer(modifier = Modifier.height(8.dp))
             }
-
-            // ---- 交互层：语音指令快捷面板 ----
-            VoiceCommandPanel(
-                isListening = isListening,
-                lastCommand = lastVoiceCommand,
-                onVoiceCommand = onVoiceCommand
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // ---- 交互层：实体按键操作说明 ----
-            HardwareKeyGuide()
-
-            Spacer(modifier = Modifier.height(8.dp))
 
             // 操作按钮（保留原有）
             Row(
