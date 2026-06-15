@@ -107,14 +107,14 @@ class XfWakeWordDetector(
     }
 
     /**
-     * ★ 修复1：将 assets/iflytek/ivw/ 下的唤醒资源复制到 workDir
-     * 官方文档 6.3 节：复制resource文件夹中资源到应用的工作目录
+     * ★ 修复：将 assets/aikit_resources/ 下的唤醒资源复制到 workDir
+     * 官方文档 7.4 节：可在 assets 目录下创建 aikit_resources 目录
+     * 同时兼容 assets/iflytek/ivw/ 路径（旧版）
      */
     private fun copyResourceFiles(workDir: File) {
         try {
             val targetDir = File(workDir, "ivw")
             if (targetDir.exists()) {
-                // 检查是否已有资源
                 val children = targetDir.listFiles()
                 if (children != null && children.isNotEmpty()) {
                     Timber.d("$TAG: Resource files already exist in ${targetDir.absolutePath}")
@@ -123,26 +123,42 @@ class XfWakeWordDetector(
             }
             targetDir.mkdirs()
 
-            // 从 assets 复制唤醒资源
             val assetManager = context.assets
-            val ivwAssets = assetManager.list("iflytek/ivw")
-            if (ivwAssets.isNullOrEmpty()) {
-                Timber.w("$TAG: No resource files found in assets/iflytek/ivw/")
-                // 尝试直接从 assets 根目录
-                val rootAssets = assetManager.list("")
-                val ivwFiles = rootAssets?.filter { it.endsWith(".jet") || it.endsWith(".bin") || it.contains("ivw") || it.contains("wake") }
-                if (!ivwFiles.isNullOrEmpty()) {
-                    ivwFiles.forEach { fileName ->
-                        copyAssetToFile(fileName, File(targetDir, fileName))
-                    }
+
+            // 优先尝试官方推荐路径: assets/aikit_resources/
+            val aikitAssets = assetManager.list("aikit_resources")
+            if (!aikitAssets.isNullOrEmpty()) {
+                aikitAssets.forEach { fileName ->
+                    copyAssetToFile("aikit_resources/$fileName", File(targetDir, fileName))
                 }
+                Timber.i("$TAG: Copied ${aikitAssets.size} resource files from aikit_resources/ to ${targetDir.absolutePath}")
                 return
             }
 
-            ivwAssets.forEach { fileName ->
-                copyAssetToFile("iflytek/ivw/$fileName", File(targetDir, fileName))
+            // 兼容旧路径: assets/iflytek/ivw/
+            val ivwAssets = assetManager.list("iflytek/ivw")
+            if (!ivwAssets.isNullOrEmpty()) {
+                ivwAssets.forEach { fileName ->
+                    copyAssetToFile("iflytek/ivw/$fileName", File(targetDir, fileName))
+                }
+                Timber.i("$TAG: Copied ${ivwAssets.size} resource files from iflytek/ivw/ to ${targetDir.absolutePath}")
+                return
             }
-            Timber.i("$TAG: Copied ${ivwAssets.size} resource files to ${targetDir.absolutePath}")
+
+            // 最后尝试直接从 assets 根目录查找
+            val rootAssets = assetManager.list("")
+            val ivwFiles = rootAssets?.filter {
+                it.endsWith(".jet") || it.endsWith(".bin") || it.contains("ivw") || it.contains("wake")
+            }
+            if (!ivwFiles.isNullOrEmpty()) {
+                ivwFiles.forEach { fileName ->
+                    copyAssetToFile(fileName, File(targetDir, fileName))
+                }
+                Timber.i("$TAG: Copied ${ivwFiles.size} resource files from assets root to ${targetDir.absolutePath}")
+                return
+            }
+
+            Timber.w("$TAG: No resource files found in assets/. Resource files may be downloaded on first activation.")
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Error copying resource files")
         }
@@ -477,38 +493,25 @@ class XfWakeWordDetector(
         writeThread?.interrupt()
         writeThread = null
 
-        // 发送结束帧
+        // ★ 修复：官方文档 6.7.4 节 — 用 end() 结束会话
         try {
             val aiHelperClass = Class.forName(CLS_AI_HELPER)
-            val aiAudioClass = Class.forName(CLS_AI_AUDIO)
-            val aiStatusClass = Class.forName(CLS_AI_STATUS)
-            val aiRequestClass = Class.forName(CLS_AI_REQUEST)
-            val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
-
             if (aiHandle != null) {
-                val dataBuilder = builderClass.getMethod("builder").invoke(null)
-                val holder = aiAudioClass.getMethod("get", String::class.java).invoke(null, "wav")
-                val encodingConst = aiAudioClass.getDeclaredField("ENCODING_DEFAULT").let {
-                    it.isAccessible = true; it.get(null)
+                val ret = aiHelperClass.getMethod("end", Any::class.java)
+                    .invoke(aiHelper, aiHandle) as? Int ?: -1
+                if (ret != 0) {
+                    Timber.w("$TAG: End session failed: $ret")
                 }
-                aiAudioClass.getMethod("encoding", Any::class.java).invoke(holder, encodingConst)
-                aiAudioClass.getMethod("data", ByteArray::class.java).invoke(holder, ByteArray(0))
-                aiAudioClass.getMethod("status", Any::class.java).invoke(holder, aiStatusClass.getField("END").get(null))
-                val validPayload = aiAudioClass.getMethod("valid").invoke(holder)
-                aiRequestClass.getMethod("payload", Any::class.java).invoke(dataBuilder, validPayload)
-                val writeRequest = builderClass.getMethod("build").invoke(dataBuilder)
-                aiHelperClass.getMethod("write", aiRequestClass, Any::class.java)
-                    .invoke(aiHelper, writeRequest, aiHandle)
             }
         } catch (e: Exception) {
-            Timber.e(e, "$TAG: Error sending END frame")
+            Timber.e(e, "$TAG: Error ending session")
         }
 
         aiHandle = null
         Timber.i("$TAG: Stopped listening")
     }
 
-    fun getFrameLength(): Int = 512
+    fun getFrameLength(): Int = 320  // 官方文档 6.7.2 节：frame_size 固定 320
     fun getSampleRate(): Int = 16000
     fun isListening(): Boolean = isListening.get()
 
