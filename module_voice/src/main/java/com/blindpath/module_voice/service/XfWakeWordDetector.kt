@@ -1,13 +1,15 @@
-﻿package com.blindpath.module_voice.service
+package com.blindpath.module_voice.service
 
 import android.content.Context
-import android.os.Bundle
 import com.blindpath.module_voice.domain.WakeWordDetector
 import com.blindpath.module_voice.domain.model.WakeWordConfig
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
+import java.io.InputStream
 import java.lang.reflect.Proxy
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * 科大讯飞 AIKit 语音唤醒检测器（反射实现）
@@ -15,7 +17,15 @@ import java.lang.reflect.Proxy
  * 基于讯飞 AIKit SDK (新版) 实现。
  * 能力ID: e867a88f2 (语音唤醒)
  *
- * 使用反射调用 AIKit API，避免编译时依赖问题。
+ * 官方文档: https://www.xfyun.cn/doc/asr/AIkit_awaken/Android-SDK.html
+ *
+ * 核心流程:
+ * 1. init() → 初始化 SDK + 加载唤醒资源
+ * 2. engineInit() → 初始化唤醒引擎
+ * 3. loadData() → 加载唤醒词
+ * 4. start() → 创建会话
+ * 5. write() → 持续送入音频帧（关键！不送音频就不会有唤醒结果）
+ * 6. onResult → 收到唤醒回调
  */
 class XfWakeWordDetector(
     private val context: Context,
@@ -32,6 +42,7 @@ class XfWakeWordDetector(
         private const val IVW_ID = "e867a88f2"
         private const val AUTH_INTERVAL = 333
 
+        // 反射类名
         private const val CLS_AI_HELPER = "com.iflytek.aikit.core.AiHelper"
         private const val CLS_AI_REQUEST = "com.iflytek.aikit.core.AiRequest"
         private const val CLS_AI_RESPONSE = "com.iflytek.aikit.core.AiResponse"
@@ -40,14 +51,20 @@ class XfWakeWordDetector(
         private const val CLS_AUTH_LISTENER = "com.iflytek.aikit.core.AuthListener"
         private const val CLS_ERR_TYPE = "com.iflytek.aikit.core.ErrType"
         private const val CLS_LOG_LVL = "com.iflytek.aikit.core.LogLvl"
+        // 音频相关
+        private const val CLS_AI_AUDIO = "com.iflytek.aikit.core.AiAudio"
+        private const val CLS_AI_STATUS = "com.iflytek.aikit.core.AiStatus"
 
         private var sdkAvailable: Boolean? = null
     }
 
     private var isInitialized = false
-    private var isListening = false
+    private val isListening = AtomicBoolean(false)
     private var aiHelper: Any? = null
+    private var aiHandle: Any? = null
     private var callback: WakeWordDetector.Callback? = null
+    private var writeThread: Thread? = null
+    private val audioDataRef = AtomicReference<ByteArray>(null)
 
     init {
         try {
@@ -81,9 +98,65 @@ class XfWakeWordDetector(
             workDir.mkdirs()
         }
 
+        // ★ 修复1：从 assets 复制唤醒资源文件到 workDir
+        copyResourceFiles(workDir)
+
         initSdkByReflection(workDir.absolutePath)
         isInitialized = true
-        Timber.i("$TAG: AIKit SDK initialized successfully")
+        Timber.i("$TAG: AIKit SDK initialized successfully, workDir=${workDir.absolutePath}")
+    }
+
+    /**
+     * ★ 修复1：将 assets/iflytek/ivw/ 下的唤醒资源复制到 workDir
+     * 官方文档 6.3 节：复制resource文件夹中资源到应用的工作目录
+     */
+    private fun copyResourceFiles(workDir: File) {
+        try {
+            val targetDir = File(workDir, "ivw")
+            if (targetDir.exists()) {
+                // 检查是否已有资源
+                val children = targetDir.listFiles()
+                if (children != null && children.isNotEmpty()) {
+                    Timber.d("$TAG: Resource files already exist in ${targetDir.absolutePath}")
+                    return
+                }
+            }
+            targetDir.mkdirs()
+
+            // 从 assets 复制唤醒资源
+            val assetManager = context.assets
+            val ivwAssets = assetManager.list("iflytek/ivw")
+            if (ivwAssets.isNullOrEmpty()) {
+                Timber.w("$TAG: No resource files found in assets/iflytek/ivw/")
+                // 尝试直接从 assets 根目录
+                val rootAssets = assetManager.list("")
+                val ivwFiles = rootAssets?.filter { it.endsWith(".jet") || it.endsWith(".bin") || it.contains("ivw") || it.contains("wake") }
+                if (!ivwFiles.isNullOrEmpty()) {
+                    ivwFiles.forEach { fileName ->
+                        copyAssetToFile(fileName, File(targetDir, fileName))
+                    }
+                }
+                return
+            }
+
+            ivwAssets.forEach { fileName ->
+                copyAssetToFile("iflytek/ivw/$fileName", File(targetDir, fileName))
+            }
+            Timber.i("$TAG: Copied ${ivwAssets.size} resource files to ${targetDir.absolutePath}")
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: Error copying resource files")
+        }
+    }
+
+    private fun copyAssetToFile(assetPath: String, targetFile: File) {
+        try {
+            val inputStream: InputStream = context.assets.open(assetPath)
+            targetFile.outputStream().use { out ->
+                inputStream.copyTo(out)
+            }
+        } catch (e: Exception) {
+            Timber.w("$TAG: Failed to copy asset $assetPath: ${e.message}")
+        }
     }
 
     private fun initSdkByReflection(workDirPath: String) {
@@ -112,6 +185,7 @@ class XfWakeWordDetector(
             val errorLevel = logLvlClass.getField("ERROR").get(null)
             aiHelperClass.getMethod("setLogLevel", logLvlClass).invoke(aiHelper, errorLevel)
 
+            // 授权状态监听
             val authListenerClass = Class.forName(CLS_AUTH_LISTENER)
             val authListener = Proxy.newProxyInstance(
                 authListenerClass.classLoader,
@@ -122,7 +196,7 @@ class XfWakeWordDetector(
                     val code = args?.get(1) as? Int ?: -1
                     val typeName = type?.toString() ?: ""
                     if (typeName.contains("AUTH") && code == 0) {
-                        Timber.i("$TAG: SDK authorized")
+                        Timber.i("$TAG: SDK authorized successfully")
                     } else {
                         Timber.e("$TAG: SDK auth failed, type=$typeName, code=$code")
                     }
@@ -132,6 +206,7 @@ class XfWakeWordDetector(
             aiHelperClass.getMethod("registerListener", authListenerClass)
                 .invoke(aiHelper, authListener)
 
+            // 能力结果监听
             val aiListenerClass = Class.forName(CLS_AI_LISTENER)
             val aiListener = Proxy.newProxyInstance(
                 aiListenerClass.classLoader,
@@ -145,7 +220,7 @@ class XfWakeWordDetector(
                                 val key = response?.javaClass?.getMethod("getKey")?.invoke(response) as? String
                                 val value = response?.javaClass?.getMethod("getValue")?.invoke(response) as? ByteArray
                                 val valueStr = value?.let { String(it, Charsets.UTF_8) } ?: ""
-                                Timber.d("$TAG: onResult key=$key")
+                                Timber.d("$TAG: onResult key=$key value=$valueStr")
                                 if (key?.contains("rlt") == true || key?.contains("func_wake_up") == true) {
                                     parseWakeUpResult(valueStr)
                                 }
@@ -156,14 +231,14 @@ class XfWakeWordDetector(
                         null
                     }
                     "onEvent" -> {
-                        val event = args?.get(1) as? Int ?: -1
-                        Timber.d("$TAG: onEvent $event")
+                        val event = args?.get(2) as? Int ?: -1
+                        Timber.d("$TAG: onEvent event=$event")
                         null
                     }
                     "onError" -> {
                         val err = args?.get(1) as? Int ?: -1
                         val msg = args?.get(2) as? String
-                        Timber.e("$TAG: onError $err: $msg")
+                        Timber.e("$TAG: onError err=$err msg=$msg")
                         null
                     }
                     else -> null
@@ -186,7 +261,7 @@ class XfWakeWordDetector(
                 val result = rltArray.getJSONObject(0)
                 val keyword = result.optString("keyword", "")
                 val score = result.optInt("score", 0)
-                Timber.i("$TAG: Wake word detected! keyword=$keyword, score=$score")
+                Timber.i("$TAG: ★ Wake word detected! keyword=$keyword, score=$score")
                 onWakeWordDetected.invoke(wakeWord)
                 callback?.onWakeWordDetected(wakeWord, 0.9f)
             }
@@ -207,7 +282,7 @@ class XfWakeWordDetector(
             Timber.w("$TAG: Not initialized")
             return
         }
-        if (isListening) {
+        if (isListening.get()) {
             Timber.d("$TAG: Already listening")
             return
         }
@@ -215,15 +290,19 @@ class XfWakeWordDetector(
         try {
             val aiHelperClass = Class.forName(CLS_AI_HELPER)
 
+            // 1. 初始化引擎
             val engineInitRet = aiHelperClass.getMethod("engineInit", String::class.java)
                 .invoke(aiHelper, IVW_ID) as? Int ?: -1
             if (engineInitRet != 0) {
                 Timber.e("$TAG: Engine init failed: $engineInitRet")
                 return
             }
+            Timber.i("$TAG: Engine initialized")
 
+            // 2. 加载唤醒词
             loadWakeUpWords()
 
+            // 3. 指定数据集
             val indexs = intArrayOf(0)
             val specifyRet = aiHelperClass.getMethod("specifyDataSet", String::class.java, String::class.java, IntArray::class.java)
                 .invoke(aiHelper, IVW_ID, "key_word", indexs) as? Int ?: -1
@@ -231,27 +310,127 @@ class XfWakeWordDetector(
                 Timber.w("$TAG: Specify dataset failed: $specifyRet")
             }
 
+            // 4. 创建会话（设置持续唤醒）
             val aiRequestClass = Class.forName(CLS_AI_REQUEST)
             val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
             val builder = builderClass.getMethod("builder").invoke(null)
+
+            // ★ 修复3：设置持续唤醒 + 门限值
+            try {
+                builderClass.getMethod("param", String::class.java, Any::class.java)
+                    .invoke(builder, "KEEP_ALIVE", "1")
+                builderClass.getMethod("param", String::class.java, Any::class.java)
+                    .invoke(builder, "wdec_param_nCmThreshold", "0 0:$threshold")
+            } catch (e: Exception) {
+                Timber.w("$TAG: Failed to set KEEP_ALIVE: ${e.message}")
+            }
+
             val request = builderClass.getMethod("build").invoke(builder)
 
-            val handle = aiHelperClass.getMethod("start", String::class.java, aiRequestClass, Any::class.java)
+            aiHandle = aiHelperClass.getMethod("start", String::class.java, aiRequestClass, Any::class.java)
                 .invoke(aiHelper, IVW_ID, request, null)
 
-            val isSuccess = handle?.javaClass?.getMethod("isSuccess")?.invoke(handle) as? Boolean ?: false
+            val isSuccess = aiHandle?.javaClass?.getMethod("isSuccess")?.invoke(aiHandle) as? Boolean ?: false
             if (!isSuccess) {
-                val code = handle?.javaClass?.getMethod("getCode")?.invoke(handle) as? Int ?: -1
+                val code = aiHandle?.javaClass?.getMethod("getCode")?.invoke(aiHandle) as? Int ?: -1
                 Timber.e("$TAG: Start session failed: $code")
                 return
             }
 
-            isListening = true
-            Timber.i("$TAG: Wake-up started, listening for '$wakeWord'")
+            isListening.set(true)
+            Timber.i("$TAG: ★ Wake-up session started, listening for '$wakeWord'")
+
+            // ★ 修复2：启动音频写入线程
+            startAudioWriteThread()
+
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Failed to start listening")
-            isListening = false
+            isListening.set(false)
         }
+    }
+
+    /**
+     * ★ 修复2（核心）：持续向 SDK 写入音频帧
+     * 官方文档 6.7.2 节：必须通过 write() 送入音频数据
+     * 不送音频 → SDK 无法检测唤醒词 → 永远不会回调
+     */
+    private fun startAudioWriteThread() {
+        writeThread = Thread({
+            Timber.i("$TAG: Audio write thread started")
+            try {
+                val aiHelperClass = Class.forName(CLS_AI_HELPER)
+                val aiAudioClass = Class.forName(CLS_AI_AUDIO)
+                val aiStatusClass = Class.forName(CLS_AI_STATUS)
+                val aiRequestClass = Class.forName(CLS_AI_REQUEST)
+                val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
+
+                var frameIndex = 0
+                while (isListening.get()) {
+                    val audioData = audioDataRef.get()
+                    if (audioData != null && aiHandle != null) {
+                        try {
+                            val dataBuilder = builderClass.getMethod("builder").invoke(null)
+
+                            // 构建音频数据: AiAudio.get("wav").encoding(...).data(...).status(...)
+                            val holder = aiAudioClass.getMethod("get", String::class.java)
+                                .invoke(null, "wav")
+
+                            val encodingConst = aiAudioClass.getDeclaredField("ENCODING_DEFAULT").let {
+                                it.isAccessible = true
+                                it.get(null)
+                            }
+
+                            aiAudioClass.getMethod("encoding", Any::class.java).invoke(holder, encodingConst)
+                            aiAudioClass.getMethod("data", ByteArray::class.java).invoke(holder, audioData)
+
+                            // 首帧用 BEGIN，后续用 CONTINUE
+                            val status = if (frameIndex == 0) {
+                                aiStatusClass.getField("BEGIN").get(null)
+                            } else {
+                                aiStatusClass.getField("CONTINUE").get(null)
+                            }
+                            aiAudioClass.getMethod("status", Any::class.java).invoke(holder, status)
+
+                            val validPayload = aiAudioClass.getMethod("valid").invoke(holder)
+                            aiRequestClass.getMethod("payload", Any::class.java).invoke(dataBuilder, validPayload)
+
+                            val writeRequest = builderClass.getMethod("build").invoke(dataBuilder)
+                            val ret = aiHelperClass.getMethod("write", aiRequestClass, Any::class.java)
+                                .invoke(aiHelper, writeRequest, aiHandle) as? Int ?: -1
+
+                            if (ret != 0 && frameIndex % 100 == 0) {
+                                Timber.w("$TAG: Write failed at frame $frameIndex: $ret")
+                            }
+
+                            frameIndex++
+                        } catch (e: Exception) {
+                            if (isListening.get()) {
+                                Timber.e(e, "$TAG: Error writing audio frame $frameIndex")
+                            }
+                        }
+                    } else {
+                        // 没有音频数据，等待
+                        Thread.sleep(20)
+                    }
+                    Thread.sleep(10) // 控制写入频率
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "$TAG: Audio write thread error")
+            }
+            Timber.i("$TAG: Audio write thread stopped")
+        }, "$TAG-audio-writer").apply {
+            isDaemon = true
+            priority = Thread.MAX_PRIORITY
+        }
+        writeThread?.start()
+    }
+
+    /**
+     * 供外部调用：送入音频帧数据
+     * WakeWordServiceEnhanced 的 AudioRecorder 回调会调用此方法
+     */
+    fun feedAudioData(data: ByteArray) {
+        audioDataRef.set(data)
     }
 
     private fun loadWakeUpWords() {
@@ -260,6 +439,9 @@ class XfWakeWordDetector(
             if (!keywordFile.exists()) {
                 keywordFile.parentFile?.mkdirs()
                 keywordFile.writeText("$wakeWord;nCM:$threshold;\n")
+                Timber.i("$TAG: Created keyword file: $wakeWord;nCM:$threshold;")
+            } else {
+                Timber.d("$TAG: Keyword file already exists")
             }
 
             val aiHelperClass = Class.forName(CLS_AI_HELPER)
@@ -277,7 +459,7 @@ class XfWakeWordDetector(
             if (ret != 0) {
                 Timber.w("$TAG: Load wake words failed: $ret")
             } else {
-                Timber.d("$TAG: Wake words loaded")
+                Timber.i("$TAG: Wake words loaded: $wakeWord (threshold=$threshold)")
             }
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Error loading wake words")
@@ -289,14 +471,46 @@ class XfWakeWordDetector(
     }
 
     fun stopListening() {
-        if (!isListening) return
-        isListening = false
+        if (!isListening.getAndSet(false)) return
+
+        // 停止音频写入线程
+        writeThread?.interrupt()
+        writeThread = null
+
+        // 发送结束帧
+        try {
+            val aiHelperClass = Class.forName(CLS_AI_HELPER)
+            val aiAudioClass = Class.forName(CLS_AI_AUDIO)
+            val aiStatusClass = Class.forName(CLS_AI_STATUS)
+            val aiRequestClass = Class.forName(CLS_AI_REQUEST)
+            val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
+
+            if (aiHandle != null) {
+                val dataBuilder = builderClass.getMethod("builder").invoke(null)
+                val holder = aiAudioClass.getMethod("get", String::class.java).invoke(null, "wav")
+                val encodingConst = aiAudioClass.getDeclaredField("ENCODING_DEFAULT").let {
+                    it.isAccessible = true; it.get(null)
+                }
+                aiAudioClass.getMethod("encoding", Any::class.java).invoke(holder, encodingConst)
+                aiAudioClass.getMethod("data", ByteArray::class.java).invoke(holder, ByteArray(0))
+                aiAudioClass.getMethod("status", Any::class.java).invoke(holder, aiStatusClass.getField("END").get(null))
+                val validPayload = aiAudioClass.getMethod("valid").invoke(holder)
+                aiRequestClass.getMethod("payload", Any::class.java).invoke(dataBuilder, validPayload)
+                val writeRequest = builderClass.getMethod("build").invoke(dataBuilder)
+                aiHelperClass.getMethod("write", aiRequestClass, Any::class.java)
+                    .invoke(aiHelper, writeRequest, aiHandle)
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: Error sending END frame")
+        }
+
+        aiHandle = null
         Timber.i("$TAG: Stopped listening")
     }
 
     fun getFrameLength(): Int = 512
     fun getSampleRate(): Int = 16000
-    fun isListening(): Boolean = isListening
+    fun isListening(): Boolean = isListening.get()
 
     override fun setCallback(callback: WakeWordDetector.Callback) {
         this.callback = callback

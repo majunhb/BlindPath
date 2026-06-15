@@ -454,6 +454,15 @@ class WakeWordServiceEnhanced : Service() {
             try {
                 val detected = when (engine) {
                     is EnergyWakeWordDetector -> engine.process(frame)
+                    is XfWakeWordDetector -> {
+                        // ★ 将音频帧桥接到讯飞引擎的 write() 管道
+                        val bytes = ByteArray(frame.size * 2)
+                        java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.nativeOrder()).let {
+                            for (s in frame) it.putShort(s)
+                        }
+                        engine.feedAudioData(bytes)
+                        false // 讯飞通过回调返回结果，不在此处同步检测
+                    }
                     else -> false
                 }
                 if (detected) break
