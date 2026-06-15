@@ -107,9 +107,9 @@ class XfWakeWordDetector(
     }
 
     /**
-     * ★ 修复：将 assets/aikit_resources/ 下的唤醒资源复制到 workDir
+     * ★ 将 assets/aikit_resources/ 下的唤醒资源复制到 workDir/ivw/
+     * 官方文档 6.3 节：复制resource文件夹中资源到SDK工作目录
      * 官方文档 7.4 节：可在 assets 目录下创建 aikit_resources 目录
-     * 同时兼容 assets/iflytek/ivw/ 路径（旧版）
      */
     private fun copyResourceFiles(workDir: File) {
         try {
@@ -129,9 +129,9 @@ class XfWakeWordDetector(
             val aikitAssets = assetManager.list("aikit_resources")
             if (!aikitAssets.isNullOrEmpty()) {
                 aikitAssets.forEach { fileName ->
-                    copyAssetToFile("aikit_resources/$fileName", File(targetDir, fileName))
+                    copyAssetRecursive("aikit_resources/$fileName", File(targetDir, fileName), assetManager)
                 }
-                Timber.i("$TAG: Copied ${aikitAssets.size} resource files from aikit_resources/ to ${targetDir.absolutePath}")
+                Timber.i("$TAG: Copied ${aikitAssets.size} items from aikit_resources/ to ${targetDir.absolutePath}")
                 return
             }
 
@@ -139,36 +139,35 @@ class XfWakeWordDetector(
             val ivwAssets = assetManager.list("iflytek/ivw")
             if (!ivwAssets.isNullOrEmpty()) {
                 ivwAssets.forEach { fileName ->
-                    copyAssetToFile("iflytek/ivw/$fileName", File(targetDir, fileName))
+                    copyAssetRecursive("iflytek/ivw/$fileName", File(targetDir, fileName), assetManager)
                 }
-                Timber.i("$TAG: Copied ${ivwAssets.size} resource files from iflytek/ivw/ to ${targetDir.absolutePath}")
+                Timber.i("$TAG: Copied ${ivwAssets.size} items from iflytek/ivw/ to ${targetDir.absolutePath}")
                 return
             }
 
-            // 最后尝试直接从 assets 根目录查找
-            val rootAssets = assetManager.list("")
-            val ivwFiles = rootAssets?.filter {
-                it.endsWith(".jet") || it.endsWith(".bin") || it.contains("ivw") || it.contains("wake")
-            }
-            if (!ivwFiles.isNullOrEmpty()) {
-                ivwFiles.forEach { fileName ->
-                    copyAssetToFile(fileName, File(targetDir, fileName))
-                }
-                Timber.i("$TAG: Copied ${ivwFiles.size} resource files from assets root to ${targetDir.absolutePath}")
-                return
-            }
-
-            Timber.w("$TAG: No resource files found in assets/. Resource files may be downloaded on first activation.")
+            Timber.w("$TAG: No resource files found in assets/")
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Error copying resource files")
         }
     }
 
-    private fun copyAssetToFile(assetPath: String, targetFile: File) {
+    /**
+     * 递归复制 asset 文件/目录到目标路径
+     */
+    private fun copyAssetRecursive(assetPath: String, targetFile: File, assetManager: android.content.res.AssetManager) {
         try {
-            val inputStream: InputStream = context.assets.open(assetPath)
-            targetFile.outputStream().use { out ->
-                inputStream.copyTo(out)
+            // 尝试作为目录打开（递归）
+            val children = try { assetManager.list(assetPath) } catch (e: Exception) { null }
+            if (children != null && children.isNotEmpty()) {
+                targetFile.mkdirs()
+                children.forEach { child ->
+                    copyAssetRecursive("$assetPath/$child", File(targetFile, child), assetManager)
+                }
+            } else {
+                // 作为文件复制
+                targetFile.outputStream().use { out ->
+                    assetManager.open(assetPath).use { inp -> inp.copyTo(out) }
+                }
             }
         } catch (e: Exception) {
             Timber.w("$TAG: Failed to copy asset $assetPath: ${e.message}")
