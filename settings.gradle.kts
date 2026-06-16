@@ -24,6 +24,8 @@ dependencyResolutionManagement {
         maven { url = uri("https://maven.aliyun.com/repository/central") }
         maven { url = uri("https://jitpack.io") }
         maven { url = uri("https://maven.baidu.com/content/repositories/public/") }
+        // 高德官方Maven仓库（必须）
+        maven { url = uri("https://aamap.artifactory.alipay.com/android") }
     }
 }
 
