@@ -179,6 +179,8 @@ okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor",
 
 # Map
 amap-location-search = { group = "com.amap.api", name = "3dmap-location-search", version.ref = "amap" }
+# 搜索SDK - 必须添加！包含地理编码、逆地理编码、路径规划、POI搜索等功能
+amap-search = { group = "com.amap.api", name = "search", version.ref = "amap" }
 
 # Porcupine
 porcupine-android = { group = "ai.picovoice", name = "porcupine-android", version.ref = "porcupine-android" }

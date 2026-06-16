@@ -192,8 +192,9 @@ dependencies {
 
 
     // 高德地图 SDK（AMapLocationClient 等）
-
     implementation(libs.amap.location.search)
+    // 高德搜索 SDK - 必须添加！包含地理编码、逆地理编码、路径规划、POI搜索等功能
+    implementation(libs.amap.search)
 
 
 
