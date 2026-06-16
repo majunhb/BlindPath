@@ -15,7 +15,8 @@ android {
         consumerProguardFiles("consumer-rules.pro")
         
         // 高德地图 Web 服务 Key（HTTP API 搜索用）
-        buildConfigField("String", "AMAP_WEB_KEY", ""${project.findProperty("AMAP_WEB_KEY") ?: ""}"")
+        val amapWebKey: String = project.findProperty("AMAP_WEB_KEY") as? String ?: ""
+        buildConfigField("String", "AMAP_WEB_KEY", "\"$amapWebKey\"")
     }
 
     buildFeatures {
