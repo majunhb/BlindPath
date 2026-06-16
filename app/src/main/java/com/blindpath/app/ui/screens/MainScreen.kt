@@ -160,19 +160,16 @@ fun MainScreen(
         }
     }
 
-    // 页面路由 - 使用独立文件中的 public 函数
+    // 页面路由 - 使用 when 表达式避免 return 导致不可达代码
     when {
         showSettings -> {
             SettingsScreen(onBackClick = { showSettings = false })
-            return
         }
         showCommunity -> {
             CommunityScreen(onBackClick = { showCommunity = false })
-            return
         }
         showTripAssist -> {
             TripAssistScreen(onBackClick = { showTripAssist = false })
-            return
         }
         showIndoorPerception -> {
             IndoorPerceptionScreen(
@@ -181,7 +178,6 @@ fun MainScreen(
                 onBack = { showIndoorPerception = false },
                 viewModel = viewModel
             )
-            return
         }
         showOutdoorNavigation -> {
             OutdoorNavigationScreen(
@@ -192,7 +188,6 @@ fun MainScreen(
                 onHelpClick = { showNavigationGuide = true },
                 viewModel = viewModel
             )
-            return
         }
         showArNavigation -> {
             ArNavigationScreen(
@@ -200,11 +195,9 @@ fun MainScreen(
                 onNavigateBack = { showArNavigation = false },
                 onEmergencyCall = onSosClick
             )
-            return
         }
         showNavigationGuide -> {
             NavigationGuideScreen(onBack = { showNavigationGuide = false })
-            return
         }
         showScenePerception -> {
             ScenePerceptionScreen(
@@ -214,13 +207,11 @@ fun MainScreen(
                 onBack = { showScenePerception = false },
                 viewModel = viewModel
             )
-            return
         }
-    }
-
-    // 主界面内容
-    MainScreenContent(
-        uiState = uiState,
+        else -> {
+            // 主界面内容
+            MainScreenContent(
+                uiState = uiState,
         obstacleState = obstacleState,
         onIndoorPerceptionClick = { showIndoorPerception = true },
         onOutdoorNavigationClick = { showOutdoorNavigation = true },
@@ -233,6 +224,8 @@ fun MainScreen(
         onStopListening = { viewModel.stopListening() },
         viewModel = viewModel
     )
+        }
+    }
 }
 
 /**
