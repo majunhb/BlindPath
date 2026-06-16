@@ -80,6 +80,9 @@ class MainActivity : ComponentActivity() {
     @Inject
     lateinit var sceneClassifier: SceneClassifier
 
+    @Inject
+    lateinit var cameraXManager: com.blindpath.app.ui.camera.CameraXManager
+
 
 
     private var pendingAction: String? = null
@@ -169,6 +172,7 @@ class MainActivity : ComponentActivity() {
                         navigationRepository = navigationRepository,
                         indoorDetector = indoorDetector,
                         sceneClassifier = sceneClassifier,
+                        cameraXManager = cameraXManager,
                         onObstacleDetectionClick = { requestPermissionAndAction("obstacle") },
 
                         onLocationClick = { requestPermissionAndAction("location") },

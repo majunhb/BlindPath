@@ -1,6 +1,7 @@
 package com.blindpath.app.ui.screens
 
 import android.graphics.Bitmap
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.*
@@ -8,27 +9,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.blindpath.app.ui.camera.CameraXManager
 import com.blindpath.app.ui.components.ArNavigationOverlay
 import com.blindpath.app.ui.components.DangerLevel
+import com.blindpath.app.ui.viewmodel.ArNavigationViewModel
 import com.blindpath.app.ui.viewmodel.NavigationViewModel
-import com.blindpath.module_obstacle.domain.ObstacleRepository
-import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.domain.model.VoiceType
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-import timber.log.Timber
-import kotlinx.coroutines.delay
-import java.io.ByteArrayOutputStream
+import com.blindpath.module_voice.domain.VoiceRepository
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 /**
  * AR 实景导航屏幕
  *
- * 对应 PRD 模块一/二/三：
- * - 模块一：CameraX 实时画面 + 障碍物识别 + 包围框
+ * Phase 2 重构：使用 ArNavigationViewModel 统一管理状态，
+ * 使用 CameraXManager 统一管理摄像头。
+ *
+ * 对应 PRD 模块：
+ * - 模块一：CameraX 实时画面 + 障碍物识别 + 包围框 + 盲道叠加
  * - 模块二：语音播报（优先级打断机制）
  * - 模块三：高对比度 UI（黑底黄字/白字）
  *
@@ -36,18 +43,21 @@ import java.io.ByteArrayOutputStream
  */
 @Composable
 fun ArNavigationScreen(
-    viewModel: NavigationViewModel = hiltViewModel(),
-    obstacleRepository: ObstacleRepository,
+    viewModel: ArNavigationViewModel = hiltViewModel(),
+    navigationViewModel: NavigationViewModel = hiltViewModel(),
+    cameraXManager: CameraXManager,
     onNavigateBack: () -> Unit = {},
     onEmergencyCall: () -> Unit = {},
 ) {
     val context = LocalContext.current
-    val navigationState by viewModel.navigationState.collectAsState()
-    val obstacleState by obstacleRepository.obstacleState.collectAsState()
-    var isArActive by remember { mutableStateOf(true) }
-    var lastWarningText by remember { mutableStateOf("") }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val scope = rememberCoroutineScope()
+    val navigationState by navigationViewModel.navigationState.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+    val obstacleState by viewModel.obstacleState.collectAsState()
+    val tactilePavingResult by viewModel.tactilePavingResult.collectAsState()
 
-    // 通过 Hilt EntryPoint 获取 VoiceRepository
+    // 通过 Hilt EntryPoint 获取 VoiceRepository（导航播报用）
     val voiceRepository = remember {
         EntryPointAccessors.fromApplication(
             context.applicationContext,
@@ -55,22 +65,17 @@ fun ArNavigationScreen(
         ).voiceRepository()
     }
 
-    // 初始化障碍物检测
+    // ============================================================
+    // 初始化
+    // ============================================================
     LaunchedEffect(Unit) {
-        try {
-            val initResult = obstacleRepository.initialize()
-            if (initResult is com.blindpath.base.common.Result.Success) {
-                obstacleRepository.loadModel()
-                obstacleRepository.startDetection()
-                Timber.i("ArNav: Obstacle detection initialized")
-                voiceRepository.speak("AR实景导航已启动，正在识别障碍物")
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "ArNav: Failed to init obstacle detection")
-        }
+        viewModel.initialize()
+        viewModel.startStatusReport()
     }
 
+    // ============================================================
     // 导航指令播报
+    // ============================================================
     val lastInstruction = remember { mutableStateOf("") }
     LaunchedEffect(navigationState) {
         val state = navigationState
@@ -93,35 +98,9 @@ fun ArNavigationScreen(
         wasNavigating.value = navigationState.isRunning
     }
 
-    // 监听障碍物检测结果，播报高危预警
-    LaunchedEffect(obstacleState) {
-        val state = obstacleState
-        val currentAlert = state?.currentAlert
-        if (currentAlert != null && currentAlert.level == com.blindpath.base.common.AlertLevel.DANGER) {
-            val warning = currentAlert.message.ifEmpty { "前方有障碍物，请注意安全" }
-            if (warning != lastWarningText) {
-                lastWarningText = warning
-                voiceRepository.announce(warning, VoiceType.OBSTACLE_DANGER)
-            }
-        }
-    }
-
-    // 每10秒播报一次状态
-    LaunchedEffect(Unit) {
-        while (isArActive) {
-            delay(10_000)
-            val state = navigationState
-            if (state.isRunning && state.currentStepIndex < state.routeSteps.size) {
-                val step = state.routeSteps[state.currentStepIndex]
-                voiceRepository.announce(
-                    "继续前行，${step.distance} ${step.instruction}",
-                    VoiceType.NAVIGATION_TURN
-                )
-            }
-        }
-    }
-
+    // ============================================================
     // 导航信息
+    // ============================================================
     val navInstruction = remember(navigationState) {
         if (navigationState.isRunning && navigationState.currentStepIndex < navigationState.routeSteps.size) {
             navigationState.routeSteps[navigationState.currentStepIndex].instruction
@@ -134,40 +113,57 @@ fun ArNavigationScreen(
         else ""
     }
 
+    // ============================================================
+    // UI 布局
+    // ============================================================
     Box(modifier = Modifier.fillMaxSize()) {
+        // CameraX 预览 + AR 叠加层
+        if (uiState.isArActive) {
+            AndroidView(
+                factory = { ctx ->
+                    PreviewView(ctx).apply {
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                        implementationMode = PreviewView.ImplementationMode.PERFORMANCE
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                update = { previewView ->
+                    if (!cameraXManager.isActive()) {
+                        cameraXManager.bind(lifecycleOwner, previewView)
+                    }
+                }
+            )
+        }
+
+        // AR 叠加层
         ArNavigationOverlay(
             modifier = Modifier.fillMaxSize(),
-            isActive = isArActive,
+            isActive = uiState.isArActive,
             onFrameProcessed = { bitmap ->
-                processFrame(bitmap, obstacleRepository)
+                viewModel.processFrame(bitmap)
             },
             obstacles = obstacleState?.detectedObstacles ?: emptyList(),
-            dangerLevel = obstacleState?.let { state ->
-                when (state.currentAlert?.level) {
-                    com.blindpath.base.common.AlertLevel.DANGER -> DangerLevel.CRITICAL
-                    com.blindpath.base.common.AlertLevel.WARNING -> DangerLevel.HIGH
-                    com.blindpath.base.common.AlertLevel.UNKNOWN -> DangerLevel.MEDIUM
-                    else -> DangerLevel.LOW
-                }
-            } ?: DangerLevel.LOW,
-            warningText = obstacleState?.currentAlert?.message ?: "",
+            dangerLevel = uiState.dangerLevel,
+            warningText = uiState.warningText,
             navigationDirection = navInstruction,
             remainingDistance = navRemaining,
+            // Phase 2: 盲道叠加层参数
+            pavingOffset = tactilePavingResult?.offsetFromCenter ?: 0f,
+            pavingDirection = tactilePavingResult?.direction ?: 0f,
+            pavingVisible = tactilePavingResult?.detected == true,
             onGestureTap = {
-                voiceRepository.speak("当前状态：" + (
-                    obstacleState?.currentAlert?.message ?: "正常行驶"
-                ))
+                viewModel.onSingleTap()
             },
             onGestureDoubleTap = {
-                isArActive = !isArActive
-                voiceRepository.speak(if (isArActive) "AR模式已开启" else "AR模式已关闭")
+                viewModel.onDoubleTap()
             },
             onGestureLongPress = {
                 onEmergencyCall()
             }
         )
 
-        if (obstacleState == null) {
+        // 加载指示器
+        if (!uiState.isInitialized) {
             CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),
                 color = Color.White,
@@ -176,9 +172,23 @@ fun ArNavigationScreen(
         }
     }
 
+    // ============================================================
+    // 生命周期管理
+    // ============================================================
     DisposableEffect(Unit) {
+        // 订阅 CameraX 帧流
+        val job = scope.launch {
+            cameraXManager.frameFlow.collectLatest { bitmap ->
+                if (uiState.isArActive) {
+                    viewModel.processFrame(bitmap)
+                }
+            }
+        }
+
         onDispose {
-            isArActive = false
+            viewModel.stopStatusReport()
+            job.cancel()
+            cameraXManager.unbind()
         }
     }
 }
@@ -190,23 +200,4 @@ fun ArNavigationScreen(
 @InstallIn(SingletonComponent::class)
 interface ArNavigationEntryPoint {
     fun voiceRepository(): VoiceRepository
-}
-
-/**
- * 处理摄像头帧：调用障碍物检测流水线
- */
-private fun processFrame(
-    bitmap: Bitmap,
-    obstacleRepository: ObstacleRepository
-) {
-    try {
-        val stream = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
-        val bytes = stream.toByteArray()
-        kotlinx.coroutines.runBlocking {
-            obstacleRepository.processFrame(bytes, bitmap.width, bitmap.height)
-        }
-    } catch (e: Exception) {
-        Timber.w(e, "ArNav: processFrame failed")
-    }
 }

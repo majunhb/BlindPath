@@ -52,7 +52,7 @@ class SceneClassifier @Inject constructor(
         classifyIndoorOutdoor(bitmap, detectedObstacles)?.let { results.add(it) }
 
         // 1. 检测斑马线
-        detectZebraCrossing(bitmap)?.let { results.add(it) }
+        detectZebraCrossing(bitmap, detectedObstacles)?.let { results.add(it) }
 
         // 2. 检测楼梯/台阶
         detectStairs(bitmap, detectedObstacles)?.let { results.add(it) }
@@ -105,11 +105,18 @@ class SceneClassifier @Inject constructor(
     }
 
     /**
-     * 检测斑马线
+     * 检测斑马线（增强版：AI + CV 融合）
      * 使用线条检测算法识别白色的平行条纹
+     * 当 AI 检测到斑马线时，置信度加权提升
      */
-    private fun detectZebraCrossing(bitmap: Bitmap): Pair<SceneType, Float>? {
+    private fun detectZebraCrossing(bitmap: Bitmap, obstacles: List<DetectedObstacle>): Pair<SceneType, Float>? {
         try {
+            // 1. 如果 AI 检测到斑马线，直接高置信度返回
+            val aiDetected = obstacles.any { it.type == ObstacleType.ZEBRA_CROSSING }
+            if (aiDetected) {
+                return Pair(SceneType.CROSSWALK, 0.85f)
+            }
+
             val width = bitmap.width
             val height = bitmap.height
 
@@ -124,16 +131,22 @@ class SceneClassifier @Inject constructor(
 
             // 检查图像下半部分（更可能是地面）
             val startY = (height * 0.5).toInt()
+
+            // 增强：边缘检测累积
+            var edgeConfidence = 0f
+
             for (y in startY until height step scale) {
                 var inWhiteStripe = false
                 var whitePixels = 0
                 var blackPixels = 0
+                var prevBrightness = -1
 
                 for (x in 0 until width step scale) {
                     val pixel = bitmap.getPixel(x, y)
                     val r = Color.red(pixel)
                     val g = Color.green(pixel)
                     val b = Color.blue(pixel)
+                    val brightness = (r + g + b) / 3
 
                     val isWhite = r > 200 && g > 200 && b > 200 && abs(r - g) < 30 && abs(r - b) < 30
 
@@ -147,24 +160,36 @@ class SceneClassifier @Inject constructor(
                         blackPixels++
                         if (inWhiteStripe && blackPixels > stripeWidth) {
                             inWhiteStripe = false
-                            // 重置计数器，避免跨行累加
                             whitePixels = 0
                             blackPixels = 0
                         }
                     }
+
+                    // 增强：累计边缘强度（亮暗交替）
+                    if (prevBrightness >= 0) {
+                        edgeConfidence += abs(brightness - prevBrightness).toFloat() / 255f
+                    }
+                    prevBrightness = brightness
                 }
-                // 每行扫描结束后重置计数器，避免跨行累加
+
                 if (!inWhiteStripe) {
                     whitePixels = 0
                     blackPixels = 0
                 }
             }
 
+            // 增强：结合条纹数量和边缘强度
+            val totalSamples = ((height - startY) / scale) * (width / scale)
+            val normalizedEdge = if (totalSamples > 0) edgeConfidence / totalSamples else 0f
+
             // 如果检测到多条白色条纹，可能是斑马线
             if (whiteLineCount >= 4) {
-                val confidence = kotlin.math.min(0.9f, 0.5f + (whiteLineCount - 4) * 0.05f)
-                Timber.d("Zebra crossing detected: $whiteLineCount stripes, confidence: $confidence")
-                return Pair(SceneType.CROSSWALK, confidence)
+                val cvConfidence = min(0.85f, 0.5f + (whiteLineCount - 4) * 0.05f)
+                // 融合边缘强度
+                val fusedConfidence = cvConfidence * 0.7f + normalizedEdge * 0.3f
+                Timber.d("Zebra crossing detected: $whiteLineCount stripes, cv=%.2f, edge=%.2f, fused=%.2f",
+                    cvConfidence, normalizedEdge, fusedConfidence)
+                return Pair(SceneType.CROSSWALK, fusedConfidence)
             }
         } catch (e: Exception) {
             Timber.e(e, "Zebra crossing detection failed")

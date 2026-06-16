@@ -127,6 +127,9 @@ enum class ObstacleType(
     RAILING("栏杆", 2, 4),
     FENCE("围栏", 2, 4),
 
+    // ============ 盲道 ============
+    TACTILE_PAVING("盲道", 1, 8),
+
     // ============ 通用障碍物 ============
     OBSTACLE("障碍物", 3, 2),
     UNKNOWN("未知物体", 1, 9);
@@ -292,6 +295,7 @@ enum class ObstacleType(
             // 通用
             OBSTACLE -> "注意，前方${distanceInt}米有障碍物"
             UNKNOWN -> "注意，前方${distanceInt}米有物体"
+            TACTILE_PAVING -> "前方有盲道"
         }
     }
 

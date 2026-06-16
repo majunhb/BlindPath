@@ -85,6 +85,7 @@ fun MainScreen(
     navigationRepository: NavigationRepository,
     indoorDetector: IndoorDetector,
     sceneClassifier: SceneClassifier,
+    cameraXManager: com.blindpath.app.ui.camera.CameraXManager,
     onObstacleDetectionClick: () -> Unit = {},
     onLocationClick: () -> Unit = {},
     onSosClick: () -> Unit = {},
@@ -195,7 +196,7 @@ fun MainScreen(
         }
         showArNavigation -> {
             ArNavigationScreen(
-                obstacleRepository = obstacleRepository,
+                cameraXManager = cameraXManager,
                 onNavigateBack = { showArNavigation = false },
                 onEmergencyCall = onSosClick
             )
