@@ -67,6 +67,7 @@ enum class VoiceCommand(
     // 出行导航模块
     START_OUTDOOR_NAVIGATION("开启出行导航", "启动出行导航功能", listOf("出行导航", "室外导航", "出门导航", "导航出行")),
     STOP_OUTDOOR_NAVIGATION("关闭出行导航", "停止出行导航功能", listOf("关闭导航", "退出导航")),
+    START_AR_NAVIGATION("开启AR导航", "启动AR实景导航功能", listOf("AR导航", "实景导航", "摄像头导航", "开启AR")),
 
     // 场景感知模块
     START_SCENE_PERCEPTION("开启场景感知", "启动场景感知功能", listOf("场景感知", "环境感知", "识别场景", "看看周围")),

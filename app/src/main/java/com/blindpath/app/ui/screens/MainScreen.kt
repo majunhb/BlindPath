@@ -28,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Place
@@ -96,6 +97,7 @@ fun MainScreen(
     var showTripAssist by remember { mutableStateOf(false) }
     var showIndoorPerception by remember { mutableStateOf(false) }
     var showOutdoorNavigation by remember { mutableStateOf(false) }
+    var showArNavigation by remember { mutableStateOf(false) }
     var showScenePerception by remember { mutableStateOf(false) }
     var showNavigationGuide by remember { mutableStateOf(false) }
 
@@ -121,6 +123,11 @@ fun MainScreen(
                 VoiceCommand.START_OUTDOOR_NAVIGATION -> {
                     showOutdoorNavigation = true
                     viewModel.speak("出行导航已启动")
+                    true
+                }
+                VoiceCommand.START_AR_NAVIGATION -> {
+                    showArNavigation = true
+                    viewModel.speak("AR实景导航已启动")
                     true
                 }
                 VoiceCommand.STOP_OUTDOOR_NAVIGATION -> {
@@ -183,6 +190,14 @@ fun MainScreen(
                 onBack = { showOutdoorNavigation = false },
                 onHelpClick = { showNavigationGuide = true },
                 viewModel = viewModel
+            )
+            return
+        }
+        showArNavigation -> {
+            ArNavigationScreen(
+                obstacleRepository = obstacleRepository,
+                onNavigateBack = { showArNavigation = false },
+                onEmergencyCall = onSosClick
             )
             return
         }
@@ -295,7 +310,19 @@ private fun MainScreenContent(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 模块 2：出行导航
+            // 模块 2：AR 实景导航（新增）
+            ModuleCard(
+                title = "AR 实景导航",
+                subtitle = "摄像头实时识别 · 障碍物预警 · 语音播报",
+                icon = Icons.Default.CameraAlt,
+                backgroundColor = Color(0xFFE91E63),
+                onClick = { showArNavigation = true },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 模块 3：出行导航
             ModuleCard(
                 title = "出行导航",
                 subtitle = "路线规划 · 盲道引导 · 交通辅助",
@@ -307,7 +334,7 @@ private fun MainScreenContent(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // 模块 3：场景感知
+            // 模块 4：场景感知
             ModuleCard(
                 title = "场景感知",
                 subtitle = "物体识别 · 场景描述 · 文字朗读",
