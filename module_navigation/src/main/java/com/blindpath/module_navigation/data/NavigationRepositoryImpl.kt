@@ -30,6 +30,8 @@ import com.blindpath.base.common.NavigationInfo
 import com.blindpath.base.common.Result
 import com.blindpath.base.config.AppConfig
 import com.blindpath.module_navigation.data.NavigationCacheManager
+import com.blindpath.module_navigation.data.search.AMapSearchRepository
+import com.blindpath.module_navigation.data.search.SearchResultItem
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.LatLonPoint
 import com.blindpath.module_navigation.domain.model.RouteStep
@@ -64,7 +66,8 @@ import kotlin.math.*
 @Singleton
 class NavigationRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val navigationCacheManager: NavigationCacheManager
+    private val navigationCacheManager: NavigationCacheManager,
+    private val amapSearchRepository: AMapSearchRepository
 ) : NavigationRepository, SensorEventListener {
 
     private val _state = MutableStateFlow(NavigationState())
@@ -785,6 +788,26 @@ class NavigationRepositoryImpl @Inject constructor(
         val fusedLon = gpsLon * weight + pdrLongitude * (1 - weight)
 
         return Pair(fusedLat, fusedLon)
+    }
+
+    // ==================== 高德 HTTP API 搜索 ====================
+
+    /**
+     * POI 关键词搜索（HTTP API，与定位 SDK Key 解耦）
+     * 自动传入当前坐标使结果按距离排序
+     */
+    override suspend fun searchAddress(keywords: String): Result<List<SearchResultItem>> {
+        val location = currentLocation?.let { "${it.longitude},${it.latitude}" }
+        return amapSearchRepository.searchAddress(keywords, location)
+    }
+
+    /**
+     * 输入联想提示（HTTP API）
+     * 自动传入当前坐标优先返回周边结果
+     */
+    override suspend fun getInputTips(keywords: String): Result<List<SearchResultItem>> {
+        val location = currentLocation?.let { "${it.longitude},${it.latitude}" }
+        return amapSearchRepository.getInputTips(keywords, location)
     }
 
     // ==================== 定位相关 ====================
