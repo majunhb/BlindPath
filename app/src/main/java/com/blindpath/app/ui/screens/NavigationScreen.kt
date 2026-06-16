@@ -474,11 +474,6 @@ fun NavigationScreen(
  */
 @EntryPoint
 @InstallIn(SingletonComponent::class)
-/**
- * Hilt EntryPoint for ObstacleRepository in NavigationScreen
- */
-@EntryPoint
-@InstallIn(SingletonComponent::class)
 interface NavigationObstacleEntryPoint {
     fun obstacleRepository(): ObstacleRepository
 }
