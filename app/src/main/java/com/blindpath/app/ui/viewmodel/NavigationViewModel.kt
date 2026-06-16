@@ -322,6 +322,7 @@ class NavigationViewModel @Inject constructor(
                     _searchResults.value = emptyList()
                     _searchError.value = result.message
                 }
+                is Result.Loading -> {}
             }
 
             _isSearching.value = false
@@ -349,6 +350,7 @@ class NavigationViewModel @Inject constructor(
                     _searchResults.value = emptyList()
                     _searchError.value = result.message
                 }
+                is Result.Loading -> {}
             }
 
             _isSearching.value = false
