@@ -4,6 +4,7 @@ import android.view.KeyEvent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.blindpath.base.common.Result
+import com.blindpath.module_navigation.data.search.SearchResultItem
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.LatLonPoint
 import com.blindpath.module_navigation.domain.model.NavigationState
@@ -129,6 +130,17 @@ class NavigationViewModel @Inject constructor(
 
     private val _isCrossingMode = MutableStateFlow(false)
     val isCrossingMode: StateFlow<Boolean> = _isCrossingMode.asStateFlow()
+
+    // ==================== 搜索状态 ====================
+
+    private val _searchResults = MutableStateFlow<List<SearchResultItem>>(emptyList())
+    val searchResults: StateFlow<List<SearchResultItem>> = _searchResults.asStateFlow()
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
+    private val _searchError = MutableStateFlow<String?>(null)
+    val searchError: StateFlow<String?> = _searchError.asStateFlow()
 
     // ==================== 新增：感知层数据融合 ====================
 
@@ -281,6 +293,119 @@ class NavigationViewModel @Inject constructor(
 
     fun exitNavigation() {
         stopNavigation()
+    }
+
+    // ==================== 搜索功能 ====================
+
+    /**
+     * 输入联想提示
+     * 用户输入至少2字后自动触发
+     */
+    fun searchInputTips(keywords: String) {
+        if (keywords.length < 2) {
+            _searchResults.value = emptyList()
+            return
+        }
+
+        viewModelScope.launch {
+            _isSearching.value = true
+            _searchError.value = null
+
+            when (val result = navigationRepository.getInputTips(keywords)) {
+                is Result.Success -> {
+                    _searchResults.value = result.data
+                    if (result.data.isEmpty()) {
+                        _searchError.value = "未找到匹配地址"
+                    }
+                }
+                is Result.Error -> {
+                    _searchResults.value = emptyList()
+                    _searchError.value = result.message
+                }
+            }
+
+            _isSearching.value = false
+        }
+    }
+
+    /**
+     * 关键词搜索
+     */
+    fun searchAddress(keywords: String) {
+        if (keywords.length < 2) return
+
+        viewModelScope.launch {
+            _isSearching.value = true
+            _searchError.value = null
+
+            when (val result = navigationRepository.searchAddress(keywords)) {
+                is Result.Success -> {
+                    _searchResults.value = result.data
+                    if (result.data.isEmpty()) {
+                        _searchError.value = "未找到匹配结果"
+                    }
+                }
+                is Result.Error -> {
+                    _searchResults.value = emptyList()
+                    _searchError.value = result.message
+                }
+            }
+
+            _isSearching.value = false
+        }
+    }
+
+    /**
+     * 选中搜索结果 → 直接设目的地 + 规划路线 + 开始导航
+     * 减少盲人用户操作步骤
+     */
+    fun selectSearchResult(item: SearchResultItem) {
+        viewModelScope.launch {
+            _isPlanning.value = true
+            _searchResults.value = emptyList()
+            voiceRepository.announce("选中${item.toAccessibilityText()}，正在规划路线", VoiceType.SYSTEM_STATUS)
+
+            // 1. 获取当前位置
+            val location = navigationRepository.getCurrentLocation()
+            if (location == null) {
+                voiceRepository.announce("无法获取当前位置，请检查定位权限", VoiceType.SYSTEM_STATUS)
+                _isPlanning.value = false
+                return@launch
+            }
+
+            // 2. 设置目的地
+            _destinationText.value = item.name
+            navigationRepository.setDestination(item.latitude, item.longitude, item.name)
+
+            // 3. 规划路线
+            val routeResult = navigationRepository.planRoute(
+                location.latitude, location.longitude,
+                item.latitude, item.longitude
+            )
+            if (routeResult is Result.Error) {
+                voiceRepository.announce("路线规划失败，请稍后重试", VoiceType.SYSTEM_STATUS)
+                _isPlanning.value = false
+                return@launch
+            }
+
+            // 4. 开始导航
+            navigationRepository.startNavigation()
+            _isPlanning.value = false
+            _isNavigating.value = true
+
+            val state = uiState.value
+            val msg = "路线规划完成，全程${state.totalDistance}，预计${state.totalDuration}。开始导航。"
+            _announcement.value = msg
+            voiceRepository.announce(msg, VoiceType.NAVIGATION_PROGRESS)
+        }
+    }
+
+    /**
+     * 清除搜索结果
+     */
+    fun clearSearchResults() {
+        _searchResults.value = emptyList()
+        _searchError.value = null
     }
 
     // ==================== 1. 四级危险等级评估 ====================
