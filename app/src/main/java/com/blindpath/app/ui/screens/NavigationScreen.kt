@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amap.api.maps.*
 import com.amap.api.maps.model.*
 import com.amap.api.services.core.LatLonPoint
+import com.blindpath.module_navigation.data.search.SearchResultItem
 import com.blindpath.app.ui.viewmodel.NavigationViewModel
 import com.blindpath.module_navigation.domain.model.RouteStep
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
@@ -78,6 +79,9 @@ fun NavigationScreen(
     val destinationText by viewModel.destinationText.collectAsStateWithLifecycle()
     val isPlanning by viewModel.isPlanning.collectAsStateWithLifecycle()
     val announcement by viewModel.announcement.collectAsStateWithLifecycle()
+    val searchResults by viewModel.searchResults.collectAsStateWithLifecycle()
+    val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
+    val searchError by viewModel.searchError.collectAsStateWithLifecycle()
 
     var hasPermission by remember {
         mutableStateOf(
@@ -178,7 +182,7 @@ fun NavigationScreen(
             // 导航信息面板
             Column(modifier = Modifier.fillMaxWidth().weight(0.4f).padding(12.dp)) {
                 if (!uiState.isRunning && !isPlanning) {
-                    // 目的地输入
+                    // 目的地搜索
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("智能导航", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -191,29 +195,106 @@ fun NavigationScreen(
                             Spacer(modifier = Modifier.height(12.dp))
                             OutlinedTextField(
                                 value = destinationText,
-                                onValueChange = { viewModel.updateDestination(it) },
+                                onValueChange = { 
+                                    viewModel.updateDestination(it)
+                                    // 输入超过2字自动联想
+                                    if (it.length >= 2) {
+                                        viewModel.searchInputTips(it)
+                                    } else {
+                                        viewModel.clearSearchResults()
+                                    }
+                                },
                                 label = { Text("目的地") },
-                                placeholder = { Text("例如：天安门广场、北京南站") },
-                                modifier = Modifier.fillMaxWidth(),
+                                placeholder = { Text("输入至少2个字自动搜索...") },
+                                modifier = Modifier.fillMaxWidth().semantics {
+                                    contentDescription = "目的地搜索输入框，输入地址或地名进行搜索"
+                                },
                                 singleLine = true,
-                                supportingText = { Text("支持地址、地标、建筑名称") }
+                                supportingText = {
+                                    if (isSearching) {
+                                        Text("正在搜索...")
+                                    } else if (searchError != null) {
+                                        Text(searchError ?: "", color = MaterialTheme.colorScheme.error)
+                                    } else {
+                                        Text("输入地址、地标或建筑名称，自动联想匹配")
+                                    }
+                                }
                             )
                             Spacer(modifier = Modifier.height(12.dp))
+                            
+                            // 搜索结果列表（无障碍适配）
+                            if (searchResults.isNotEmpty()) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                ) {
+                                    Column {
+                                        searchResults.forEach { item ->
+                                            OutlinedButton(
+                                                onClick = { viewModel.selectSearchResult(item) },
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .semantics {
+                                                        contentDescription = item.toAccessibilityText()
+                                                    }
+                                            ) {
+                                                Column(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalAlignment = Alignment.Start
+                                                ) {
+                                                    Text(
+                                                        item.name,
+                                                        fontWeight = FontWeight.Bold,
+                                                        style = MaterialTheme.typography.bodyLarge
+                                                    )
+                                                    Text(
+                                                        item.address,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                    if (item.distance > 0) {
+                                                        val distText = if (item.distance >= 1000) {
+                                                            "%.1f公里".format(item.distance / 1000.0)
+                                                        } else {
+                                                            "%d米".format(item.distance)
+                                                        }
+                                                        Text(
+                                                            "距离约$distText",
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = MaterialTheme.colorScheme.primary
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+                            
                             Button(
-                                onClick = { viewModel.startNavigation() },
+                                onClick = { viewModel.searchAddress(destinationText) },
                                 modifier = Modifier.fillMaxWidth().height(52.dp),
-                                enabled = destinationText.isNotBlank()
+                                enabled = destinationText.isNotBlank() && !isSearching
                             ) {
-                                Icon(Icons.Default.Menu, contentDescription = null)
+                                Icon(Icons.Default.LocationOn, contentDescription = null)
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("开始导航", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                Text("搜索", fontSize = 18.sp, fontWeight = FontWeight.Bold)
                             }
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("常用目的地：", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.height(6.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 listOf("天安门广场", "北京西站", "北京南站", "首都机场T3").forEach { p ->
-                                    AssistChip(onClick = { viewModel.updateDestination(p) }, label = { Text(p, fontSize = 12.sp) })
+                                    AssistChip(
+                                        onClick = { 
+                                            viewModel.updateDestination(p)
+                                            viewModel.searchAddress(p)
+                                        }, 
+                                        label = { Text(p, fontSize = 12.sp) }
+                                    )
                                 }
                             }
                         }
@@ -388,6 +469,11 @@ fun NavigationScreen(
     }
 }
 
+/**
+ * Hilt EntryPoint for ObstacleRepository in NavigationScreen
+ */
+@EntryPoint
+@InstallIn(SingletonComponent::class)
 /**
  * Hilt EntryPoint for ObstacleRepository in NavigationScreen
  */
