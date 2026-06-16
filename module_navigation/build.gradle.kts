@@ -13,6 +13,13 @@ android {
         minSdk = libs.versions.minSdk.get().toInt()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
+        
+        // 高德地图 Web 服务 Key（HTTP API 搜索用）
+        buildConfigField("String", "AMAP_WEB_KEY", ""${project.findProperty("AMAP_WEB_KEY") ?: ""}"")
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {
@@ -45,6 +52,12 @@ dependencies {
     // Location + 高德地图（组合包：地图+定位+搜索）
     implementation(libs.play.services.location)
     implementation(libs.amap.location.search)
+
+    // Retrofit + Gson + OkHttp（HTTP API 搜索）
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
+    implementation(libs.gson)
+    implementation(libs.okhttp.logging)
 
     // Timber
     implementation(libs.timber)
