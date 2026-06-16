@@ -73,10 +73,8 @@ retrofit = "2.9.0"
 gson = "2.10.1"
 okhttp-logging = "4.12.0"
 
-# Map
-# 高德地图SDK版本：地图10.0.0，搜索9.8.0（搜索SDK最新版本）
-amap-maps = "10.0.0"
-amap-search = "9.8.0"
+# Map - 高德地图SDK（组合包包含地图+定位+搜索）
+amap = "10.1.700_loc6.5.1_sea9.7.4"
 
 # Porcupine
 porcupine-android = "3.0.1"
@@ -179,10 +177,8 @@ retrofit-converter-gson = { group = "com.squareup.retrofit2", name = "converter-
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp-logging" }
 
-# Map - 高德地图SDK
-amap-maps = { group = "com.amap.api", name = "maps", version.ref = "amap-maps" }
-amap-location-search = { group = "com.amap.api", name = "location", version.ref = "amap-maps" }
-amap-search = { group = "com.amap.api", name = "search", version.ref = "amap-search" }
+# Map - 高德地图SDK（组合包包含地图+定位+搜索）
+amap-location-search = { group = "com.amap.api", name = "3dmap-location-search", version.ref = "amap" }
 
 # Porcupine
 porcupine-android = { group = "ai.picovoice", name = "porcupine-android", version.ref = "porcupine-android" }

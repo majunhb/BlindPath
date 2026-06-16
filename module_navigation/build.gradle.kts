@@ -42,11 +42,9 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
     
-    // Location
+    // Location + 高德地图（组合包：地图+定位+搜索）
     implementation(libs.play.services.location)
     implementation(libs.amap.location.search)
-    // 高德搜索 SDK - 必须添加！包含地理编码、逆地理编码、路径规划、POI搜索等功能
-    implementation(libs.amap.search)
 
     // Timber
     implementation(libs.timber)
