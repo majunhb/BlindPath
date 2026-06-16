@@ -219,6 +219,7 @@ fun MainScreen(
         onSettingsClick = { showSettings = true },
         onCommunityClick = { showCommunity = true },
         onTripAssistClick = { showTripAssist = true },
+        onArNavigationClick = { showArNavigation = true },
         onSosClick = onSosClick,
         onStartListening = { viewModel.startListening() },
         onStopListening = { viewModel.stopListening() },
@@ -242,6 +243,7 @@ private fun MainScreenContent(
     onSettingsClick: () -> Unit,
     onCommunityClick: () -> Unit,
     onTripAssistClick: () -> Unit,
+    onArNavigationClick: () -> Unit,
     onSosClick: () -> Unit,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
@@ -310,7 +312,7 @@ private fun MainScreenContent(
                 subtitle = "摄像头实时识别 · 障碍物预警 · 语音播报",
                 icon = Icons.Default.CameraAlt,
                 backgroundColor = Color(0xFFE91E63),
-                onClick = { showArNavigation = true },
+                onClick = onArNavigationClick,
                 modifier = Modifier.fillMaxWidth()
             )
 
