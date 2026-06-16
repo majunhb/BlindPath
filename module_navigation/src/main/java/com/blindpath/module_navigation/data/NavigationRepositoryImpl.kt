@@ -242,6 +242,26 @@ class NavigationRepositoryImpl @Inject constructor(
 
     // ==================== 高德地理编码 ====================
 
+    /**
+     * 高德错误码说明
+     * 1000: 成功
+     * 1801: 协议解析错误/恶意访问
+     * 1802: SIGN错误（签名验证失败）
+     * 1803: 服务正在维护/KEY不正确
+     * 1804: 权限不足（未开通相关服务）
+     * 其他: 未知错误
+     */
+    private fun getGeocodeErrorMessage(code: Int, query: String): String {
+        return when (code) {
+            1000 -> "地理编码成功"
+            1801 -> "地理编码失败(1801): 协议解析错误，请检查网络或联系开发者"
+            1802 -> "地理编码失败(1802): 签名验证失败，请检查高德地图API Key配置"
+            1803 -> "地理编码失败(1803): Key被禁用或服务不可用，请检查高德控制台"
+            1804 -> "地理编码失败(1804): 权限不足，请确认已在高德开放平台开通「地理编码」服务"
+            else -> "地理编码失败($code): 无法识别地址「$query」"
+        }
+    }
+
     override suspend fun geocodeDestination(text: String): Result<LatLonPoint> {
         return withTimeoutOrNull(20000L) {
             suspendCancellableCoroutine { cont ->
@@ -257,13 +277,15 @@ class NavigationRepositoryImpl @Inject constructor(
                                 Timber.d("Geocode success: (${point.latitude}, ${point.longitude})")
                                 cont.resume(Result.Success(LatLonPoint(point.latitude, point.longitude)))
                             } else {
-                                Timber.e("Geocode failed: code=$code, result=$result, query=$text")
-                                cont.resume(Result.Error(message = "地理编码失败: 无法识别地址 '$text'"))
+                                val errorMsg = getGeocodeErrorMessage(code, text)
+                                Timber.e("Geocode failed: code=$code, query=$text, errorMsg=$errorMsg")
+                                _state.update { it.copy(lastError = errorMsg) }
+                                cont.resume(Result.Error(message = errorMsg))
                             }
                         }
                     })
 
-                    // 先尝试不带城市参数
+                    // 先尝试不带城市参数（全国搜索）
                     val query = GeocodeQuery(text, "")
                     search.getFromLocationNameAsyn(query)
 
@@ -272,10 +294,16 @@ class NavigationRepositoryImpl @Inject constructor(
                     }
                 } catch (e: Exception) {
                     Timber.e(e, "Geocode exception for: $text")
-                    cont.resume(Result.Error(message = e.message ?: "地理编码异常"))
+                    val errorMsg = "地理编码异常: ${e.message}"
+                    _state.update { it.copy(lastError = errorMsg) }
+                    cont.resume(Result.Error(message = errorMsg))
                 }
             }
-        } ?: Result.Error(message = "地理编码超时")
+        } ?: run {
+            val errorMsg = "地理编码超时，请检查网络连接"
+            _state.update { it.copy(lastError = errorMsg) }
+            Result.Error(message = errorMsg)
+        }
     }
 
     // ==================== 智能路径规划增强 ====================
