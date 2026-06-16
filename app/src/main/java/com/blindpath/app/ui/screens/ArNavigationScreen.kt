@@ -52,7 +52,7 @@ fun ArNavigationScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
-    val navigationState by navigationViewModel.navigationState.collectAsState()
+    val navigationState by navigationViewModel.uiState.collectAsState()
     val uiState by viewModel.uiState.collectAsState()
     val obstacleState by viewModel.obstacleState.collectAsState()
     val tactilePavingResult by viewModel.tactilePavingResult.collectAsState()

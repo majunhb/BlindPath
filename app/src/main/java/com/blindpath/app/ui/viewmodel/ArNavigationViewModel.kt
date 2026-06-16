@@ -143,10 +143,12 @@ class ArNavigationViewModel @Inject constructor(
         val alert = state?.currentAlert ?: return
 
         if (alert.level == com.blindpath.base.common.AlertLevel.DANGER) {
-            val warning = alert.message.ifEmpty { "前方有障碍物，请注意安全" }
+            val warning = alert.description.ifEmpty { "前方有障碍物，请注意安全" }
             if (warning != lastWarningText) {
                 lastWarningText = warning
-                voiceRepository.announce(warning, VoiceType.OBSTACLE_DANGER)
+                viewModelScope.launch {
+                    voiceRepository.announce(warning, VoiceType.OBSTACLE_DANGER)
+                }
                 _uiState.value = _uiState.value.copy(
                     warningText = warning,
                     dangerLevel = DangerLevel.CRITICAL
@@ -154,7 +156,7 @@ class ArNavigationViewModel @Inject constructor(
             }
         } else if (alert.level == com.blindpath.base.common.AlertLevel.WARNING) {
             _uiState.value = _uiState.value.copy(
-                warningText = alert.message,
+                warningText = alert.description,
                 dangerLevel = DangerLevel.HIGH
             )
         }

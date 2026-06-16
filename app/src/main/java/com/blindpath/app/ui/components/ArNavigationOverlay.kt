@@ -114,7 +114,7 @@ fun ArNavigationOverlay(
                                 val boxWidth = box.width * size.width
                                 val boxHeight = box.height * size.height
 
-                                val color = when (obstacle.type.severity) {
+                                val boxColor = when (obstacle.type.severity) {
                                     3 -> Color.Red
                                     2 -> Color(0xFFFFA500)
                                     else -> Color.Yellow
@@ -122,7 +122,7 @@ fun ArNavigationOverlay(
 
                                 // 绘制包围框
                                 drawRect(
-                                    color = color.copy(alpha = 0.6f),
+                                    color = boxColor.copy(alpha = 0.6f),
                                     topLeft = Offset(left, top),
                                     size = Size(boxWidth, boxHeight),
                                     style = Stroke(width = 3f)
@@ -132,7 +132,7 @@ fun ArNavigationOverlay(
                                 val label = "${obstacle.type.chineseName} ${obstacle.distance.toInt()}m"
                                 drawContext.canvas.nativeCanvas.apply {
                                     val paint = android.graphics.Paint().apply {
-                                        color = color.toArgb()
+                                        this.color = boxColor.toArgb()
                                         alpha = 200
                                         textSize = 40f
                                         isAntiAlias = true
@@ -143,7 +143,7 @@ fun ArNavigationOverlay(
                                         left + textWidth + 10f, top - 5f,
                                         8f, 8f,
                                         android.graphics.Paint().apply {
-                                            color = color.toArgb()
+                                            this.color = boxColor.toArgb()
                                             alpha = 180
                                         }
                                     )
