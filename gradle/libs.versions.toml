@@ -140,6 +140,7 @@ camerax-view = { group = "androidx.camera", name = "camera-view", version.ref = 
 mlkit-obj-detection = { group = "com.google.mlkit", name = "object-detection", version.ref = "mlkit-obj-detection" }
 mlkit-image-labeling = { group = "com.google.mlkit", name = "image-labeling", version.ref = "mlkit-image-labeling" }
 mlkit-text-recognition = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkit-text-recognition" }
+mlkit-text-recognition-chinese = { group = "com.google.mlkit", name = "text-recognition-chinese", version.ref = "mlkit-text-recognition" }
 
 # TensorFlow
 tensorflow-lite = { group = "org.tensorflow", name = "tensorflow-lite", version.ref = "tensorflow-lite" }
