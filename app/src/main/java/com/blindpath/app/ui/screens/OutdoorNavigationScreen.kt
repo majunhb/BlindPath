@@ -684,23 +684,35 @@ fun OutdoorNavigationScreen(
                     )
                 }
 
-                // ★ AR实景导航悬浮按钮（地图区域底部居中，类似高德地图风格）
-                FloatingActionButton(
+                // ★ AR实景导航按钮（高德地图风格 — 底部居中，带文字标签的圆角按钮）
+                // 参考高德：导航界面左下角AR按钮，醒目大尺寸
+                Button(
                     onClick = {
                         viewModel.speak("切换到AR实景导航模式")
                         onSwitchToAr()
                     },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 12.dp),
-                    containerColor = Color.White,
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
+                        .padding(bottom = 16.dp)
+                        .height(44.dp),
+                    shape = RoundedCornerShape(22.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White,
+                        contentColor = Color(0xFF1B5E20)
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 8.dp)
                 ) {
                     Icon(
                         Icons.Default.CameraAlt,
-                        contentDescription = "AR实景导航",
-                        tint = Color(0xFF4CAF50),
-                        modifier = Modifier.size(24.dp)
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = Color(0xFF4CAF50)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        "AR实景导航",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
                     )
                 }
             }
@@ -769,24 +781,30 @@ fun OutdoorNavigationScreen(
  */
 private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
     return try {
-        val planes = imageProxy.planes
-        val yBuffer = planes[0].buffer
-        val uBuffer = planes[1].buffer
-        val vBuffer = planes[2].buffer
-        val ySize = yBuffer.remaining()
-        val uSize = uBuffer.remaining()
-        val vSize = vBuffer.remaining()
-        val nv21 = ByteArray(ySize + uSize + vSize)
-        yBuffer.get(nv21, 0, ySize)
-        vBuffer.get(nv21, ySize, vSize)
-        uBuffer.get(nv21, ySize + vSize, uSize)
-        val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, null)
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(android.graphics.Rect(0, 0, imageProxy.width, imageProxy.height), 80, out)
-        val jpegBytes = out.toByteArray()
-        android.graphics.BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+        // CameraX 1.3.0+ 内置方法，正确处理 YUV_420_888 → ARGB Bitmap
+        imageProxy.toBitmap()
     } catch (e: Exception) {
-        null
+        try {
+            // 降级方案：手动 YUV → NV21 → JPEG → Bitmap
+            val planes = imageProxy.planes
+            val yBuffer = planes[0].buffer
+            val uBuffer = planes[1].buffer
+            val vBuffer = planes[2].buffer
+            val ySize = yBuffer.remaining()
+            val uSize = uBuffer.remaining()
+            val vSize = vBuffer.remaining()
+            val nv21 = ByteArray(ySize + uSize + vSize)
+            yBuffer.get(nv21, 0, ySize)
+            vBuffer.get(nv21, ySize, vSize)
+            uBuffer.get(nv21, ySize + vSize, uSize)
+            val yuvImage = YuvImage(nv21, ImageFormat.NV21, imageProxy.width, imageProxy.height, null)
+            val out = ByteArrayOutputStream()
+            yuvImage.compressToJpeg(android.graphics.Rect(0, 0, imageProxy.width, imageProxy.height), 80, out)
+            val jpegBytes = out.toByteArray()
+            android.graphics.BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+        } catch (e2: Exception) {
+            null
+        }
     }
 }
 
