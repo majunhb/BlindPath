@@ -54,6 +54,7 @@ dependencies {
 
     // ML Kit Text Recognition (OCR)
     implementation(libs.mlkit.text.recognition)
+    implementation(libs.mlkit.text.recognition.chinese)
 
     // TensorFlow Lite
     implementation(libs.tensorflow.lite)
