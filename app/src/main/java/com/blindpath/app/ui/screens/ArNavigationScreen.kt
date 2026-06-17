@@ -1,6 +1,5 @@
 package com.blindpath.app.ui.screens
 
-import android.graphics.Bitmap
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.CircularProgressIndicator
@@ -15,7 +14,6 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.blindpath.app.ui.camera.CameraXManager
 import com.blindpath.app.ui.components.ArNavigationOverlay
-import com.blindpath.app.ui.components.DangerLevel
 import com.blindpath.app.ui.viewmodel.ArNavigationViewModel
 import com.blindpath.app.ui.viewmodel.NavigationViewModel
 import com.blindpath.module_voice.domain.model.VoiceType
@@ -26,7 +24,6 @@ import dagger.hilt.components.SingletonComponent
 import com.blindpath.module_voice.domain.VoiceRepository
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 /**
  * AR 实景导航屏幕
@@ -175,19 +172,29 @@ fun ArNavigationScreen(
     // ============================================================
     // 生命周期管理
     // ============================================================
-    DisposableEffect(Unit) {
-        // 订阅 CameraX 帧流
+
+    // 订阅 CameraX 帧流 — 使用 uiState 作为 key 确保 isArActive 始终是最新值
+    DisposableEffect(uiState.isArActive) {
+        if (!uiState.isArActive) {
+            onDispose { }
+            return@DisposableEffect
+        }
+
         val job = scope.launch {
             cameraXManager.frameFlow.collectLatest { bitmap ->
-                if (uiState.isArActive) {
-                    viewModel.processFrame(bitmap)
-                }
+                viewModel.processFrame(bitmap)
             }
         }
 
         onDispose {
-            viewModel.stopStatusReport()
             job.cancel()
+        }
+    }
+
+    // 生命周期解绑 — 独立 effect，确保退出时 CameraX 正确释放
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.stopStatusReport()
             cameraXManager.unbind()
         }
     }

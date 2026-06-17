@@ -15,6 +15,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,6 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 /**
@@ -77,6 +79,7 @@ class ArNavigationViewModel @Inject constructor(
 
     /**
      * 初始化 AR 导航
+     * 即使模型加载失败也不阻塞 AR 预览——CameraX 预览始终可用
      */
     fun initialize() {
         viewModelScope.launch {
@@ -85,15 +88,19 @@ class ArNavigationViewModel @Inject constructor(
                 if (initResult is com.blindpath.base.common.Result.Success) {
                     obstacleRepository.loadModel()
                     obstacleRepository.startDetection()
-                    _uiState.value = _uiState.value.copy(isInitialized = true)
-                    voiceRepository.speak("AR实景导航已启动")
-                    Timber.i("ArNavViewModel: initialized")
+                    Timber.i("ArNavViewModel: obstacle detection initialized")
+                } else {
+                    Timber.w("ArNavViewModel: obstacle detection init returned non-Success")
                 }
             } catch (e: Exception) {
                 Timber.e(e, "ArNavViewModel: init failed")
                 _uiState.value = _uiState.value.copy(
-                    errorMessage = "初始化失败: ${e.message}"
+                    errorMessage = "障碍物检测初始化失败，AR预览仍可用"
                 )
+            } finally {
+                // 无论初始化成功与否，都允许 AR 预览启动
+                _uiState.value = _uiState.value.copy(isInitialized = true)
+                voiceRepository.speak("AR实景导航已启动")
             }
         }
     }
@@ -103,7 +110,7 @@ class ArNavigationViewModel @Inject constructor(
     // ============================================================
 
     /**
-     * 处理摄像头帧
+     * 处理摄像头帧（在后台线程执行 CPU 密集型操作）
      * 同时执行障碍物检测和盲道检测
      */
     fun processFrame(bitmap: Bitmap) {
@@ -111,26 +118,34 @@ class ArNavigationViewModel @Inject constructor(
 
         // 每 5 帧处理一次障碍物检测（节省算力）
         if (frameCount % 5 == 0L) {
-            try {
-                val stream = ByteArrayOutputStream()
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
-                val bytes = stream.toByteArray()
-                viewModelScope.launch {
-                    obstacleRepository.processFrame(bytes, bitmap.width, bitmap.height)
+            viewModelScope.launch {
+                try {
+                    val bytes = withContext(Dispatchers.Default) {
+                        val stream = ByteArrayOutputStream()
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 80, stream)
+                        stream.toByteArray()
+                    }
+                    withContext(Dispatchers.Default) {
+                        obstacleRepository.processFrame(bytes, bitmap.width, bitmap.height)
+                    }
+                } catch (e: Exception) {
+                    Timber.w(e, "ArNavViewModel: processFrame failed")
                 }
-            } catch (e: Exception) {
-                Timber.w(e, "ArNavViewModel: processFrame failed")
             }
         }
 
-        // 每 3 帧处理一次盲道检测
+        // 每 3 帧处理一次盲道检测（CPU 密集型 CV 运算，后台线程执行）
         if (frameCount % 3 == 0L) {
-            try {
-                val result = tactilePavingDetector.detect(bitmap)
-                _tactilePavingResult.value = result
-                handlePavingAlert(result)
-            } catch (e: Exception) {
-                Timber.w(e, "ArNavViewModel: tactile paving detection failed")
+            viewModelScope.launch {
+                try {
+                    val result = withContext(Dispatchers.Default) {
+                        tactilePavingDetector.detect(bitmap)
+                    }
+                    _tactilePavingResult.value = result
+                    handlePavingAlert(result)
+                } catch (e: Exception) {
+                    Timber.w(e, "ArNavViewModel: tactile paving detection failed")
+                }
             }
         }
     }

@@ -16,7 +16,6 @@ import androidx.lifecycle.LifecycleOwner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber
 import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -118,6 +117,10 @@ class CameraXManager @Inject constructor(
                 Timber.i("CameraXManager: bound successfully")
             } catch (e: Exception) {
                 Timber.e(e, "CameraXManager: bind failed")
+                // 回滚状态，避免残留导致下次 bind 被跳过
+                lifecycleOwner?.lifecycle?.removeObserver(lifecycleObserver)
+                lifecycleOwner = null
+                surfaceProvider = null
             }
         }, ContextCompat.getMainExecutor(context))
     }
@@ -156,32 +159,14 @@ class CameraXManager @Inject constructor(
 
     /**
      * 将 ImageProxy (YUV_420_888) 转换为 ARGB_8888 Bitmap
+     * 正确处理 pixelStride 和 rowStride，兼容所有设备
      */
     private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
         return try {
-            val yBuffer = imageProxy.planes[0].buffer
-            val uBuffer = imageProxy.planes[1].buffer
-            val vBuffer = imageProxy.planes[2].buffer
-
-            val ySize = yBuffer.remaining()
-            val uSize = uBuffer.remaining()
-            val vSize = vBuffer.remaining()
-
-            val nv21 = ByteArray(ySize + uSize + vSize)
-            yBuffer.get(nv21, 0, ySize)
-            vBuffer.get(nv21, ySize, vSize)
-            uBuffer.get(nv21, ySize + vSize, uSize)
-
-            val yuvImage = YuvImage(
-                nv21,
-                ImageFormat.NV21,
-                imageProxy.width,
-                imageProxy.height,
-                null
-            )
+            val yuvImage = imageProxyToYuvImage(imageProxy)
             val out = ByteArrayOutputStream()
             yuvImage.compressToJpeg(
-                android.graphics.Rect(0, 0, imageProxy.width, imageProxy.height),
+                android.graphics.Rect(0, 0, yuvImage.width, yuvImage.height),
                 80,
                 out
             )
@@ -191,5 +176,65 @@ class CameraXManager @Inject constructor(
             Timber.w(e, "CameraXManager: imageProxyToBitmap failed")
             null
         }
+    }
+
+    /**
+     * 将 YUV_420_888 ImageProxy 正确转换为 NV21 YuvImage
+     * 处理不同设备的 pixelStride/rowStride 差异
+     */
+    private fun imageProxyToYuvImage(imageProxy: ImageProxy): YuvImage {
+        val planes = imageProxy.planes
+        val yPlane = planes[0]
+        val uPlane = planes[1]
+        val vPlane = planes[2]
+
+        val width = imageProxy.width
+        val height = imageProxy.height
+
+        val nv21 = ByteArray(width * height * 3 / 2)
+        var pos = 0
+
+        // Y 平面：逐行拷贝，处理 rowStride
+        val yBuffer = yPlane.buffer
+        val yRowStride = yPlane.rowStride
+        val yPixelStride = yPlane.pixelStride
+        if (yPixelStride == 1) {
+            // 连续像素，直接逐行拷贝
+            for (row in 0 until height) {
+                val offset = row * yRowStride
+                yBuffer.position(offset)
+                yBuffer.get(nv21, pos, width)
+                pos += width
+            }
+        } else {
+            // 非连续像素（罕见），逐像素拷贝
+            for (row in 0 until height) {
+                for (col in 0 until width) {
+                    nv21[pos++] = yBuffer.get(row * yRowStride + col * yPixelStride)
+                }
+            }
+        }
+
+        // UV 交错：VUVUVU... (NV21 格式)
+        val uvHeight = height / 2
+        val uvWidth = width / 2
+        val uRowStride = uPlane.rowStride
+        val vRowStride = vPlane.rowStride
+        val uPixelStride = uPlane.pixelStride
+        val vPixelStride = vPlane.pixelStride
+
+        val uBuffer = uPlane.buffer
+        val vBuffer = vPlane.buffer
+
+        for (row in 0 until uvHeight) {
+            for (col in 0 until uvWidth) {
+                val u = uBuffer.get(row * uRowStride + col * uPixelStride)
+                val v = vBuffer.get(row * vRowStride + col * vPixelStride)
+                nv21[pos++] = v  // V 在前 (NV21)
+                nv21[pos++] = u  // U 在后
+            }
+        }
+
+        return YuvImage(nv21, ImageFormat.NV21, width, height, null)
     }
 }
