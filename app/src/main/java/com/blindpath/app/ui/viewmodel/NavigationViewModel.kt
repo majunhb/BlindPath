@@ -19,6 +19,11 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import com.blindpath.base.navigation.NavigationMode
 import com.blindpath.base.navigation.NavigationModeManager
+import com.blindpath.base.navigation.BlindPathGuidanceEngine
+import com.blindpath.base.navigation.TrafficLightAnnouncer
+import com.blindpath.base.perception.LowLightDetector
+import com.blindpath.module_obstacle.data.detection.TactilePavingResult
+import com.blindpath.module_obstacle.data.detection.TrafficLightState
 import javax.inject.Inject
 
 /**
@@ -116,6 +121,31 @@ class NavigationViewModel @Inject constructor(
     val currentNavigationMode = modeManager.currentMode
     val isModeTransitioning = modeManager.isTransitioning
 
+    // ==================== PRD V2.0 第二期：盲道引导引擎 ====================
+
+    /** 盲道实时引导引擎 — 接收检测结果，生成语音引导 */
+    val blindPathGuidance = BlindPathGuidanceEngine()
+
+    /** 盲道引导状态流 */
+    val blindPathGuidanceState = blindPathGuidance.state
+
+    // ==================== PRD V2.0 第二期：红绿灯定时播报 ====================
+
+    /** 红绿灯定时播报器 — 红灯10秒重复播报，绿灯即时播报 */
+    val trafficLightAnnouncer = TrafficLightAnnouncer()
+
+    /** 红绿灯播报状态流 */
+    val trafficLightAnnouncerState = trafficLightAnnouncer.state
+
+    // ==================== PRD V2.0 第二期：弱光检测 ====================
+
+    /** 弱光检测器 */
+    val lowLightDetector = LowLightDetector()
+
+    /** 弱光状态流 */
+    private val _lowLightState = MutableStateFlow(LowLightDetector.LowLightState())
+    val lowLightState: StateFlow<LowLightDetector.LowLightState> = _lowLightState.asStateFlow()
+
     // ==================== 原有状态 ====================
 
     private val _uiState = MutableStateFlow(NavigationState())
@@ -181,6 +211,17 @@ class NavigationViewModel @Inject constructor(
     val isNavigating: StateFlow<Boolean> = _isNavigating.asStateFlow()
 
     init {
+        // PRD V2.0 第二期：初始化红绿灯播报器回调
+        trafficLightAnnouncer.setAnnounceCallback { state, message ->
+            viewModelScope.launch {
+                val voiceType = when (state) {
+                    TrafficLightState.GREEN -> VoiceType.NAVIGATION_TURN
+                    else -> VoiceType.SYSTEM_STATUS
+                }
+                voiceRepository.announce(message, voiceType)
+            }
+        }
+
         viewModelScope.launch {
             navigationRepository.navigationState.collect { state ->
                 val prevState = _uiState.value
@@ -772,5 +813,91 @@ class NavigationViewModel @Inject constructor(
      */
     fun setNavigationModeImmediately(mode: NavigationMode) {
         modeManager.setModeImmediately(mode)
+    }
+
+    // ==================== PRD V2.0 第二期：盲道检测接入导航主流程 ====================
+
+    /**
+     * 处理盲道检测结果，生成实时语音引导
+     *
+     * 由相机帧处理循环调用，每次获得 TactilePavingDetector 结果时调用。
+     * 内部通过 BlindPathGuidanceEngine 生成引导指令，
+     * 当 shouldSpeak=true 时自动触发语音播报。
+     *
+     * @param result 盲道检测结果，null表示未检测到
+     */
+    fun processBlindPathDetection(result: TactilePavingResult?) {
+        val guidanceState = blindPathGuidance.processFrame(result)
+
+        if (guidanceState.shouldSpeak && guidanceState.instruction.isNotEmpty()) {
+            viewModelScope.launch {
+                voiceRepository.announce(
+                    guidanceState.instruction,
+                    VoiceType.NAVIGATION_TURN
+                )
+            }
+        }
+
+        // 更新盲道可见状态到人行道状态
+        updateSidewalkStatus(
+            SidewalkStatus(
+                isOnSidewalk = guidanceState.isBlindPathVisible,
+                confidence = guidanceState.confidence,
+                distanceToBreak = if (!guidanceState.isBlindPathVisible) 0f else null
+            )
+        )
+    }
+
+    // ==================== PRD V2.0 第二期：红绿灯定时播报接入 ====================
+
+    /**
+     * 处理红绿灯分类结果
+     *
+     * 替代原有的 updateTrafficLightState，增加定时播报逻辑：
+     * - 红灯/黄灯：每10秒重复播报
+     * - 绿灯：即时播报
+     * - 未知：停止播报
+     *
+     * @param state 红绿灯分类结果
+     */
+    fun processTrafficLightDetection(state: TrafficLightState) {
+        // 更新原有状态
+        _trafficLightState.value = state
+
+        // 触发定时播报器
+        trafficLightAnnouncer.updateState(state)
+
+        // 更新过街决策
+        evaluateCrossingStatus()
+    }
+
+    // ==================== PRD V2.0 第二期：弱光检测接入 ====================
+
+    /**
+     * 处理弱光检测结果
+     *
+     * 由相机帧处理循环调用，在检测障碍物之前先检测环境光线。
+     * 当弱光环境检测到时，UI层会自动启用屏幕补光。
+     *
+     * @param bitmap 相机帧
+     * @return 弱光状态
+     */
+    fun processLowLightDetection(bitmap: android.graphics.Bitmap): LowLightDetector.LowLightState {
+        val state = lowLightDetector.detect(bitmap)
+        _lowLightState.value = state
+
+        // 弱光状态变化时语音提醒
+        val wasLowLight = _lowLightState.value.isLowLight
+        if (state.isLowLight && !wasLowLight) {
+            viewModelScope.launch {
+                voiceRepository.announce("环境光线较暗，已开启屏幕补光", VoiceType.SYSTEM_STATUS)
+            }
+        } else if (!state.isLowLight && wasLowLight) {
+            viewModelScope.launch {
+                voiceRepository.announce("环境光线恢复正常，已关闭屏幕补光", VoiceType.SYSTEM_STATUS)
+            }
+        }
+
+        return state
     }
 }

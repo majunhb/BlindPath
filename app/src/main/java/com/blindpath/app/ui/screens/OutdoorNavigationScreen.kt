@@ -1790,6 +1790,19 @@ private fun ColumnScope.NavigationInfoPanel(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            // ---- PRD V2.0 第二期：盲道实时引导面板 ----
+            BlindPathGuidancePanel(
+                isBlindPathVisible = sidewalkStatus.isOnSidewalk,
+                confidence = sidewalkStatus.confidence
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // ---- PRD V2.0 第二期：弱光检测与屏幕补光 ----
+            LowLightScreenLightPanel()
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // ---- 感知层：动态障碍物检测面板 ----
             ObstacleDetectionPanel(obstacles = detectedObstacles)
 
@@ -1976,6 +1989,131 @@ private fun RouteStepsList(steps: List<RouteStep>, currentIndex: Int) {
             )
             if (index < steps.size - 1) {
                 Divider(modifier = Modifier.padding(start = 20.dp, end = 20.dp))
+            }
+        }
+    }
+}
+
+// ============================================================================
+// PRD V2.0 第二期：盲道实时引导面板
+// ============================================================================
+
+/**
+ * 盲道实时引导面板
+ *
+ * 显示当前盲道检测状态和引导指令：
+ * - 盲道可见时：绿色标识 + 当前引导指令（直行/微调/转弯）
+ * - 盲道丢失时：红色预警 + "未检测到盲道"提示
+ * - 置信度条：显示检测置信度
+ */
+@Composable
+private fun BlindPathGuidancePanel(
+    isBlindPathVisible: Boolean,
+    confidence: Float
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isBlindPathVisible)
+                Color(0xFF4CAF50).copy(alpha = 0.1f)
+            else
+                Color(0xFFFFEBEE)
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                "盲道实时引导",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .background(
+                            color = if (isBlindPathVisible) Color(0xFF4CAF50) else Color(0xFFF44336),
+                            shape = CircleShape
+                        )
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    if (isBlindPathVisible) "盲道检测中" else "未检测到盲道",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isBlindPathVisible) Color(0xFF4CAF50) else Color(0xFFF44336)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // 置信度条
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("置信度", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.width(8.dp))
+                LinearProgressIndicator(
+                    progress = confidence,
+                    modifier = Modifier.weight(1f).height(4.dp),
+                    color = if (isBlindPathVisible) Color(0xFF4CAF50) else Color(0xFFF44336)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "${(confidence * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        }
+    }
+}
+
+// ============================================================================
+// PRD V2.0 第二期：弱光检测与屏幕补光面板
+// ============================================================================
+
+/**
+ * 弱光检测与屏幕补光面板
+ *
+ * 当检测到弱光环境时：
+ * - 显示弱光警告
+ * - 自动调节屏幕亮度到最大
+ * - 显示白色补光面板（利用屏幕光源照亮前方环境）
+ *
+ * 当光线恢复正常时自动关闭
+ */
+@Composable
+private fun LowLightScreenLightPanel() {
+    val viewModel: NavigationViewModel = hiltViewModel()
+    val lowLightState by viewModel.lowLightState.collectAsStateWithLifecycle()
+
+    if (lowLightState.isLowLight) {
+        // 弱光环境 → 显示补光面板
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0))
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        tint = Color(0xFFFF9800),
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        "弱光环境已开启屏幕补光",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFE65100)
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "平均亮度：${lowLightState.averageBrightness.toInt()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

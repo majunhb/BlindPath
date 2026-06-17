@@ -5,6 +5,7 @@ import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.reliability.LatencyTracker
 import com.blindpath.base.reliability.ReliabilityLogger
 import com.blindpath.base.tts.VibrationHelper
+import com.blindpath.base.tts.DirectionalVibrationHelper
 import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.domain.model.VoiceRequest
 import com.blindpath.module_voice.domain.model.VoiceType
@@ -79,4 +80,46 @@ class AlertExecutor @Inject constructor(
             ReliabilityLogger.logFallback("vibration_output", e.message)
         }
     }
+
+    /**
+     * 执行方向性告警 - PRD V2.0 第二期
+     *
+     * 根据障碍物方向生成方向性震动：
+     * - WARNING：方向性单次震动
+     * - DANGER：方向性急促连续震动
+     *
+     * @param level 预警级别
+     * @param description 预警描述
+     * @param direction 障碍物方向（null则退回非方向性震动）
+     */
+    fun executeDirectionalAlert(
+        level: AlertLevel,
+        description: String,
+        direction: com.blindpath.module_obstacle.domain.model.Direction? = null
+    ) {
+        if (level == AlertLevel.SAFE) return
+
+        LatencyTracker.beginSpan("alert_output_directional")
+
+        // 语音通道（不变）
+        scope.launch { runCatching { speakAlert(level, description) } }
+
+        // 方向性震动通道
+        scope.launch {
+            runCatching {
+                if (direction != null) {
+                    when (level) {
+                        AlertLevel.DANGER -> DirectionalVibrationHelper.vibrateCritical(applicationContext, direction)
+                        AlertLevel.WARNING -> DirectionalVibrationHelper.vibrateWarning(applicationContext, direction)
+                        else -> VibrationHelper.vibrate(applicationContext, level)
+                    }
+                } else {
+                    vibrateAlert(level)
+                }
+            }
+        }
+
+        LatencyTracker.endSpan("alert_output_directional", LatencyTracker.ALERT_OUTPUT_BUDGET_MS)
+    }
+
 }
