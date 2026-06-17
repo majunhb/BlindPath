@@ -570,7 +570,7 @@ class NavigationService : LifecycleService() {
                                 distance = tracked.obstacle.distance,
                                 direction = tracked.obstacle.direction.getChineseName(),
                                 confidence = tracked.obstacle.confidence,
-                                isDangerous = tracked.obstacle.distance < 1.0f,
+                                isDangerous = tracked.obstacle.distance < 1.5f,  // ★ PRD V2.0: < 1.5m = 紧急
                                 timestamp = tracked.obstacle.timestamp
                             )
                         }
@@ -625,27 +625,21 @@ class NavigationService : LifecycleService() {
     ): String? {
         if (nearest == null) return null
 
-        // 过滤：只关注5米以内的障碍物
-        val nearby = obstacles.filter { it.distance < 5f }
+        // ★ PRD V2.0: 过滤 — 只关注3米以内的障碍物（> 3m 不预警）
+        val nearby = obstacles.filter { it.distance <= 3f }
         if (nearby.isEmpty()) return null
 
         return when {
-            nearest.isDangerous -> {
-                // 危险级别（< 1m）：紧急播报
-                "紧急！${nearest.direction}${String.format("%.1f", nearest.distance)}米有${nearest.type}，请立即停下"
+            // ★ PRD V2.0 对齐：< 1.5m → 紧急，语音+震动，"立即停止"
+            nearest.distance < 1.5f -> {
+                "立即停止！${nearest.direction}${String.format("%.1f", nearest.distance)}米有${nearest.type}"
             }
-            nearest.distance < 2f -> {
-                // 警告级别（< 2m）
-                "注意，${nearest.direction}${String.format("%.1f", nearest.distance)}米有${nearest.type}，请小心避让"
+            // ★ PRD V2.0 对齐：1.5m-3m → 语音提示"前方有障碍物"
+            nearest.distance <= 3f -> {
+                "前方有障碍物，${nearest.direction}${String.format("%.1f", nearest.distance)}米有${nearest.type}"
             }
-            nearest.distance < 3f -> {
-                // 提示级别（< 3m）
-                "${nearest.direction}${String.format("%.1f", nearest.distance)}米有${nearest.type}"
-            }
-            else -> {
-                // 远距离提示（3-5m）
-                "前方${String.format("%.0f", nearest.distance)}米有${nearest.type}"
-            }
+            // ★ PRD V2.0 对齐：> 3m → 不预警
+            else -> null
         }
     }
 
@@ -659,10 +653,12 @@ class NavigationService : LifecycleService() {
         val typeStr = obs.type.chineseName
 
         return when {
-            obs.distance < 1.0f -> "紧急！${dirStr}${distStr}米有${typeStr}，请立即停下"
-            obs.distance < 2.0f -> "注意，${dirStr}${distStr}米有${typeStr}，请小心避让"
-            obs.distance < 3.0f -> "${dirStr}${distStr}米有${typeStr}"
-            else -> "前方${String.format("%.0f", obs.distance)}米有${typeStr}"
+            // ★ PRD V2.0 对齐：< 1.5m → 紧急，"立即停止"
+            obs.distance < 1.5f -> "立即停止！${dirStr}${distStr}米有${typeStr}"
+            // ★ PRD V2.0 对齐：1.5m-3m → 语音提示"前方有障碍物"
+            obs.distance <= 3.0f -> "前方有障碍物，${dirStr}${distStr}米有${typeStr}"
+            // ★ PRD V2.0 对齐：> 3m → 不预警
+            else -> ""
         }
     }
 
@@ -678,18 +674,23 @@ class NavigationService : LifecycleService() {
         val obs = tracked.obstacle
         val message = generateNavigationObstacleAlertForTracked(tracked)
 
+        // ★ PRD V2.0 对齐优先级
         val priority = when {
-            obs.distance < 1.0f -> VoiceGuidancePriority.URGENT
-            obs.distance < 2.0f -> VoiceGuidancePriority.EVENT
-            else -> VoiceGuidancePriority.ROUTINE
+            obs.distance < 1.5f -> VoiceGuidancePriority.URGENT    // 紧急打断
+            obs.distance <= 3f  -> VoiceGuidancePriority.EVENT     // 事件触发
+            else -> VoiceGuidancePriority.ROUTINE                  // > 3m 不播报
         }
+
+        // > 3m 不播报
+        if (obs.distance > 3f) return
 
         announceWithPriority(message, priority)
 
-        // 危险和警告级别触发振动
-        if (obs.distance < 2.0f) {
-            val pattern = if (obs.distance < 1.0f) VibrationPattern.RAPID_3X else VibrationPattern.LONG_500MS
-            triggerVibration(pattern)
+        // ★ PRD V2.0：< 1.5m → 连续震动；1.5m-3m → 长震
+        if (obs.distance < 1.5f) {
+            triggerVibration(VibrationPattern.RAPID_3X)  // 连续快震
+        } else if (obs.distance <= 3f) {
+            triggerVibration(VibrationPattern.LONG_500MS)  // 长震提示
         }
 
         Timber.d("ObstacleTracker: Announced track #${tracked.trackId} ${obs.type.chineseName} at ${String.format("%.1f", obs.distance)}m (new=${tracked.isNew})")

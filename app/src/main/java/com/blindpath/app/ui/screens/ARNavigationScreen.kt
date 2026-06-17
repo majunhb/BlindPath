@@ -9,6 +9,10 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -26,19 +30,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.amap.api.maps.AMap
-import com.amap.api.maps.CameraUpdateFactory
-import com.amap.api.maps.MapView
-import com.amap.api.maps.model.LatLng
-import com.amap.api.maps.model.MyLocationStyle
 import com.blindpath.app.ui.ar.*
 import com.blindpath.app.ui.viewmodel.NavigationViewModel
+import com.blindpath.base.navigation.NavigationMode
 import com.blindpath.module_navigation.domain.model.NavigationState
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
@@ -51,14 +50,20 @@ import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 
 /**
- * AR实景导航屏幕 - 真正的增强现实导航体验
- * 
+ * AR实景导航屏幕 - PRD V2.0 整合版
+ *
  * 功能：
  * 1. 摄像头实时画面
  * 2. AR导航箭头叠加
  * 3. 障碍物实时检测与标注
  * 4. 盲道状态实时指示
  * 5. 语音全程导航
+ * 6. ★ 模式切换（AR → 语音导航）淡入淡出 ≤ 1秒
+ *
+ * PRD 障碍物预警规则（已对齐）：
+ * - 距离 > 3m：不预警
+ * - 1.5m ≤ 距离 ≤ 3m：语音提示"前方有障碍物"
+ * - 距离 < 1.5m：语音 + 连续震动，紧急提示"立即停止"
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,6 +71,7 @@ fun ARNavigationScreen(
     obstacleRepository: ObstacleRepository,
     viewModel: VoiceInteractionViewModel,
     onBack: () -> Unit,
+    onSwitchToVoice: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -77,6 +83,24 @@ fun ARNavigationScreen(
     val destinationText by navViewModel.destinationText.collectAsStateWithLifecycle()
     val isPlanning by navViewModel.isPlanning.collectAsStateWithLifecycle()
     val announcement by navViewModel.announcement.collectAsStateWithLifecycle()
+
+    // ★ 模式切换过渡状态
+    var isVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { isVisible = true }
+
+    // ★ 震动控制器（紧急预警用）
+    val vibratorManager = remember {
+        context.getSystemService(android.os.VibratorManager::class.java)
+            ?: context.getSystemService(android.os.VibratorService::class.java)
+    }
+    val vibrator = remember {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            (vibratorManager as? android.os.VibratorManager)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            context.getSystemService(android.os.Vibrator::class.java)
+        }
+    }
 
     // 权限
     var hasLocationPermission by remember {
@@ -182,11 +206,12 @@ fun ARNavigationScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // 处理帧数据
+    // 处理帧数据 — ★ 障碍物预警规则已对齐 PRD
     LaunchedEffect(isDetectionActive) {
         if (!isDetectionActive) return@LaunchedEffect
         var frameCount = 0
         var lastAnnounceTime = 0L
+        var lastEmergencyVibrateTime = 0L
         
         while (!frameChannel.isClosedForReceive) {
             val result = frameChannel.receiveCatching()
@@ -217,11 +242,11 @@ fun ARNavigationScreen(
                             screenY = sy,
                             distance = obs.distance,
                             type = obs.type.chineseName,
+                            // ★ PRD 对齐：基于距离的危险等级
                             dangerLevel = when {
-                                obs.distance < 1f -> ARDangerLevel.CRITICAL
-                                obs.distance < 2f -> ARDangerLevel.HIGH
-                                obs.distance < 4f -> ARDangerLevel.MEDIUM
-                                else -> ARDangerLevel.LOW
+                                obs.distance < 1.5f -> ARDangerLevel.CRITICAL   // < 1.5m → 紧急
+                                obs.distance <= 3f -> ARDangerLevel.HIGH        // 1.5m-3m → 高风险
+                                else -> ARDangerLevel.LOW                       // > 3m → 安全/不预警
                             }
                         )
                     }
@@ -238,31 +263,51 @@ fun ARNavigationScreen(
                     }
                 }
                 
-                // 更新危险等级
-                val criticalObs = obstacles.any { it.distance < 1f }
-                val highObs = obstacles.any { it.distance < 3f }
+                // ★ PRD 障碍物预警规则对齐
+                // - 距离 > 3m：不预警
+                // - 1.5m ≤ 距离 ≤ 3m：语音提示"前方有障碍物"
+                // - 距离 < 1.5m：语音 + 连续震动，紧急提示"立即停止"
+                val criticalObs = obstacles.firstOrNull { it.distance < 1.5f }
+                val warningObs = obstacles.firstOrNull { it.distance in 1.5f..3f }
+
                 dangerLevel = when {
-                    criticalObs -> ARDangerLevel.CRITICAL
-                    highObs -> ARDangerLevel.HIGH
+                    criticalObs != null -> ARDangerLevel.CRITICAL
+                    warningObs != null -> ARDangerLevel.HIGH
                     !isOnSidewalk -> ARDangerLevel.MEDIUM
                     else -> ARDangerLevel.LOW
                 }
-                
-                // 语音播报（每10秒或重要事件）
+
+                // 语音播报
                 val now = System.currentTimeMillis()
-                if (obstacles.any { it.distance < 2f } || now - lastAnnounceTime > 10000L) {
+                when {
+                    // ★ < 1.5m：语音 + 连续震动，"立即停止"
+                    criticalObs != null -> {
+                        // 连续震动（每 300ms 重复）
+                        if (now - lastEmergencyVibrateTime > 300L) {
+                            lastEmergencyVibrateTime = now
+                            tryVibrate(vibrator, longArrayOf(0, 100, 50, 100))
+                        }
+                        // 语音播报（2秒冷却）
+                        if (now - lastAnnounceTime > 2000L) {
+                            lastAnnounceTime = now
+                            viewModel.speak("立即停止！前方${criticalObs.type.chineseName}距离${String.format("%.1f", criticalObs.distance)}米")
+                        }
+                    }
+                    // ★ 1.5m-3m：语音提示"前方有障碍物"
+                    warningObs != null -> {
+                        if (now - lastAnnounceTime > 5000L) {
+                            lastAnnounceTime = now
+                            viewModel.speak("前方有障碍物，${warningObs.type.chineseName}在${warningObs.direction.getChineseName()}${warningObs.distance.toInt()}米")
+                        }
+                    }
+                    // ★ > 3m：不预警
+                    else -> {}
+                }
+                
+                // 盲道状态播报
+                if (!isOnSidewalk && now - lastAnnounceTime > 8000L) {
                     lastAnnounceTime = now
-                    
-                    // 障碍物预警
-                    obstacles.firstOrNull { it.distance < 3f }?.let { obs ->
-                        val dir = obs.direction.getChineseName()
-                        viewModel.speak("注意${obs.type.chineseName}在$dir${obs.distance.toInt()}米")
-                    }
-                    
-                    // 盲道状态
-                    if (!isOnSidewalk) {
-                        viewModel.speak("已偏离盲道，请回到盲道上")
-                    }
+                    viewModel.speak("已偏离盲道，请回到盲道上")
                 }
                 
                 bitmap.recycle()
@@ -304,185 +349,189 @@ fun ARNavigationScreen(
         }
     }
 
-    // ===== UI =====
-    Box(modifier = modifier.fillMaxSize()) {
-        // 顶部状态栏
-        TopAppBar(
-            title = { Text("AR实景导航", fontWeight = FontWeight.Bold) },
-            navigationIcon = {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
-                }
-            },
-            actions = {
-                // 帮助按钮
-                IconButton(onClick = { /* TODO: 帮助 */ }) {
-                    Icon(Icons.Default.Info, contentDescription = "帮助")
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = Color.Black.copy(alpha = 0.6f),
-                titleContentColor = Color.White
+    // ===== UI：带淡入淡出过渡 =====
+    AnimatedVisibility(
+        visible = isVisible,
+        enter = fadeIn(animationSpec = tween(450)),
+        exit = fadeOut(animationSpec = tween(450)),
+        modifier = modifier
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 顶部状态栏
+            TopAppBar(
+                title = { Text("AR实景导航", fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = {
+                        isVisible = false
+                        onBack()
+                    }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    // ★ 切换语音模式按钮
+                    IconButton(onClick = {
+                        isVisible = false
+                        onSwitchToVoice()
+                    }) {
+                        Icon(
+                            Icons.Default.RecordVoiceOver,
+                            contentDescription = "切换语音模式",
+                            tint = Color.White
+                        )
+                    }
+                    // 帮助按钮
+                    IconButton(onClick = { /* TODO: 帮助 */ }) {
+                        Icon(Icons.Default.Info, contentDescription = "帮助")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.Black.copy(alpha = 0.6f),
+                    titleContentColor = Color.White
+                )
             )
-        )
 
-        // AR叠加层
-        AROverlay(
-            navigationState = arNavState,
-            obstacles = arObstacles,
-            isOnSidewalk = isOnSidewalk,
-            dangerLevel = dangerLevel,
-            modifier = Modifier.fillMaxSize()
-        )
+            // AR叠加层
+            AROverlay(
+                navigationState = arNavState,
+                obstacles = arObstacles,
+                isOnSidewalk = isOnSidewalk,
+                dangerLevel = dangerLevel,
+                modifier = Modifier.fillMaxSize()
+            )
 
-        // 底部导航信息面板
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .background(
-                    Color.Black.copy(alpha = 0.7f),
-                    RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
-                )
-                .padding(16.dp)
-        ) {
-            // 盲道状态
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // 底部导航信息面板
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Color.Black.copy(alpha = 0.7f),
+                        RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                    )
+                    .padding(16.dp)
             ) {
-                Icon(
-                    if (isOnSidewalk) Icons.Default.CheckCircle else Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = if (isOnSidewalk) Color(0xFF4CAF50) else Color(0xFFFF9800),
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    if (isOnSidewalk) "正在盲道上" else "已偏离盲道",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.weight(1f))
-                
-                // 危险等级指示
-                val dangerColor = when (dangerLevel) {
-                    ARDangerLevel.CRITICAL -> Color(0xFFF44336)
-                    ARDangerLevel.HIGH -> Color(0xFFFF9800)
-                    ARDangerLevel.MEDIUM -> Color(0xFFFFC107)
-                    ARDangerLevel.LOW -> Color(0xFF4CAF50)
-                }
-                Box(
-                    modifier = Modifier
-                        .background(dangerColor, RoundedCornerShape(4.dp))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                // 盲道状态 + 危险等级
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    Icon(
+                        if (isOnSidewalk) Icons.Default.CheckCircle else Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = if (isOnSidewalk) Color(0xFF4CAF50) else Color(0xFFFF9800),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        when (dangerLevel) {
-                            ARDangerLevel.CRITICAL -> "⚠️ 紧急"
-                            ARDangerLevel.HIGH -> "⚠️ 高风险"
-                            ARDangerLevel.MEDIUM -> "⚡ 注意"
-                            ARDangerLevel.LOW -> "✓ 安全"
-                        },
+                        if (isOnSidewalk) "正在盲道上" else "已偏离盲道",
                         color = Color.White,
-                        fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // 障碍物信息
-            if (arObstacles.isNotEmpty()) {
-                arObstacles.take(2).forEach { obs ->
-                    Row(
+                    Spacer(modifier = Modifier.weight(1f))
+                    
+                    // 危险等级指示
+                    val dangerColor = when (dangerLevel) {
+                        ARDangerLevel.CRITICAL -> Color(0xFFF44336)
+                        ARDangerLevel.HIGH -> Color(0xFFFF9800)
+                        ARDangerLevel.MEDIUM -> Color(0xFFFFC107)
+                        ARDangerLevel.LOW -> Color(0xFF4CAF50)
+                    }
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .background(dangerColor, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
-                        Text("⚠️", fontSize = 14.sp)
-                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            "${obs.type} ${obs.distance.toInt()}米",
-                            color = Color.White.copy(alpha = 0.9f),
-                            fontSize = 13.sp
+                            when (dangerLevel) {
+                                ARDangerLevel.CRITICAL -> "⚠️ 紧急"
+                                ARDangerLevel.HIGH -> "⚠️ 高风险"
+                                ARDangerLevel.MEDIUM -> "⚡ 注意"
+                                ARDangerLevel.LOW -> "✓ 安全"
+                            },
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
-            }
 
-            Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-            // 语音播报
-            if (announcement.isNotEmpty()) {
-                Text(
-                    announcement,
-                    color = Color(0xFF4CAF50),
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 操作按钮
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                if (!uiState.isRunning && !isPlanning) {
-                    // 目的地输入
-                    OutlinedTextField(
-                        value = destinationText,
-                        onValueChange = { navViewModel.updateDestination(it) },
-                        label = { Text("目的地") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF4CAF50),
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.5f)
-                        ),
-                        textStyle = LocalTextStyle.current.copy(color = Color.White)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            navViewModel.updateDestination(destinationText)
-                            navViewModel.startNavigation()
-                        },
-                        enabled = destinationText.isNotBlank(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
-                    ) {
-                        Icon(Icons.Default.Navigation, contentDescription = null)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("开始")
+                // 障碍物信息
+                if (arObstacles.isNotEmpty()) {
+                    arObstacles.take(2).forEach { obs ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("⚠️", fontSize = 14.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "${obs.type} ${obs.distance.toInt()}米",
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 13.sp
+                            )
+                        }
                     }
-                } else if (uiState.isRunning) {
-                    Button(
-                        onClick = { navViewModel.exitNavigation() },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336)),
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 语音播报
+                if (announcement.isNotEmpty()) {
+                    Text(
+                        announcement,
+                        color = Color(0xFF4CAF50),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("结束AR导航", fontWeight = FontWeight.Bold)
-                    }
-                } else {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = Color(0xFF4CAF50)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("正在规划路线...", color = Color.White)
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // ★ 模式切换按钮（底部大按钮）
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            isVisible = false
+                            onSwitchToVoice()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                    ) {
+                        Icon(Icons.Default.RecordVoiceOver, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("切换语音模式", fontWeight = FontWeight.Bold)
+                    }
+
+                    if (uiState.isRunning) {
+                        Button(
+                            onClick = { navViewModel.exitNavigation() },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF44336))
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("结束导航", fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+// ============================================================================
+// 辅助函数
+// ============================================================================
 
 /** Bitmap转换 */
 private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
@@ -518,5 +567,25 @@ private fun com.blindpath.module_obstacle.domain.model.Direction.getChineseName(
         com.blindpath.module_obstacle.domain.model.Direction.BACK -> "后方"
         com.blindpath.module_obstacle.domain.model.Direction.RIGHT -> "右侧"
         com.blindpath.module_obstacle.domain.model.Direction.RIGHT_FRONT -> "右前方"
+    }
+}
+
+/**
+ * 触发震动（兼容不同 API 级别）
+ */
+@Suppress("DEPRECATION", "MissingPermission")
+private fun tryVibrate(vibrator: Any?, pattern: LongArray) {
+    try {
+        when {
+            vibrator is android.os.Vibrator -> {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    vibrator.vibrate(android.os.VibrationEffect.createWaveform(pattern, 0))
+                } else {
+                    vibrator.vibrate(pattern, 0)
+                }
+            }
+        }
+    } catch (e: Exception) {
+        Timber.w(e, "Vibration failed")
     }
 }

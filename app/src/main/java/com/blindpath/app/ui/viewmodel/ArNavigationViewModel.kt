@@ -3,7 +3,6 @@ package com.blindpath.app.ui.viewmodel
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.blindpath.app.ui.components.DangerLevel
 import com.blindpath.module_obstacle.data.detection.TactilePavingDetector
 import com.blindpath.module_obstacle.data.detection.TactilePavingResult
 import com.blindpath.module_obstacle.domain.ObstacleRepository

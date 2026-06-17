@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
@@ -219,6 +220,7 @@ fun OutdoorNavigationScreen(
     sceneClassifier: SceneClassifier,
     onBack: () -> Unit,
     onHelpClick: () -> Unit = {},
+    onSwitchToAr: () -> Unit = {},
     viewModel: VoiceInteractionViewModel
 ) {
     val context = LocalContext.current
@@ -442,12 +444,15 @@ fun OutdoorNavigationScreen(
                         }.sortedBy { it.distance }
                     }
 
-                    // 更新危险等级
-                    val nearDanger = aiObstacles.any { it.distance < 1.0f }
-                    val nearWarn = aiObstacles.any { it.distance < 3.0f }
+                    // ★ 更新危险等级（PRD V2.0 对齐）
+                    // - > 3m：不预警 (LOW)
+                    // - 1.5m ≤ distance ≤ 3m：语音提示 (MEDIUM/HIGH)
+                    // - < 1.5m：语音+震动，紧急 (CRITICAL)
+                    val criticalObstacle = aiObstacles.any { it.distance < 1.5f }
+                    val warningObstacle = aiObstacles.any { it.distance in 1.5f..3f }
                     dangerLevel = when {
-                        nearDanger -> DangerLevel.CRITICAL
-                        nearWarn -> DangerLevel.MEDIUM
+                        criticalObstacle -> DangerLevel.CRITICAL
+                        warningObstacle -> DangerLevel.HIGH
                         sceneResult.sceneType == SceneType.CROSSWALK -> DangerLevel.MEDIUM
                         sceneResult.sceneType == SceneType.INTERSECTION -> DangerLevel.HIGH
                         else -> DangerLevel.LOW
@@ -459,7 +464,7 @@ fun OutdoorNavigationScreen(
                         else -> CrossingStatus.NONE
                     }
 
-                    // 语音播报（10秒冷却，重要场景立即播报）
+                    // ★ 语音播报（PRD V2.0 对齐）
                     val now = System.currentTimeMillis()
                     val isImportant = sceneResult.sceneType in listOf(
                         SceneType.CROSSWALK, SceneType.INTERSECTION,
@@ -472,11 +477,23 @@ fun OutdoorNavigationScreen(
                         if (announcement.isNotEmpty()) {
                             viewModel.speak(announcement)
                         }
-                        // 紧急障碍物预警
-                        if (nearDanger && aiObstacles.isNotEmpty()) {
-                            val d = aiObstacles.first()
-                            viewModel.speak("注意${d.type.chineseName}在${d.direction.getChineseName()}${d.distance.toInt()}米")
+                    }
+                    
+                    // ★ PRD 障碍物预警规则（与 AR 模式保持一致）
+                    val nearestCritical = aiObstacles.firstOrNull { it.distance < 1.5f }
+                    val nearestWarning = aiObstacles.firstOrNull { it.distance in 1.5f..3f }
+                    when {
+                        // < 1.5m：语音 + 震动，"立即停止"
+                        nearestCritical != null && now - lastAnnounceTime > 2000L -> {
+                            lastAnnounceTime = now
+                            viewModel.speak("立即停止！前方${nearestCritical.type.chineseName}距离${String.format("%.1f", nearestCritical.distance)}米")
                         }
+                        // 1.5m-3m：语音提示"前方有障碍物"
+                        nearestWarning != null && now - lastAnnounceTime > 5000L -> {
+                            lastAnnounceTime = now
+                            viewModel.speak("前方有障碍物，${nearestWarning.type.chineseName}在${nearestWarning.direction.getChineseName()}${nearestWarning.distance.toInt()}米")
+                        }
+                        // > 3m：不预警
                     }
                 }
 
@@ -512,6 +529,20 @@ fun OutdoorNavigationScreen(
                     }
                 },
                 actions = {
+                    // ★ 切换AR模式按钮
+                    IconButton(
+                        onClick = {
+                            viewModel.speak("切换到AR实景导航模式")
+                            onSwitchToAr()
+                        },
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.CameraAlt,
+                            contentDescription = "切换AR实景导航模式",
+                            tint = Color(0xFFE91E63)
+                        )
+                    }
                     // 帮助按钮
                     IconButton(onClick = onHelpClick) {
                         Icon(

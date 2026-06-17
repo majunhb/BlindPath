@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import com.blindpath.base.navigation.NavigationMode
+import com.blindpath.base.navigation.NavigationModeManager
 import javax.inject.Inject
 
 /**
@@ -100,6 +102,19 @@ class NavigationViewModel @Inject constructor(
     private val navigationRepository: NavigationRepository,
     private val voiceRepository: VoiceRepository
 ) : ViewModel() {
+
+    // ==================== PRD V2.0：导航模式管理器 ====================
+
+    /**
+     * 导航模式管理器 - 统一管理语音/AR模式切换
+     * 提供 StateFlow<NavigationMode> 暴露当前模式
+     * 提供 switchMode() 方法，带过渡控制（淡入淡出 ≤ 1秒）
+     */
+    val modeManager = NavigationModeManager()
+
+    /** 当前导航模式的便捷访问 */
+    val currentNavigationMode = modeManager.currentMode
+    val isModeTransitioning = modeManager.isTransitioning
 
     // ==================== 原有状态 ====================
 
@@ -421,11 +436,14 @@ class NavigationViewModel @Inject constructor(
     }
 
     /**
-     * 根据障碍物距离/速度/方向动态评估危险等级
-     * - 紧急(CRITICAL)：距离 < 2m 且速度 > 5m/s 或 TTC < 2秒
-     * - 高(HIGH)：距离 < 5m 且速度 > 2m/s 或 TTC < 5秒
-     * - 中(MEDIUM)：距离 < 10m 且速度 > 0.5m/s
-     * - 低(LOW)：其他情况
+     * 根据障碍物距离评估危险等级
+     *
+     * ★ PRD V2.0 对齐阈值：
+     * - 距离 > 3m：不预警 (LOW)
+     * - 1.5m ≤ 距离 ≤ 3m：语音提示"前方有障碍物" (HIGH)
+     * - 距离 < 1.5m：语音 + 连续震动，紧急提示"立即停止" (CRITICAL)
+     *
+     * 同时考虑移动速度作为辅助判断（保留原有逻辑的合理部分）
      */
     fun evaluateDangerLevel() {
         val obstacleList = _obstacles.value
@@ -438,13 +456,13 @@ class NavigationViewModel @Inject constructor(
 
         for (obstacle in obstacleList) {
             val level = when {
-                // 紧急：距离 < 2m 且速度 > 5m/s 或 TTC < 2秒
-                (obstacle.distance < 2f && obstacle.speed > 5f) || obstacle.ttc < 2f -> DangerLevel.CRITICAL
-                // 高：距离 < 5m 且速度 > 2m/s 或 TTC < 5秒
-                (obstacle.distance < 5f && obstacle.speed > 2f) || obstacle.ttc < 5f -> DangerLevel.HIGH
-                // 中：距离 < 10m 且速度 > 0.5m/s
+                // ★ PRD 紧急：距离 < 1.5m（或 TTC < 2秒的移动障碍物）
+                obstacle.distance < 1.5f || obstacle.ttc < 2f -> DangerLevel.CRITICAL
+                // ★ PRD 预警：1.5m ≤ 距离 ≤ 3m（或移动障碍物距离 < 5m）
+                obstacle.distance <= 3f || (obstacle.distance < 5f && obstacle.speed > 1f) -> DangerLevel.HIGH
+                // 中：5m-10m 有移动障碍物
                 obstacle.distance < 10f && obstacle.speed > 0.5f -> DangerLevel.MEDIUM
-                // 低：其他情况
+                // ★ PRD：> 3m 静态障碍物 → 不预警
                 else -> DangerLevel.LOW
             }
 
@@ -456,13 +474,13 @@ class NavigationViewModel @Inject constructor(
         val prevLevel = _dangerLevel.value
         _dangerLevel.value = maxLevel
 
-        // 危险等级变化时语音告警
+        // 危险等级变化时语音告警（PRD 对齐）
         if (maxLevel.ordinal > prevLevel.ordinal) {
             viewModelScope.launch {
                 when (maxLevel) {
-                    DangerLevel.CRITICAL -> voiceRepository.announce("紧急危险！前方有快速接近障碍物，请立即避让！", VoiceType.SYSTEM_STATUS)
-                    DangerLevel.HIGH -> voiceRepository.announce("高度危险！前方有移动障碍物接近，请注意避让。", VoiceType.SYSTEM_STATUS)
-                    DangerLevel.MEDIUM -> voiceRepository.announce("中度危险，前方有移动障碍物，请注意。", VoiceType.SYSTEM_STATUS)
+                    DangerLevel.CRITICAL -> voiceRepository.announce("立即停止！前方有障碍物，距离不足1.5米！", VoiceType.SYSTEM_STATUS)
+                    DangerLevel.HIGH -> voiceRepository.announce("前方有障碍物，请注意安全。", VoiceType.SYSTEM_STATUS)
+                    DangerLevel.MEDIUM -> voiceRepository.announce("注意，前方有障碍物。", VoiceType.SYSTEM_STATUS)
                     DangerLevel.LOW -> { /* 不播报 */ }
                 }
             }
@@ -716,5 +734,43 @@ class NavigationViewModel @Inject constructor(
      */
     fun updateCurrentHeading(heading: Float) {
         _currentHeading.value = heading
+    }
+
+    // ==================== 6. 导航模式切换（PRD V2.0） ====================
+
+    /**
+     * 切换到 AR 实景导航模式
+     * 保持当前导航状态不丢失（路线、目的地等保留）
+     *
+     * @param onMidTransition 过渡中间回调，用于语音播报切换提示
+     */
+    fun switchToArMode(onMidTransition: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            modeManager.switchMode(NavigationMode.AR) {
+                voiceRepository.announce("正在切换到AR实景导航模式", VoiceType.SYSTEM_STATUS)
+                onMidTransition?.invoke()
+            }
+        }
+    }
+
+    /**
+     * 切换到语音导航模式
+     * 保持当前导航状态不丢失
+     */
+    fun switchToVoiceMode(onMidTransition: (() -> Unit)? = null) {
+        viewModelScope.launch {
+            modeManager.switchMode(NavigationMode.VOICE) {
+                voiceRepository.announce("正在切换到语音导航模式", VoiceType.SYSTEM_STATUS)
+                onMidTransition?.invoke()
+            }
+        }
+    }
+
+    /**
+     * 立即设置模式（无过渡动画）
+     * 用于初始化或状态恢复
+     */
+    fun setNavigationModeImmediately(mode: NavigationMode) {
+        modeManager.setModeImmediately(mode)
     }
 }
