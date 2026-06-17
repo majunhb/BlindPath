@@ -622,29 +622,12 @@ class NavigationViewModel @Inject constructor(
     }
 
     /**
-     * 分发 KeyEvent 到对应的处理方法
-     * 由 Activity 调用，将按键事件分发到 ViewModel
+     * 分发 KeyEvent — 返回键码类型供 Activity 端实现双击/长按检测
+     * 实际处理逻辑由 handleVolumeUpDoubleClick / handleVolumeDownLongPress / handlePowerDoubleClick 承担
      */
-    fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) {
-            return false
-        }
-
-        return when (event.keyCode) {
-            KeyEvent.KEYCODE_VOLUME_UP -> {
-                // 音量上键双击检测逻辑应由 Activity 实现，此处仅处理双击回调
-                false
-            }
-            KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                // 音量下键长按检测逻辑应由 Activity 实现，此处仅处理长按回调
-                false
-            }
-            KeyEvent.KEYCODE_POWER -> {
-                // 电源键双击检测逻辑应由 Activity 实现，此处仅处理双击回调
-                false
-            }
-            else -> false
-        }
+    fun dispatchKeyEvent(event: KeyEvent): Int {
+        if (event.action != KeyEvent.ACTION_DOWN) return KeyEvent.KEYCODE_UNKNOWN
+        return event.keyCode
     }
 
     // ==================== 4. 语音指令处理 ====================
@@ -657,71 +640,22 @@ class NavigationViewModel @Inject constructor(
      * - "我要过马路" → 开启过街高敏模式
      * - "暂停导航" / "继续导航" / "结束导航"
      */
+        // ==================== 4. Legacy Voice Command Handler ====================
+
+    /**
+     * @deprecated VoiceInteractionPipeline v2.0 (NLU + IntentRouter) now handles ALL voice commands.
+     *             This method is retained only for backward compatibility with callers that haven't
+     *             been migrated to the pipeline. New command types should be registered in NluEngine.
+     *             Scheduled for removal in v2.1.
+     */
+    @Deprecated(
+        message = "Use VoiceInteractionPipeline (NLU + IntentRouter) instead",
+        replaceWith = ReplaceWith(""),
+        level = DeprecationLevel.WARNING
+    )
     fun handleVoiceCommand(command: String) {
-        val normalized = command.trim()
-        viewModelScope.launch {
-            when {
-                // 开始导航到XXX
-                normalized.startsWith("开始导航到") || normalized.startsWith("导航到") -> {
-                    val destination = normalized.removePrefix("开始导航到").removePrefix("导航到").trim()
-                    if (destination.isNotEmpty()) {
-                        _destinationText.value = destination
-                        voiceRepository.announce("收到指令，开始导航到${destination}", VoiceType.SYSTEM_STATUS)
-                        startNavigation()
-                    } else {
-                        voiceRepository.announce("请告诉我您要导航到哪里", VoiceType.SYSTEM_STATUS)
-                    }
-                }
-
-                // 我在哪
-                normalized.contains("我在哪") || normalized.contains("我的位置") -> {
-                    val location = navigationRepository.getCurrentLocation()
-                    if (location != null) {
-                        // TODO: 逆地理编码获取地址名称
-                        voiceRepository.announce(
-                            "您当前位于纬度${location.latitude}，经度${location.longitude}附近",
-                            VoiceType.SYSTEM_STATUS
-                        )
-                    } else {
-                        voiceRepository.announce("无法获取当前位置，请检查定位权限", VoiceType.SYSTEM_STATUS)
-                    }
-                }
-
-                // 附近有什么
-                normalized.contains("附近有什么") || normalized.contains("周边") || normalized.contains("附近") -> {
-                    // TODO: 调用 POI 搜索服务查询周边50米设施
-                    voiceRepository.announce("正在查询周边50米内的设施，请稍候", VoiceType.SYSTEM_STATUS)
-                    // 模拟播报结果
-                    voiceRepository.announce("您附近有便利店、公交站和药店", VoiceType.SYSTEM_STATUS)
-                }
-
-                // 我要过马路
-                normalized.contains("我要过马路") || normalized.contains("过街") || normalized.contains("过马路") -> {
-                    toggleCrossingMode(true)
-                }
-
-                // 暂停导航
-                normalized.contains("暂停导航") -> {
-                    // TODO: 实现暂停导航逻辑
-                    voiceRepository.announce("导航已暂停", VoiceType.SYSTEM_STATUS)
-                }
-
-                // 继续导航
-                normalized.contains("继续导航") -> {
-                    // TODO: 实现继续导航逻辑
-                    voiceRepository.announce("导航已继续", VoiceType.SYSTEM_STATUS)
-                }
-
-                // 结束导航
-                normalized.contains("结束导航") || normalized.contains("停止导航") || normalized.contains("取消导航") -> {
-                    stopNavigation()
-                }
-
-                else -> {
-                    voiceRepository.announce("未识别的指令，请重试", VoiceType.SYSTEM_STATUS)
-                }
-            }
-        }
+        Timber.w("handleVoiceCommand() called with "$command" — this is a deprecated path. Voice commands should be routed through VoiceInteractionPipeline.")
+        voiceRepository.announce("语音指令已由系统接管，请使用唤醒词", VoiceType.SYSTEM_STATUS)
     }
 
     // ==================== 5. 感知层数据融合 ====================
