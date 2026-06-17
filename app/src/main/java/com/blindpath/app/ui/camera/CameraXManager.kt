@@ -118,9 +118,9 @@ class CameraXManager @Inject constructor(
             } catch (e: Exception) {
                 Timber.e(e, "CameraXManager: bind failed")
                 // 回滚状态，避免残留导致下次 bind 被跳过
-                lifecycleOwner?.lifecycle?.removeObserver(lifecycleObserver)
-                lifecycleOwner = null
-                surfaceProvider = null
+                this.lifecycleOwner?.lifecycle?.removeObserver(lifecycleObserver)
+                this.lifecycleOwner = null
+                this.surfaceProvider = null
             }
         }, ContextCompat.getMainExecutor(context))
     }

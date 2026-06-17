@@ -175,19 +175,18 @@ fun ArNavigationScreen(
 
     // 订阅 CameraX 帧流 — 使用 uiState 作为 key 确保 isArActive 始终是最新值
     DisposableEffect(uiState.isArActive) {
-        if (!uiState.isArActive) {
-            onDispose { }
-            return@DisposableEffect
-        }
-
-        val job = scope.launch {
-            cameraXManager.frameFlow.collectLatest { bitmap ->
-                viewModel.processFrame(bitmap)
+        val job: kotlinx.coroutines.Job? = if (uiState.isArActive) {
+            scope.launch {
+                cameraXManager.frameFlow.collectLatest { bitmap ->
+                    viewModel.processFrame(bitmap)
+                }
             }
+        } else {
+            null
         }
 
         onDispose {
-            job.cancel()
+            job?.cancel()
         }
     }
 
