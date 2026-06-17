@@ -788,7 +788,9 @@ class NavigationViewModel @Inject constructor(
     fun switchToArMode(onMidTransition: (() -> Unit)? = null) {
         viewModelScope.launch {
             modeManager.switchMode(NavigationMode.AR) {
-                voiceRepository.announce("正在切换到AR实景导航模式", VoiceType.SYSTEM_STATUS)
+                viewModelScope.launch {
+                    voiceRepository.announce("正在切换到AR实景导航模式", VoiceType.SYSTEM_STATUS)
+                }
                 onMidTransition?.invoke()
             }
         }
@@ -801,7 +803,9 @@ class NavigationViewModel @Inject constructor(
     fun switchToVoiceMode(onMidTransition: (() -> Unit)? = null) {
         viewModelScope.launch {
             modeManager.switchMode(NavigationMode.VOICE) {
-                voiceRepository.announce("正在切换到语音导航模式", VoiceType.SYSTEM_STATUS)
+                viewModelScope.launch {
+                    voiceRepository.announce("正在切换到语音导航模式", VoiceType.SYSTEM_STATUS)
+                }
                 onMidTransition?.invoke()
             }
         }

@@ -44,6 +44,7 @@ import com.blindpath.module_obstacle.data.detection.TactilePavingDetector
 import com.blindpath.base.navigation.model.TactilePavingResult
 import com.blindpath.module_obstacle.data.detection.TrafficLightClassifier
 import com.blindpath.base.navigation.model.TrafficLightState
+import com.blindpath.base.navigation.model.Direction
 import com.blindpath.module_navigation.domain.model.NavigationState
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
@@ -95,13 +96,10 @@ fun ARNavigationScreen(
     LaunchedEffect(Unit) { isVisible = true }
 
     // ★ 震动控制器（紧急预警用）
-    val vibratorManager = remember {
-        context.getSystemService(android.os.VibratorManager::class.java)
-            ?: context.getSystemService(android.os.VibratorService::class.java)
-    }
     val vibrator = remember {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
-            (vibratorManager as? android.os.VibratorManager)?.defaultVibrator
+            val vibratorManager = context.getSystemService(android.os.VibratorManager::class.java)
+            vibratorManager?.defaultVibrator
         } else {
             @Suppress("DEPRECATION")
             context.getSystemService(android.os.Vibrator::class.java)
@@ -603,28 +601,17 @@ private fun imageProxyToBitmap(imageProxy: ImageProxy): Bitmap? {
 }
 
 /** 方向转换为方位角 */
-private fun com.blindpath.module_obstacle.domain.model.Direction.getBearing(): Float {
+private fun Direction.getBearing(): Float {
     return when (this) {
-        com.blindpath.module_obstacle.domain.model.Direction.CENTER -> 0f
-        com.blindpath.module_obstacle.domain.model.Direction.LEFT_FRONT -> -45f
-        com.blindpath.module_obstacle.domain.model.Direction.LEFT -> -90f
-        com.blindpath.module_obstacle.domain.model.Direction.BACK -> 180f
-        com.blindpath.module_obstacle.domain.model.Direction.RIGHT -> 90f
-        com.blindpath.module_obstacle.domain.model.Direction.RIGHT_FRONT -> 45f
+        Direction.CENTER -> 0f
+        Direction.LEFT_FRONT -> -45f
+        Direction.LEFT -> -90f
+        Direction.BACK -> 180f
+        Direction.RIGHT -> 90f
+        Direction.RIGHT_FRONT -> 45f
     }
 }
 
-/** 方向获取中文名称 */
-private fun com.blindpath.module_obstacle.domain.model.Direction.getChineseName(): String {
-    return when (this) {
-        com.blindpath.module_obstacle.domain.model.Direction.CENTER -> "正前方"
-        com.blindpath.module_obstacle.domain.model.Direction.LEFT_FRONT -> "左前方"
-        com.blindpath.module_obstacle.domain.model.Direction.LEFT -> "左侧"
-        com.blindpath.module_obstacle.domain.model.Direction.BACK -> "后方"
-        com.blindpath.module_obstacle.domain.model.Direction.RIGHT -> "右侧"
-        com.blindpath.module_obstacle.domain.model.Direction.RIGHT_FRONT -> "右前方"
-    }
-}
 
 /**
  * 触发震动（兼容不同 API 级别）

@@ -172,7 +172,6 @@ class MainActivity : ComponentActivity() {
                         navigationRepository = navigationRepository,
                         indoorDetector = indoorDetector,
                         sceneClassifier = sceneClassifier,
-                        cameraXManager = cameraXManager,
                         onObstacleDetectionClick = { requestPermissionAndAction("obstacle") },
 
                         onLocationClick = { requestPermissionAndAction("location") },
