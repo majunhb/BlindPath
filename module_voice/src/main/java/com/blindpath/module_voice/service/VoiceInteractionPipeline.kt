@@ -292,21 +292,11 @@ class VoiceInteractionPipeline @Inject constructor(
      * 等待 TTS 播报完成
      */
     private suspend fun waitForTtsComplete() {
-        var waitCount = 0
-        while (!voiceRepository.voiceState.first().isSpeaking && waitCount < 30) {
-            delay(100)
-            waitCount++
-        }
-
-        if (voiceRepository.voiceState.first().isSpeaking) {
-            waitCount = 0
-            while (voiceRepository.voiceState.first().isSpeaking && waitCount < 100) {
-                delay(100)
-                waitCount++
-            }
-        }
-
-        delay(200) // 额外等待
+        voiceRepository.voiceState
+            .first { it.isSpeaking }
+        voiceRepository.voiceState
+            .first { !it.isSpeaking }
+        delay(200)
     }
 
     /**
