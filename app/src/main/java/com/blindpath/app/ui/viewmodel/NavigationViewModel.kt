@@ -622,12 +622,29 @@ class NavigationViewModel @Inject constructor(
     }
 
     /**
-     * 分发 KeyEvent — 返回键码类型供 Activity 端实现双击/长按检测
-     * 实际处理逻辑由 handleVolumeUpDoubleClick / handleVolumeDownLongPress / handlePowerDoubleClick 承担
+     * 分发 KeyEvent 到对应的处理方法
+     * 由 Activity 调用，将按键事件分发到 ViewModel
      */
-    fun dispatchKeyEvent(event: KeyEvent): Int {
-        if (event.action != KeyEvent.ACTION_DOWN) return KeyEvent.KEYCODE_UNKNOWN
-        return event.keyCode
+    fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) {
+            return false
+        }
+
+        return when (event.keyCode) {
+            KeyEvent.KEYCODE_VOLUME_UP -> {
+                // 音量上键双击检测逻辑应由 Activity 实现，此处仅处理双击回调
+                false
+            }
+            KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                // 音量下键长按检测逻辑应由 Activity 实现，此处仅处理长按回调
+                false
+            }
+            KeyEvent.KEYCODE_POWER -> {
+                // 电源键双击检测逻辑应由 Activity 实现，此处仅处理双击回调
+                false
+            }
+            else -> false
+        }
     }
 
     // ==================== 4. 语音指令处理 ====================
@@ -640,21 +657,8 @@ class NavigationViewModel @Inject constructor(
      * - "我要过马路" → 开启过街高敏模式
      * - "暂停导航" / "继续导航" / "结束导航"
      */
-        // ==================== 4. Legacy Voice Command Handler ====================
-
-    /**
-     * @deprecated VoiceInteractionPipeline v2.0 (NLU + IntentRouter) now handles ALL voice commands.
-     *             This method is retained only for backward compatibility with callers that haven't
-     *             been migrated to the pipeline. New command types should be registered in NluEngine.
-     *             Scheduled for removal in v2.1.
-     */
-    @Deprecated(
-        message = "Use VoiceInteractionPipeline (NLU + IntentRouter) instead",
-        replaceWith = ReplaceWith(""),
-        level = DeprecationLevel.WARNING
-    )
-    fun handleVoiceCommand(command: String) {
-        Timber.w("handleVoiceCommand() called with "$command" — this is a deprecated path. Voice commands should be routed through VoiceInteractionPipeline.")
+        fun handleVoiceCommand(command: String) {
+        Timber.w("handleVoiceCommand() called with [" + command + "] - deprecated, use VoiceInteractionPipeline")
         voiceRepository.announce("语音指令已由系统接管，请使用唤醒词", VoiceType.SYSTEM_STATUS)
     }
 
