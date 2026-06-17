@@ -28,7 +28,7 @@ class BlindPathNavigationExecutor @Inject constructor(
 
     override suspend fun navigateTo(destination: String): String {
         Timber.i("BlindPathNavigationExecutor: navigateTo($destination)")
-        return "正在为您导航到$destination，请跟随语音指引前行"
+        return "正在为您导航到${destination}，请跟随语音指引前行"
     }
 
     override suspend fun navigateHome(): String {

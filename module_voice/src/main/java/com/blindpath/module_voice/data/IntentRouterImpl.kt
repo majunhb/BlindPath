@@ -39,7 +39,7 @@ class IntentRouterImpl @Inject constructor() : IntentRouter {
                 val dest = nluResult.getSlot("destination")
                 if (dest != null) {
                     val text = navigationExecutor?.navigateTo(dest)
-                        ?: "正在为您导航到$dest"
+                        ?: "正在为您导航到${dest}"
                     RouteResult(success = true, speakText = text)
                 } else {
                     RouteResult(
@@ -140,7 +140,7 @@ class IntentRouterImpl @Inject constructor() : IntentRouter {
             VoiceIntent.INDOOR_NAVIGATE -> {
                 val dest = nluResult.getSlot("destination")
                 if (dest != null) {
-                    RouteResult(success = true, speakText = "正在为您查找$dest的位置")
+                    RouteResult(success = true, speakText = "正在为您查找${dest}的位置")
                 } else {
                     RouteResult(
                         success = false,
