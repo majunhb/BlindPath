@@ -204,7 +204,7 @@ private fun DrawScope.drawObstacleMarker(
     }
     
     // 警示框
-    drawRect(color, Offset(screenX - boxSize/2, screenY - boxSize/2), Size(boxSize, boxSize), Stroke(4.dp.toPx()))
+    drawRect(color, Offset(screenX - boxSize/2, screenY - boxSize/2), Size(boxSize, boxSize), Stroke(width = 4.dp.toPx()))
     drawLine(color, Offset(screenX - boxSize/2, screenY - boxSize/2), Offset(screenX + boxSize/2, screenY + boxSize/2), 3.dp.toPx())
     drawLine(color, Offset(screenX + boxSize/2, screenY - boxSize/2), Offset(screenX - boxSize/2, screenY + boxSize/2), 3.dp.toPx())
     

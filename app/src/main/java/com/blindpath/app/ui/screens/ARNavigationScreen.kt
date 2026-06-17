@@ -29,8 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.DefaultLifecycleObserver
-import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amap.api.maps.AMap
 import com.amap.api.maps.CameraUpdateFactory
 import com.amap.api.maps.MapView
@@ -441,7 +440,7 @@ fun ARNavigationScreen(
                         label = { Text("目的地") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
+                        colors = OutlinedTextFieldDefaults.outlinedTextFieldColors(
                             focusedBorderColor = Color(0xFF4CAF50),
                             unfocusedBorderColor = Color.White.copy(alpha = 0.5f)
                         ),
@@ -449,7 +448,10 @@ fun ARNavigationScreen(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
-                        onClick = { navViewModel.startNavigation(destinationText) },
+                        onClick = {
+                            navViewModel.updateDestination(destinationText)
+                            navViewModel.startNavigation()
+                        },
                         enabled = destinationText.isNotBlank(),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
                     ) {
