@@ -276,6 +276,36 @@ class NavigationViewModel @Inject constructor(
         _destinationText.value = text
     }
 
+    /**
+     * 公共导航启动方法 — 消除 startNavigation/selectSearchResult 中的重复路线规划逻辑
+     * @return true 表示导航成功启动，false 表示失败（已播报错误信息）
+     */
+    private suspend fun navigateTo(
+        lat: Double, lon: Double, name: String, location: com.blindpath.module_navigation.domain.model.LatLonPoint
+    ): Boolean {
+        navigationRepository.setDestination(lat, lon, name)
+        _destinationText.value = name
+
+        val routeResult = navigationRepository.planRoute(
+            location.latitude, location.longitude, lat, lon
+        )
+        if (routeResult is com.blindpath.base.common.Result.Error) {
+            voiceRepository.announce("路线规划失败，请稍后重试", VoiceType.SYSTEM_STATUS)
+            _isPlanning.value = false
+            return false
+        }
+
+        navigationRepository.startNavigation()
+        _isPlanning.value = false
+        _isNavigating.value = true
+
+        val state = _uiState.value
+        val msg = "路线规划完成，全程${state.totalDistance}，预计${state.totalDuration}。开始导航。"
+        _announcement.value = msg
+        voiceRepository.announce(msg, VoiceType.NAVIGATION_PROGRESS)
+        return true
+    }
+
     fun startNavigation() {
         val destText = _destinationText.value.trim()
         if (destText.length < 2) {
@@ -306,29 +336,8 @@ class NavigationViewModel @Inject constructor(
             }
             val destPoint = (geoResult as Result.Success).data
 
-            // 3. 设置目的地
-            navigationRepository.setDestination(destPoint.latitude, destPoint.longitude, destText)
-
-            // 4. 规划路线
-            val routeResult = navigationRepository.planRoute(
-                location.latitude, location.longitude,
-                destPoint.latitude, destPoint.longitude
-            )
-            if (routeResult is Result.Error) {
-                voiceRepository.announce("路线规划失败，请稍后重试", VoiceType.SYSTEM_STATUS)
-                _isPlanning.value = false
-                return@launch
-            }
-
-            // 5. 开始导航
-            navigationRepository.startNavigation()
-            _isPlanning.value = false
-            _isNavigating.value = true
-
-            val state = _uiState.value
-            val msg = "路线规划完成，全程${state.totalDistance}，预计${state.totalDuration}。开始导航。"
-            _announcement.value = msg
-            voiceRepository.announce(msg, VoiceType.NAVIGATION_PROGRESS)
+            // 3. 规划路线 + 开始导航
+            navigateTo(destPoint.latitude, destPoint.longitude, destText, location)
         }
     }
 
@@ -431,30 +440,8 @@ class NavigationViewModel @Inject constructor(
                 return@launch
             }
 
-            // 2. 设置目的地
-            _destinationText.value = item.name
-            navigationRepository.setDestination(item.latitude, item.longitude, item.name)
-
-            // 3. 规划路线
-            val routeResult = navigationRepository.planRoute(
-                location.latitude, location.longitude,
-                item.latitude, item.longitude
-            )
-            if (routeResult is Result.Error) {
-                voiceRepository.announce("路线规划失败，请稍后重试", VoiceType.SYSTEM_STATUS)
-                _isPlanning.value = false
-                return@launch
-            }
-
-            // 4. 开始导航
-            navigationRepository.startNavigation()
-            _isPlanning.value = false
-            _isNavigating.value = true
-
-            val state = uiState.value
-            val msg = "路线规划完成，全程${state.totalDistance}，预计${state.totalDuration}。开始导航。"
-            _announcement.value = msg
-            voiceRepository.announce(msg, VoiceType.NAVIGATION_PROGRESS)
+            // 2. 规划路线 + 开始导航
+            if (!navigateTo(item.latitude, item.longitude, item.name, location)) return@launch
         }
     }
 
