@@ -38,6 +38,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.app.ui.ar.*
 import com.blindpath.app.ui.viewmodel.NavigationViewModel
 import com.blindpath.base.navigation.NavigationMode
+import com.blindpath.base.navigation.BlindPathGuidanceEngine
+import com.blindpath.base.perception.LowLightDetector
+import com.blindpath.module_obstacle.data.detection.TactilePavingDetector
+import com.blindpath.module_obstacle.data.detection.TactilePavingResult
+import com.blindpath.module_obstacle.data.detection.TrafficLightClassifier
+import com.blindpath.module_obstacle.data.detection.TrafficLightState
 import com.blindpath.module_navigation.domain.model.NavigationState
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository
@@ -144,6 +150,14 @@ fun ARNavigationScreen(
     var isDetectionActive by remember { mutableStateOf(false) }
     var cameraProviderRef by remember { mutableStateOf<ProcessCameraProvider?>(null) }
     var sceneClassifierRef by remember { mutableStateOf<SceneClassifier?>(null) }
+
+    // ★ PRD V2.0 第三期：盲道/红绿灯专用检测器
+    val tactilePavingDetector = remember { TactilePavingDetector() }
+    val trafficLightClassifier = remember { TrafficLightClassifier() }
+
+    // ★ PRD V2.0 第三期：盲道引导状态 + 弱光状态收集
+    val blindPathGuidanceState by navViewModel.blindPathGuidanceState.collectAsStateWithLifecycle()
+    val lowLightState by navViewModel.lowLightState.collectAsStateWithLifecycle()
 
     // 加载模型
     LaunchedEffect(Unit) {
@@ -254,12 +268,39 @@ fun ARNavigationScreen(
                     arObstacles = emptyList()
                 }
                 
+                // ★ PRD V2.0 第三期：弱光检测（优先执行，不回收bitmap）
+                navViewModel.processLowLightDetection(bitmap)
+
+                // ★ PRD V2.0 第三期：盲道检测（CV方案）
+                val tactileResult: TactilePavingResult? = try {
+                    tactilePavingDetector.detect(bitmap)
+                } catch (e: Exception) { null }
+                navViewModel.processBlindPathDetection(tactileResult)
+
                 // 场景识别
                 sceneClassifierRef?.recognizeScene(bitmap, obstacles)?.let { sceneResult ->
                     isOnSidewalk = when (sceneResult.sceneType) {
                         com.blindpath.module_obstacle.domain.model.SceneType.SIDEWALK -> true
                         com.blindpath.module_obstacle.domain.model.SceneType.ROAD -> false
                         else -> isOnSidewalk
+                    }
+
+                    // ★ PRD V2.0 第三期：红绿灯分类
+                    val trafficLightObs = obstacles.firstOrNull {
+                        it.type == com.blindpath.module_obstacle.domain.model.ObstacleType.TRAFFIC_LIGHT
+                    }
+                    if (trafficLightObs != null) {
+                        val tlState = trafficLightClassifier.classify(
+                            bitmap,
+                            trafficLightObs.boundingBox.left,
+                            trafficLightObs.boundingBox.top,
+                            trafficLightObs.boundingBox.right,
+                            trafficLightObs.boundingBox.bottom
+                        )
+                        navViewModel.processTrafficLightDetection(tlState)
+                    } else {
+                        // 无红绿灯 → 通知播报器停止
+                        navViewModel.processTrafficLightDetection(TrafficLightState.UNKNOWN)
                     }
                 }
                 
@@ -349,6 +390,20 @@ fun ARNavigationScreen(
         }
     }
 
+    // ===== PRD V2.0 第三期：弱光自动亮度调节 =====
+    val activity = context as? android.app.Activity
+    LaunchedEffect(lowLightState.isLowLight) {
+        activity?.window?.let { window ->
+            val layoutParams = window.attributes
+            layoutParams.screenBrightness = if (lowLightState.isLowLight) {
+                1.0f  // 最大亮度补光
+            } else {
+                -1.0f  // 恢复系统默认
+            }
+            window.attributes = layoutParams
+        }
+    }
+
     // ===== UI：带淡入淡出过渡 =====
     AnimatedVisibility(
         visible = isVisible,
@@ -397,6 +452,7 @@ fun ARNavigationScreen(
                 obstacles = arObstacles,
                 isOnSidewalk = isOnSidewalk,
                 dangerLevel = dangerLevel,
+                blindPathGuidanceState = blindPathGuidanceState,
                 modifier = Modifier.fillMaxSize()
             )
 

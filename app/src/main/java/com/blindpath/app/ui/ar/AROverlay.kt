@@ -11,6 +11,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.unit.dp
+import com.blindpath.base.navigation.BlindPathGuidanceEngine
 import kotlin.math.*
 
 /**
@@ -32,7 +33,9 @@ fun AROverlay(
     // 盲道状态
     isOnSidewalk: Boolean,
     // 危险等级
-    dangerLevel: ARDangerLevel
+    dangerLevel: ARDangerLevel,
+    // ★ PRD V2.0 第三期：盲道引导状态
+    blindPathGuidanceState: BlindPathGuidanceEngine.GuidanceState = BlindPathGuidanceEngine.GuidanceState()
 ) {
     Canvas(modifier = modifier.fillMaxSize()) {
         val width = size.width
@@ -80,6 +83,15 @@ fun AROverlay(
                 width = width,
                 height = height,
                 dangerLevel = dangerLevel
+            )
+        }
+        
+        // ★ PRD V2.0 第三期：绘制盲道引导线
+        if (blindPathGuidanceState.isBlindPathVisible || blindPathGuidanceState.consecutiveLostFrames > 0) {
+            drawBlindPathGuideLine(
+                width = width,
+                height = height,
+                guidanceState = blindPathGuidanceState
             )
         }
     }
@@ -270,4 +282,108 @@ fun calculateObstacleScreenPosition(
     val screenX = 0.5f + (obstacleBearing / cameraHorizontalFov) * 0.5f
     val screenY = 0.45f + ((1f / (obstacleDistance + 1f)) * 0.3f).coerceIn(0f, 0.25f)
     return Pair(screenX.coerceIn(0.05f, 0.95f), screenY.coerceIn(0.15f, 0.85f))
+}
+
+/**
+ * ★ PRD V2.0 第三期：绘制盲道引导线
+ *
+ * 在AR画面上叠加盲道引导可视化：
+ * - 盲道可见时：绿色引导线，根据偏移量偏左/偏右
+ * - 盲道丢失时：红色虚线预警，提示用户注意安全
+ * - 偏移方向通过线条水平位置和箭头指示
+ */
+private fun DrawScope.drawBlindPathGuideLine(
+    width: Float,
+    height: Float,
+    guidanceState: BlindPathGuidanceEngine.GuidanceState
+) {
+    val centerX = width / 2
+    val guideLineTop = height * 0.65f
+    val guideLineBottom = height * 0.95f
+
+    if (guidanceState.isBlindPathVisible) {
+        // 盲道可见 — 绿色引导线
+        // 根据偏移等级确定线条水平偏移
+        val lineOffset = when (guidanceState.offsetLevel) {
+            BlindPathGuidanceEngine.OffsetLevel.SLIGHT_LEFT -> -width * 0.08f
+            BlindPathGuidanceEngine.OffsetLevel.SLIGHT_RIGHT -> width * 0.08f
+            BlindPathGuidanceEngine.OffsetLevel.MAJOR_LEFT -> -width * 0.18f
+            BlindPathGuidanceEngine.OffsetLevel.MAJOR_RIGHT -> width * 0.18f
+            BlindPathGuidanceEngine.OffsetLevel.CENTER -> 0f
+        }
+
+        val lineX = centerX + lineOffset
+        val guideColor = Color(0xFF4CAF50)
+
+        // 主引导线（渐变）
+        val guidePath = Path().apply {
+            moveTo(lineX - 12.dp.toPx(), guideLineBottom)
+            lineTo(lineX + 12.dp.toPx(), guideLineBottom)
+            lineTo(lineX + 30.dp.toPx() + lineOffset * 0.3f, guideLineTop)
+            lineTo(lineX - 30.dp.toPx() + lineOffset * 0.3f, guideLineTop)
+            close()
+        }
+
+        drawPath(
+            guidePath,
+            Brush.verticalGradient(
+                listOf(guideColor.copy(alpha = 0.6f), guideColor.copy(alpha = 0.15f)),
+                startY = guideLineTop, endY = guideLineBottom
+            )
+        )
+
+        // 引导线边框
+        drawPath(guidePath, guideColor.copy(alpha = 0.9f), style = Stroke(width = 2.dp.toPx()))
+
+        // 偏移方向箭头指示
+        if (guidanceState.offsetLevel != BlindPathGuidanceEngine.OffsetLevel.CENTER) {
+            val arrowX = if (lineOffset > 0) lineX + 40.dp.toPx() else lineX - 40.dp.toPx()
+            val arrowY = (guideLineTop + guideLineBottom) / 2
+            val arrowDir = if (lineOffset > 0) -1f else 1f  // 指向中心方向
+
+            val arrowPath = Path().apply {
+                moveTo(arrowX, arrowY)
+                lineTo(arrowX - arrowDir * 20.dp.toPx(), arrowY - 10.dp.toPx())
+                lineTo(arrowX - arrowDir * 20.dp.toPx(), arrowY + 10.dp.toPx())
+                close()
+            }
+            drawPath(arrowPath, guideColor.copy(alpha = 0.9f))
+        }
+    } else {
+        // 盲道丢失 — 红色虚线预警
+        val warningColor = Color(0xFFF44336)
+
+        // 绘制虚线
+        val dashLength = 20.dp.toPx()
+        val gapLength = 15.dp.toPx()
+        var y = guideLineBottom
+        while (y > guideLineTop) {
+            val segmentEnd = maxOf(y - dashLength, guideLineTop)
+            drawLine(
+                warningColor.copy(alpha = 0.7f),
+                start = Offset(centerX, y),
+                end = Offset(centerX, segmentEnd),
+                strokeWidth = 4.dp.toPx()
+            )
+            y = segmentEnd - gapLength
+        }
+
+        // 丢失警告标记
+        drawCircle(
+            warningColor.copy(alpha = 0.3f),
+            30.dp.toPx(),
+            Offset(centerX, (guideLineTop + guideLineBottom) / 2)
+        )
+        drawLine(
+            Color.White,
+            Offset(centerX, (guideLineTop + guideLineBottom) / 2 - 12.dp.toPx()),
+            Offset(centerX, (guideLineTop + guideLineBottom) / 2 + 6.dp.toPx()),
+            4.dp.toPx()
+        )
+        drawCircle(
+            Color.White,
+            3.dp.toPx(),
+            Offset(centerX, (guideLineTop + guideLineBottom) / 2 + 14.dp.toPx())
+        )
+    }
 }

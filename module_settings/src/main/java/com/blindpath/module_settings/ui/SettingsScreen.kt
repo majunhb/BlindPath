@@ -96,7 +96,8 @@ fun SettingsScreen(
                 VibrationSettingsCard(
                     settings = uiState.settings,
                     onEnabledChange = { viewModel.updateVibrationEnabled(it) },
-                    onIntensityChange = { viewModel.updateVibrationIntensity(it) }
+                    onIntensityChange = { viewModel.updateVibrationIntensity(it) },
+                    onDirectionalEnabledChange = { viewModel.updateDirectionalVibrationEnabled(it) }
                 )
             }
 
@@ -281,7 +282,8 @@ fun VoiceSettingsCard(
 fun VibrationSettingsCard(
     settings: AppSettings,
     onEnabledChange: (Boolean) -> Unit,
-    onIntensityChange: (VibrationIntensity) -> Unit
+    onIntensityChange: (VibrationIntensity) -> Unit,
+    onDirectionalEnabledChange: (Boolean) -> Unit = {}
 ) {
     Card(
         modifier = Modifier
@@ -343,6 +345,31 @@ fun VibrationSettingsCard(
                             }
                         )
                     }
+                }
+
+                // ★ PRD V2.0 第三期：方向性震动开关
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics {
+                            contentDescription = "方向性震动反馈开关，当前${if (settings.directionalVibrationEnabled) "开启" else "关闭"}"
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("方向性震动反馈")
+                        Text(
+                            "根据障碍物方向生成不同节奏震动",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = settings.directionalVibrationEnabled,
+                        onCheckedChange = onDirectionalEnabledChange
+                    )
                 }
             }
         }

@@ -81,10 +81,16 @@ import com.amap.api.maps.MapView
 import com.amap.api.maps.model.LatLng
 import com.amap.api.maps.model.MyLocationStyle
 import com.blindpath.app.ui.viewmodel.NavigationViewModel
+import com.blindpath.base.navigation.BlindPathGuidanceEngine
+import com.blindpath.base.perception.LowLightDetector
 import com.blindpath.module_navigation.domain.NavigationRepository
 import com.blindpath.module_navigation.domain.model.NavigationState
 import com.blindpath.module_navigation.domain.model.RouteStep
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
+import com.blindpath.module_obstacle.data.detection.TactilePavingDetector
+import com.blindpath.module_obstacle.data.detection.TactilePavingResult
+import com.blindpath.module_obstacle.data.detection.TrafficLightClassifier
+import com.blindpath.module_obstacle.data.detection.TrafficLightState as ModuleTrafficLightState
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.SceneRecognitionResult
 import com.blindpath.module_obstacle.domain.model.SceneType
@@ -329,6 +335,13 @@ fun OutdoorNavigationScreen(
     var isDetectionActive by remember { mutableStateOf(false) }
     var cameraProviderRef by remember { mutableStateOf<ProcessCameraProvider?>(null) }
 
+    // ★ PRD V2.0 第三期：盲道/红绿灯专用检测器
+    val tactilePavingDetector = remember { TactilePavingDetector() }
+    val trafficLightClassifier = remember { TrafficLightClassifier() }
+
+    // ★ PRD V2.0 第三期：弱光状态收集
+    val lowLightState by navViewModel.lowLightState.collectAsStateWithLifecycle()
+
     // 加载模型并启动CameraX
     LaunchedEffect(Unit) {
         val modelResult = obstacleRepository.loadModel()
@@ -395,6 +408,9 @@ fun OutdoorNavigationScreen(
                 continue
             }
             try {
+                // ★ PRD V2.0 第三期：弱光检测（优先执行）
+                navViewModel.processLowLightDetection(bitmap)
+
                 // 1. 障碍物检测（AI）
                 val bytes = ByteArray(bitmap.width * bitmap.height * 4)
                 bitmap.copyPixelsToBuffer(ByteBuffer.wrap(bytes))
@@ -402,8 +418,31 @@ fun OutdoorNavigationScreen(
                     obstacleRepository.processFrame(bytes, bitmap.width, bitmap.height)
                 } catch (e: Exception) { emptyList() }
 
+                // ★ PRD V2.0 第三期：盲道检测（CV方案）
+                val tactileResult: TactilePavingResult? = try {
+                    tactilePavingDetector.detect(bitmap)
+                } catch (e: Exception) { null }
+                navViewModel.processBlindPathDetection(tactileResult)
+
                 // 2. 场景识别（CV视觉算法）
                 val sceneResult = sceneClassifier.recognizeScene(bitmap, aiObstacles)
+
+                // ★ PRD V2.0 第三期：红绿灯分类
+                val trafficLightObs = aiObstacles.firstOrNull {
+                    it.type == com.blindpath.module_obstacle.domain.model.ObstacleType.TRAFFIC_LIGHT
+                }
+                if (trafficLightObs != null) {
+                    val tlState = trafficLightClassifier.classify(
+                        bitmap,
+                        trafficLightObs.boundingBox.left,
+                        trafficLightObs.boundingBox.top,
+                        trafficLightObs.boundingBox.right,
+                        trafficLightObs.boundingBox.bottom
+                    )
+                    navViewModel.processTrafficLightDetection(tlState)
+                } else {
+                    navViewModel.processTrafficLightDetection(ModuleTrafficLightState.UNKNOWN)
+                }
 
                 // 3. 更新UI状态
                 if (sceneResult != null) {
@@ -502,6 +541,20 @@ fun OutdoorNavigationScreen(
                 Timber.w(e, "OutdoorNav: 帧处理失败")
                 try { bitmap.recycle() } catch (_: Exception) {}
             }
+        }
+    }
+
+    // ★ PRD V2.0 第三期：弱光自动亮度调节
+    val outDoorActivity = context as? android.app.Activity
+    LaunchedEffect(lowLightState.isLowLight) {
+        outDoorActivity?.window?.let { window ->
+            val layoutParams = window.attributes
+            layoutParams.screenBrightness = if (lowLightState.isLowLight) {
+                1.0f  // 最大亮度补光
+            } else {
+                -1.0f  // 恢复系统默认
+            }
+            window.attributes = layoutParams
         }
     }
 

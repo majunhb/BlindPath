@@ -30,6 +30,8 @@ data class AppSettings(
     // 振动设置
     val vibrationEnabled: Boolean = true,
     val vibrationIntensity: VibrationIntensity = VibrationIntensity.MEDIUM,
+    // ★ PRD V2.0 第三期：方向性震动开关
+    val directionalVibrationEnabled: Boolean = true,
     
     // 检测设置
     val detectionSensitivity: DetectionSensitivity = DetectionSensitivity.MEDIUM,
@@ -63,6 +65,7 @@ class SettingsRepository @Inject constructor(
         val VOICE_ENABLED = booleanPreferencesKey("voice_enabled")
         val VIBRATION_ENABLED = booleanPreferencesKey("vibration_enabled")
         val VIBRATION_INTENSITY = intPreferencesKey("vibration_intensity")
+        val DIRECTIONAL_VIBRATION_ENABLED = booleanPreferencesKey("directional_vibration_enabled")
         val DETECTION_SENSITIVITY = floatPreferencesKey("detection_sensitivity")
         val DETECTION_DISTANCE = intPreferencesKey("detection_distance")
         val AUTO_LOCATION_SHARE = booleanPreferencesKey("auto_location_share")
@@ -87,6 +90,7 @@ class SettingsRepository @Inject constructor(
                 vibrationIntensity = VibrationIntensity.entries.find {
                     it.value == (preferences[Keys.VIBRATION_INTENSITY] ?: 2)
                 } ?: VibrationIntensity.MEDIUM,
+                directionalVibrationEnabled = preferences[Keys.DIRECTIONAL_VIBRATION_ENABLED] ?: true,
                 detectionSensitivity = DetectionSensitivity.entries.find {
                     it.value == (preferences[Keys.DETECTION_SENSITIVITY] ?: 1.0f)
                 } ?: DetectionSensitivity.MEDIUM,
@@ -147,6 +151,13 @@ class SettingsRepository @Inject constructor(
     suspend fun updateAutoLocationShare(enabled: Boolean) {
         context.dataStore.edit { preferences ->
             preferences[Keys.AUTO_LOCATION_SHARE] = enabled
+        }
+    }
+
+    // ★ PRD V2.0 第三期：方向性震动开关
+    suspend fun updateDirectionalVibrationEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.DIRECTIONAL_VIBRATION_ENABLED] = enabled
         }
     }
 }

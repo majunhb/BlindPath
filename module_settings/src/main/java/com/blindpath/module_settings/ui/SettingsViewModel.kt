@@ -84,6 +84,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    // ★ PRD V2.0 第三期：方向性震动开关
+    fun updateDirectionalVibrationEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsRepository.updateDirectionalVibrationEnabled(enabled)
+        }
+    }
+
     fun setTestSpeechText(text: String) {
         _uiState.update { it.copy(testSpeechText = text) }
     }

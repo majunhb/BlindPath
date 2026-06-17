@@ -58,9 +58,9 @@ enum class DangerLevel { CRITICAL, HIGH, MEDIUM, LOW }
 enum class CrossingStatus { CAN_CROSS, WAIT, DANGER, NONE }
 
 /**
- * 交通灯状态枚举
+ * 交通灯状态枚举 — 统一使用 module_obstacle 定义
+ * @see com.blindpath.module_obstacle.data.detection.TrafficLightState
  */
-enum class TrafficLightState { RED, YELLOW, GREEN, UNKNOWN }
 
 /**
  * 人行道状态数据类
@@ -883,11 +883,11 @@ class NavigationViewModel @Inject constructor(
      * @return 弱光状态
      */
     fun processLowLightDetection(bitmap: android.graphics.Bitmap): LowLightDetector.LowLightState {
+        val wasLowLight = _lowLightState.value.isLowLight
         val state = lowLightDetector.detect(bitmap)
         _lowLightState.value = state
 
         // 弱光状态变化时语音提醒
-        val wasLowLight = _lowLightState.value.isLowLight
         if (state.isLowLight && !wasLowLight) {
             viewModelScope.launch {
                 voiceRepository.announce("环境光线较暗，已开启屏幕补光", VoiceType.SYSTEM_STATUS)
@@ -899,5 +899,19 @@ class NavigationViewModel @Inject constructor(
         }
 
         return state
+    }
+
+    /**
+     * 清理资源 — Activity/Fragment onDestroy 时调用
+     */
+    fun cleanup() {
+        trafficLightAnnouncer.stopAnnouncing()
+        blindPathGuidance.reset()
+        lowLightDetector.reset()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        cleanup()
     }
 }
