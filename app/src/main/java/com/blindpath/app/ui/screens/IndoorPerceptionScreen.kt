@@ -39,7 +39,7 @@ import androidx.core.content.ContextCompat
 import com.blindpath.module_indoor.data.IndoorDetector
 import com.blindpath.module_indoor.domain.model.*
 import com.blindpath.module_obstacle.domain.ObstacleRepository
-import com.blindpath.module_obstacle.domain.model.Direction
+import com.blindpath.base.navigation.model.Direction
 import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
 import dagger.hilt.EntryPoint

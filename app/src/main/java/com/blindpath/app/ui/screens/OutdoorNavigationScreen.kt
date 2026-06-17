@@ -88,9 +88,9 @@ import com.blindpath.module_navigation.domain.model.NavigationState
 import com.blindpath.module_navigation.domain.model.RouteStep
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.data.detection.TactilePavingDetector
-import com.blindpath.module_obstacle.data.detection.TactilePavingResult
+import com.blindpath.base.navigation.model.TactilePavingResult
 import com.blindpath.module_obstacle.data.detection.TrafficLightClassifier
-import com.blindpath.module_obstacle.data.detection.TrafficLightState as ModuleTrafficLightState
+import com.blindpath.base.navigation.model.TrafficLightState as ModuleTrafficLightState
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.SceneRecognitionResult
 import com.blindpath.module_obstacle.domain.model.SceneType

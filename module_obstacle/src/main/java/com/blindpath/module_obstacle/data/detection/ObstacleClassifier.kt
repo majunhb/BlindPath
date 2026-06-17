@@ -1,7 +1,7 @@
 ﻿package com.blindpath.module_obstacle.data.detection
 
 import com.blindpath.base.config.AppConfig
-import com.blindpath.module_obstacle.domain.model.Direction
+import com.blindpath.base.navigation.model.Direction
 import com.blindpath.module_obstacle.domain.model.ObstacleType
 import javax.inject.Inject
 import javax.inject.Singleton

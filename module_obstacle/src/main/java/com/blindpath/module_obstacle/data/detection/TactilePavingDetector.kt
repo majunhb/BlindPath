@@ -1,5 +1,6 @@
 package com.blindpath.module_obstacle.data.detection
 
+import com.blindpath.base.navigation.model.TactilePavingResult
 import android.graphics.Bitmap
 import android.graphics.Color
 import timber.log.Timber
@@ -361,14 +362,3 @@ class TactilePavingDetector @Inject constructor() {
         lastOffset = 0f
     }
 }
-
-/**
- * 盲道检测结果
- */
-data class TactilePavingResult(
-    val detected: Boolean,
-    val confidence: Float,           // 置信度 0-1
-    val direction: Float,            // 盲道走向角度（弧度）
-    val offsetFromCenter: Float,     // 偏离中心线距离（归一化，-1 到 1）
-    val pavingRatio: Float           // 黄色区域占比
-)

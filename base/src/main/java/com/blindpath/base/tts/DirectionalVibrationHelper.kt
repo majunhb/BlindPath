@@ -8,6 +8,7 @@ import android.os.VibratorManager
 import timber.log.Timber
 import com.blindpath.base.common.AlertLevel
 import com.blindpath.base.navigation.BlindPathGuidanceEngine
+import com.blindpath.base.navigation.model.Direction
 
 /**
  * 方向性震动反馈管理器 - PRD V2.0 第二期
@@ -56,13 +57,13 @@ object DirectionalVibrationHelper {
     // ==================== 预警级别震动 ====================
 
     /** HIGH（1.5-3m）：方向性单次震动 */
-    fun vibrateWarning(context: Context, direction: com.blindpath.module_obstacle.domain.model.Direction) {
+    fun vibrateWarning(context: Context, direction: Direction) {
         val pattern = directionToPattern(direction)
         vibrateOnce(context, pattern)
     }
 
     /** CRITICAL（<1.5m）：方向性急促连续震动 */
-    fun vibrateCritical(context: Context, direction: com.blindpath.module_obstacle.domain.model.Direction) {
+    fun vibrateCritical(context: Context, direction: Direction) {
         val pattern = directionToPattern(direction)
         vibrateUrgent(context, pattern)
     }
@@ -115,14 +116,14 @@ object DirectionalVibrationHelper {
     /**
      * 方向转震动模式
      */
-    private fun directionToPattern(direction: com.blindpath.module_obstacle.domain.model.Direction): LongArray {
+    private fun directionToPattern(direction: Direction): LongArray {
         return when (direction) {
-            com.blindpath.module_obstacle.domain.model.Direction.LEFT -> LEFT_PATTERN
-            com.blindpath.module_obstacle.domain.model.Direction.LEFT_FRONT -> LEFT_PATTERN
-            com.blindpath.module_obstacle.domain.model.Direction.RIGHT -> RIGHT_PATTERN
-            com.blindpath.module_obstacle.domain.model.Direction.RIGHT_FRONT -> RIGHT_PATTERN
-            com.blindpath.module_obstacle.domain.model.Direction.CENTER -> CENTER_PATTERN
-            com.blindpath.module_obstacle.domain.model.Direction.BACK -> REAR_PATTERN
+            Direction.LEFT -> LEFT_PATTERN
+            Direction.LEFT_FRONT -> LEFT_PATTERN
+            Direction.RIGHT -> RIGHT_PATTERN
+            Direction.RIGHT_FRONT -> RIGHT_PATTERN
+            Direction.CENTER -> CENTER_PATTERN
+            Direction.BACK -> REAR_PATTERN
         }
     }
 

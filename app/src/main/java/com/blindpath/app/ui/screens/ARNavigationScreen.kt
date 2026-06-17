@@ -41,9 +41,9 @@ import com.blindpath.base.navigation.NavigationMode
 import com.blindpath.base.navigation.BlindPathGuidanceEngine
 import com.blindpath.base.perception.LowLightDetector
 import com.blindpath.module_obstacle.data.detection.TactilePavingDetector
-import com.blindpath.module_obstacle.data.detection.TactilePavingResult
+import com.blindpath.base.navigation.model.TactilePavingResult
 import com.blindpath.module_obstacle.data.detection.TrafficLightClassifier
-import com.blindpath.module_obstacle.data.detection.TrafficLightState
+import com.blindpath.base.navigation.model.TrafficLightState
 import com.blindpath.module_navigation.domain.model.NavigationState
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
 import com.blindpath.module_obstacle.domain.ObstacleRepository

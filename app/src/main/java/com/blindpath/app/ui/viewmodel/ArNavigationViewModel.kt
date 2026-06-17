@@ -4,7 +4,7 @@ import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.blindpath.module_obstacle.data.detection.TactilePavingDetector
-import com.blindpath.module_obstacle.data.detection.TactilePavingResult
+import com.blindpath.base.navigation.model.TactilePavingResult
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
 import com.blindpath.module_obstacle.domain.model.ObstacleState

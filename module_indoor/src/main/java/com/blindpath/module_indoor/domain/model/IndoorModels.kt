@@ -4,7 +4,7 @@ package com.blindpath.module_indoor.domain.model
 
 import com.blindpath.module_obstacle.domain.model.BoundingBox
 
-import com.blindpath.module_obstacle.domain.model.Direction
+import com.blindpath.base.navigation.model.Direction
 
 
 

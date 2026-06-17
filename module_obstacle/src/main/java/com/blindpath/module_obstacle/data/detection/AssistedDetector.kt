@@ -4,7 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import com.blindpath.module_obstacle.domain.model.BoundingBox
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
-import com.blindpath.module_obstacle.domain.model.Direction
+import com.blindpath.base.navigation.model.Direction
 import com.blindpath.module_obstacle.domain.model.ObstacleType
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.objects.ObjectDetection

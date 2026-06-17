@@ -1,6 +1,6 @@
 package com.blindpath.base.navigation
 
-import com.blindpath.module_obstacle.data.detection.TrafficLightState
+import com.blindpath.base.navigation.model.TrafficLightState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

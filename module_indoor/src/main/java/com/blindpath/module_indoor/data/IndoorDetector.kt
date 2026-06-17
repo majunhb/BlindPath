@@ -6,7 +6,7 @@ import com.blindpath.module_indoor.domain.model.*
 import com.blindpath.module_obstacle.data.detection.AIDetector
 import com.blindpath.module_obstacle.domain.model.BoundingBox
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
-import com.blindpath.module_obstacle.domain.model.Direction
+import com.blindpath.base.navigation.model.Direction
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.label.ImageLabeling
 import com.google.mlkit.vision.label.defaults.ImageLabelerOptions

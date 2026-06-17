@@ -9,7 +9,7 @@ import android.hardware.SensorManager
 import com.blindpath.base.reliability.ReliabilityLogger
 import com.blindpath.module_obstacle.domain.model.BoundingBox
 import com.blindpath.module_obstacle.domain.model.DetectedObstacle
-import com.blindpath.module_obstacle.domain.model.Direction
+import com.blindpath.base.navigation.model.Direction
 import com.blindpath.module_obstacle.domain.model.ObstacleType
 import dagger.hilt.android.qualifiers.ApplicationContext
 import timber.log.Timber

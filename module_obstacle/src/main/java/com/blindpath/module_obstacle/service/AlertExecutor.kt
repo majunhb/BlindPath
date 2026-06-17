@@ -6,6 +6,7 @@ import com.blindpath.base.reliability.LatencyTracker
 import com.blindpath.base.reliability.ReliabilityLogger
 import com.blindpath.base.tts.VibrationHelper
 import com.blindpath.base.tts.DirectionalVibrationHelper
+import com.blindpath.base.navigation.model.Direction
 import com.blindpath.module_voice.domain.VoiceRepository
 import com.blindpath.module_voice.domain.model.VoiceRequest
 import com.blindpath.module_voice.domain.model.VoiceType
@@ -95,7 +96,7 @@ class AlertExecutor @Inject constructor(
     fun executeDirectionalAlert(
         level: AlertLevel,
         description: String,
-        direction: com.blindpath.module_obstacle.domain.model.Direction? = null
+        direction: Direction? = null
     ) {
         if (level == AlertLevel.SAFE) return
 

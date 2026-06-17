@@ -22,8 +22,8 @@ import com.blindpath.base.navigation.NavigationModeManager
 import com.blindpath.base.navigation.BlindPathGuidanceEngine
 import com.blindpath.base.navigation.TrafficLightAnnouncer
 import com.blindpath.base.perception.LowLightDetector
-import com.blindpath.module_obstacle.data.detection.TactilePavingResult
-import com.blindpath.module_obstacle.data.detection.TrafficLightState
+import com.blindpath.base.navigation.model.TactilePavingResult
+import com.blindpath.base.navigation.model.TrafficLightState
 import javax.inject.Inject
 
 /**
