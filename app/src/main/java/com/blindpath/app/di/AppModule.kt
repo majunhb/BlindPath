@@ -6,9 +6,13 @@ import com.blindpath.module_obstacle.data.ObstacleRepositoryImpl
 import com.blindpath.module_obstacle.domain.ObstacleRepository
 import com.blindpath.module_trip_assist.data.TripAssistRepositoryImpl
 import com.blindpath.module_trip_assist.domain.TripAssistRepository
+import com.blindpath.module_voice.data.IntentRouterImpl
+import com.blindpath.module_voice.data.NluEngineImpl
 import com.blindpath.module_voice.data.VoiceCommandRepositoryImpl
 import com.blindpath.module_voice.data.VoiceInteractionManagerImpl
 import com.blindpath.module_voice.data.VoiceRepositoryImpl
+import com.blindpath.module_voice.domain.IntentRouter
+import com.blindpath.module_voice.domain.NluEngine
 import com.blindpath.module_voice.domain.VoiceCommandRepository
 import com.blindpath.module_voice.domain.VoiceInteractionManager
 import com.blindpath.module_voice.domain.VoiceRepository
@@ -57,4 +61,16 @@ abstract class AppModule {
     abstract fun bindVoiceInteractionManager(
         impl: VoiceInteractionManagerImpl
     ): VoiceInteractionManager
+
+    @Binds
+    @Singleton
+    abstract fun bindNluEngine(
+        impl: NluEngineImpl
+    ): NluEngine
+
+    @Binds
+    @Singleton
+    abstract fun bindIntentRouter(
+        impl: IntentRouterImpl
+    ): IntentRouter
 }

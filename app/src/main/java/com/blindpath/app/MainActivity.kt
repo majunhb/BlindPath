@@ -43,6 +43,11 @@ import com.blindpath.module_obstacle.domain.ObstacleRepository
 
 import com.blindpath.module_voice.domain.VoiceRepository
 
+import com.blindpath.app.voice.BlindPathNavigationExecutor
+import com.blindpath.app.voice.BlindPathSceneExecutor
+import com.blindpath.app.voice.BlindPathSosExecutor
+import com.blindpath.app.voice.BlindPathVoiceControlExecutor
+
 import androidx.lifecycle.lifecycleScope
 
 import dagger.hilt.android.AndroidEntryPoint
@@ -82,6 +87,18 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var cameraXManager: com.blindpath.app.ui.camera.CameraXManager
+
+    @Inject
+    lateinit var navExecutor: BlindPathNavigationExecutor
+
+    @Inject
+    lateinit var sceneExecutor: BlindPathSceneExecutor
+
+    @Inject
+    lateinit var voiceControlExecutor: BlindPathVoiceControlExecutor
+
+    @Inject
+    lateinit var sosExecutor: BlindPathSosExecutor
 
 
 
@@ -172,6 +189,10 @@ class MainActivity : ComponentActivity() {
                         navigationRepository = navigationRepository,
                         indoorDetector = indoorDetector,
                         sceneClassifier = sceneClassifier,
+                        navExecutor = navExecutor,
+                        sceneExec = sceneExecutor,
+                        voiceCtrlExec = voiceControlExecutor,
+                        sosExec = sosExecutor,
                         onObstacleDetectionClick = { requestPermissionAndAction("obstacle") },
 
                         onLocationClick = { requestPermissionAndAction("location") },

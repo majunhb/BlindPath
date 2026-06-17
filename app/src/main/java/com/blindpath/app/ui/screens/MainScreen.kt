@@ -70,6 +70,13 @@ import com.blindpath.module_trip_assist.ui.TripAssistScreen
 import com.blindpath.module_voice.domain.model.VoiceCommand
 import com.blindpath.module_indoor.data.IndoorDetector
 import com.blindpath.module_voice.domain.model.VoiceGuidance
+import com.blindpath.app.voice.BlindPathNavigationExecutor
+import com.blindpath.app.voice.BlindPathSceneExecutor
+import com.blindpath.app.voice.BlindPathSosExecutor
+import com.blindpath.app.voice.BlindPathVoiceControlExecutor
+import com.blindpath.module_voice.domain.model.NluResult
+import com.blindpath.module_voice.domain.model.VoiceIntent
+import com.blindpath.module_voice.domain.model.VoiceCommandIntentBridge
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
 import timber.log.Timber
 
@@ -84,6 +91,10 @@ fun MainScreen(
     navigationRepository: NavigationRepository,
     indoorDetector: IndoorDetector,
     sceneClassifier: SceneClassifier,
+    navExecutor: BlindPathNavigationExecutor,
+    sceneExec: BlindPathSceneExecutor,
+    voiceCtrlExec: BlindPathVoiceControlExecutor,
+    sosExec: BlindPathSosExecutor,
     onObstacleDetectionClick: () -> Unit = {},
     onLocationClick: () -> Unit = {},
     onSosClick: () -> Unit = {},
@@ -104,8 +115,30 @@ fun MainScreen(
         initialValue = ObstacleState()
     )
 
-    // 语音指令处理器
+    // ★ NLU四层架构：注入Executor + 设置意图动作回调
     LaunchedEffect(Unit) {
+        // 注入四大Executor到IntentRouter（Pipeline v2.0使用）
+        viewModel.setExecutors(navExecutor, sceneExec, voiceCtrlExec, sosExec)
+
+        // 设置NLU意图动作回调（用于需要Composable上下文的UI导航操作）
+        viewModel.setIntentActionHandler { intent, nluResult ->
+            Timber.d("MainScreen: NLU意图动作 → ${intent.id}")
+            handleVoiceIntent(intent, nluResult,
+                onShowIndoor = { showIndoorPerception = true },
+                onShowOutdoor = { showOutdoorNavigation = true },
+                onShowAr = { showArNavigation = true },
+                onShowScene = { showScenePerception = true },
+                onHideIndoor = { showIndoorPerception = false },
+                onHideOutdoor = { showOutdoorNavigation = false },
+                onHideAr = { showArNavigation = false },
+                onHideScene = { showScenePerception = false },
+                onSos = onSosClick,
+                onLocation = onLocationClick,
+                viewModel = viewModel
+            )
+        }
+
+        // 兼容旧路径：VoiceCommand回调
         viewModel.setCommandHandler { command ->
             Timber.d("MainScreen: Handling voice command - ${command.name}")
             when (command) {
@@ -575,4 +608,109 @@ private fun MainTopBar(
             }
         }
     )
+}
+
+/**
+ * 处理NLU意图 → UI动作映射
+ *
+ * Pipeline v2.0 路由后的UI层回调，负责页面导航等需要Composable上下文的操作。
+ * Executor负责数据层操作（查询位置、开启检测等），此函数负责UI层操作（切换页面）。
+ */
+private fun handleVoiceIntent(
+    intent: VoiceIntent,
+    nluResult: NluResult,
+    onShowIndoor: () -> Unit,
+    onShowOutdoor: () -> Unit,
+    onShowAr: () -> Unit,
+    onShowScene: () -> Unit,
+    onHideIndoor: () -> Unit,
+    onHideOutdoor: () -> Unit,
+    onHideAr: () -> Unit,
+    onHideScene: () -> Unit,
+    onSos: () -> Unit,
+    onLocation: () -> Unit,
+    viewModel: VoiceInteractionViewModel
+): Boolean {
+    return when (intent) {
+        // 导航类 → 切换页面
+        VoiceIntent.NAVIGATE_TO -> {
+            onShowOutdoor()
+            true
+        }
+        VoiceIntent.NAVIGATE_HOME -> {
+            onShowOutdoor()
+            true
+        }
+        VoiceIntent.STOP_NAVIGATION -> {
+            onHideOutdoor()
+            onHideAr()
+            true
+        }
+        VoiceIntent.SWITCH_AR_MODE -> {
+            onHideOutdoor()
+            onShowAr()
+            true
+        }
+        VoiceIntent.SWITCH_VOICE_MODE -> {
+            onHideAr()
+            onShowOutdoor()
+            true
+        }
+
+        // 场景识别
+        VoiceIntent.LOOK_AHEAD -> {
+            onShowScene()
+            true
+        }
+        VoiceIntent.START_DETECTION -> {
+            onShowScene()
+            true
+        }
+        VoiceIntent.STOP_DETECTION -> {
+            onHideScene()
+            true
+        }
+
+        // 室内导航
+        VoiceIntent.INDOOR_NAVIGATE -> {
+            onShowIndoor()
+            true
+        }
+
+        // SOS → 立即触发
+        VoiceIntent.SOS -> {
+            onSos()
+            true
+        }
+
+        // 位置查询
+        VoiceIntent.QUERY_LOCATION -> {
+            onLocation()
+            true
+        }
+
+        // 音量/语速控制 → 无需页面切换，Executor已处理
+        VoiceIntent.VOLUME_UP,
+        VoiceIntent.VOLUME_DOWN,
+        VoiceIntent.SPEED_UP,
+        VoiceIntent.SPEED_DOWN,
+        VoiceIntent.QUERY_DISTANCE,
+        VoiceIntent.QUERY_FLOOR,
+        VoiceIntent.REPEAT -> {
+            // Executor已返回播报文本，无需额外UI操作
+            true
+        }
+
+        // 帮助
+        VoiceIntent.HELP -> {
+            // Executor已返回帮助文本
+            true
+        }
+
+        // 未知意图
+        VoiceIntent.UNKNOWN -> {
+            Timber.w("MainScreen: 未知意图 → ${nluResult.rawText}")
+            false
+        }
+    }
 }
