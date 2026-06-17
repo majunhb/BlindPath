@@ -78,8 +78,12 @@ class ObstacleService : LifecycleService() {
         // 初始化语音服务
         serviceScope.launch {
             try {
-                voiceRepository.initialize()
-                voiceRepository.speak("障碍物检测已开启", queueMode = false)
+                val result = voiceRepository.initialize()
+                if (result is com.blindpath.base.common.Result.Success) {
+                    voiceRepository.speak("障碍物检测已开启", queueMode = false)
+                } else {
+                    Timber.w("Voice init failed, TTS unavailable")
+                }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to initialize voice repository")
             }
@@ -204,11 +208,16 @@ class ObstacleService : LifecycleService() {
     }
 
     private fun createNotification(): Notification {
+        val flags = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
             packageManager.getLaunchIntentForPackage(packageName),
-            PendingIntent.FLAG_IMMUTABLE
+            flags
         )
 
         return NotificationCompat.Builder(this, CHANNEL_OBSTACLE)
