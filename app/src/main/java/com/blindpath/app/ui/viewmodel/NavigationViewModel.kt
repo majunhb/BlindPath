@@ -281,7 +281,7 @@ class NavigationViewModel @Inject constructor(
      * @return true 表示导航成功启动，false 表示失败（已播报错误信息）
      */
     private suspend fun navigateTo(
-        lat: Double, lon: Double, name: String, location: com.blindpath.module_navigation.domain.model.LatLonPoint
+        lat: Double, lon: Double, name: String, location: android.location.Location
     ): Boolean {
         navigationRepository.setDestination(lat, lon, name)
         _destinationText.value = name
@@ -659,7 +659,9 @@ class NavigationViewModel @Inject constructor(
      */
         fun handleVoiceCommand(command: String) {
         Timber.w("handleVoiceCommand() called with [" + command + "] - deprecated, use VoiceInteractionPipeline")
-        voiceRepository.announce("语音指令已由系统接管，请使用唤醒词", VoiceType.SYSTEM_STATUS)
+        viewModelScope.launch {
+            voiceRepository.announce("语音指令已由系统接管，请使用唤醒词", VoiceType.SYSTEM_STATUS)
+        }
     }
 
     // ==================== 5. 感知层数据融合 ====================
