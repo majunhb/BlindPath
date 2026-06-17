@@ -582,20 +582,7 @@ fun OutdoorNavigationScreen(
                     }
                 },
                 actions = {
-                    // ★ 切换AR模式按钮
-                    IconButton(
-                        onClick = {
-                            viewModel.speak("切换到AR实景导航模式")
-                            onSwitchToAr()
-                        },
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.CameraAlt,
-                            contentDescription = "切换AR实景导航模式",
-                            tint = Color(0xFFE91E63)
-                        )
-                    }
+
                     // 帮助按钮
                     IconButton(onClick = onHelpClick) {
                         Icon(
@@ -694,6 +681,26 @@ fun OutdoorNavigationScreen(
                         modifier = Modifier
                             .align(Alignment.BottomStart)
                             .padding(8.dp)
+                    )
+                }
+
+                // ★ AR实景导航悬浮按钮（地图区域底部居中，类似高德地图风格）
+                FloatingActionButton(
+                    onClick = {
+                        viewModel.speak("切换到AR实景导航模式")
+                        onSwitchToAr()
+                    },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 12.dp),
+                    containerColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.CameraAlt,
+                        contentDescription = "AR实景导航",
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }

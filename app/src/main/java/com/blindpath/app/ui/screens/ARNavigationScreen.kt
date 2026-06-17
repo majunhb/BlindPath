@@ -8,6 +8,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.view.PreviewView
+import android.view.ViewGroup
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -15,6 +18,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -147,6 +151,7 @@ fun ARNavigationScreen(
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     var isDetectionActive by remember { mutableStateOf(false) }
     var cameraProviderRef by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var previewView by remember { mutableStateOf<PreviewView?>(null) }
     var sceneClassifierRef by remember { mutableStateOf<SceneClassifier?>(null) }
 
     // ★ PRD V2.0 第三期：盲道/红绿灯专用检测器
@@ -185,25 +190,8 @@ fun ARNavigationScreen(
                     val provider = cameraProviderFuture.get()
                     cameraProviderRef = provider
                     try {
-                        val imageAnalysis = ImageAnalysis.Builder()
-                            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                            .setTargetResolution(android.util.Size(480, 640))
-                            .build()
-                        
-                        imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                            val bitmap = imageProxyToBitmap(imageProxy)
-                            if (bitmap != null) {
-                                frameChannel.trySend(bitmap)
-                            }
-                            imageProxy.close()
-                        }
-
-                        provider.bindToLifecycle(
-                            owner,
-                            CameraSelector.DEFAULT_BACK_CAMERA,
-                            imageAnalysis
-                        )
-                        Timber.i("ARNav: CameraX已启动")
+                        // 绑定在 LaunchedEffect 中统一处理（需要等 PreviewView 就绪）
+                        Timber.i("ARNav: CameraProvider已就绪")
                     } catch (e: Exception) {
                         Timber.w(e, "ARNav: CameraX启动失败")
                     }
@@ -216,6 +204,39 @@ fun ARNavigationScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // ★ CameraX 统一绑定：等待 PreviewView 和 CameraProvider 都就绪后同时绑定 Preview + ImageAnalysis
+    LaunchedEffect(previewView, cameraProviderRef) {
+        val pv = previewView ?: return@LaunchedEffect
+        val provider = cameraProviderRef ?: return@LaunchedEffect
+        try {
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setTargetResolution(android.util.Size(480, 640))
+                .build()
+            
+            imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                val bitmap = imageProxyToBitmap(imageProxy)
+                if (bitmap != null) {
+                    frameChannel.trySend(bitmap)
+                }
+                imageProxy.close()
+            }
+
+            val preview = Preview.Builder().build()
+            preview.setSurfaceProvider(pv.surfaceProvider)
+
+            provider.bindToLifecycle(
+                lifecycleOwner,
+                CameraSelector.DEFAULT_BACK_CAMERA,
+                preview,
+                imageAnalysis
+            )
+            Timber.i("ARNav: CameraX已启动 (Preview+ImageAnalysis)")
+        } catch (e: Exception) {
+            Timber.w(e, "ARNav: CameraX绑定失败")
+        }
     }
 
     // 处理帧数据 — ★ 障碍物预警规则已对齐 PRD
@@ -410,6 +431,36 @@ fun ARNavigationScreen(
         modifier = modifier
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
+            // ★ 相机实时预览画面（底层）
+            AndroidView(
+                factory = { ctx ->
+                    PreviewView(ctx).apply {
+                        layoutParams = ViewGroup.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT
+                        )
+                        scaleType = PreviewView.ScaleType.FILL_CENTER
+                    }.also { pv ->
+                        previewView = pv
+                        // 如果 cameraProvider 已就绪，立即绑定 Preview
+                        cameraProviderRef?.let { provider ->
+                            try {
+                                val preview = Preview.Builder().build()
+                                preview.setSurfaceProvider(pv.surfaceProvider)
+                                provider.bindToLifecycle(
+                                    lifecycleOwner,
+                                    CameraSelector.DEFAULT_BACK_CAMERA,
+                                    preview
+                                )
+                            } catch (e: Exception) {
+                                Timber.w(e, "ARNav: Preview绑定失败")
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+
             // 顶部状态栏
             TopAppBar(
                 title = { Text("AR实景导航", fontWeight = FontWeight.Bold) },
