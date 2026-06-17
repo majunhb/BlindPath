@@ -7,7 +7,7 @@ import com.blindpath.module_indoor.domain.model.OcrBlock
 import com.blindpath.module_indoor.domain.model.OcrResult
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
 import dagger.hilt.android.scopes.ViewModelScoped
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -40,7 +40,7 @@ class TextRecognizer @Inject constructor() {
 
     /** 文字识别器（默认选项支持中文+英文） */
     private val recognizer: com.google.mlkit.vision.text.TextRecognizer by lazy {
-        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
     }
 
     /** 是否已初始化 */
@@ -106,7 +106,7 @@ class TextRecognizer @Inject constructor() {
                     OcrBlock(
                         text = block.text,
                         boundingBox = boundingBox,
-                        language = "", // ML Kit TextRecognizerOptions.DEFAULT_OPTIONS 不支持 recognizedLanguages
+                        language = "zh", // ChineseTextRecognizerOptions supports Chinese + Latin
                         confidence = block.lines.mapNotNull { it.confidence }.average().toFloat()
                     )
                 }
