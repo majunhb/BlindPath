@@ -3,10 +3,9 @@ package com.blindpath.module_voice.data
 import android.content.Context
 import com.blindpath.base.common.Result
 import com.blindpath.module_voice.domain.VoiceCommandRepository
-import com.blindpath.module_voice.domain.model.VoiceCommand
 import com.blindpath.module_voice.domain.model.VoiceCommandResult
 import com.blindpath.module_voice.domain.model.VoiceInteractionState
-import com.blindpath.module_voice.service.BaiduAsrEngine
+import com.blindpath.module_voice.service.XfAsrEngine
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,14 +17,16 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * 语音指令仓库实现 v2.0 — 百度ASR版
+ * 语音指令仓库实现 v3.0 — 讯飞AIKit离线ASR版
  *
- * 核心变更：用百度ASR SDK替换Android系统SpeechRecognizer
- * 原因：Android SpeechRecognizer需要Google Play Services，
- * 国产手机基本不支持，导致语音识别完全不可用。
+ * 核心变更：用讯飞AIKit离线ASR替换百度云端ASR
+ * 原因：
+ * 1. 百度ASR依赖网络，盲人户外弱网/无网时完全失效 → 安全风险
+ * 2. 百度ASR需要asr.ready事件，时序协调复杂 → 用户"没回应"
+ * 3. 讯飞AIKit支持离线识别+VAD自动端点检测，更可靠更简单
  *
  * 核心职责：
- * 1. 管理百度ASR引擎生命周期
+ * 1. 管理讯飞ASR引擎生命周期
  * 2. 将识别结果通过interactionState暴露给Pipeline
  * 3. 维护唤醒词检测状态标志
  */
@@ -37,36 +38,35 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     private val _interactionState = MutableStateFlow(VoiceInteractionState())
     override val interactionState: Flow<VoiceInteractionState> = _interactionState.asStateFlow()
 
-    private var asrEngine: BaiduAsrEngine? = null
+    private var asrEngine: XfAsrEngine? = null
     private var isInitialized = false
     private var wakeWordEnabled = true
     private var currentWakeWord = "小智小智"
 
     override suspend fun initialize(): Result<Boolean> {
         return try {
-            // 从BuildConfig读取百度凭证
-            val appId = com.blindpath.module_voice.BuildConfig.BAIDU_APP_ID
-            val apiKey = com.blindpath.module_voice.BuildConfig.BAIDU_API_KEY
-            val secretKey = com.blindpath.module_voice.BuildConfig.BAIDU_SECRET_KEY
+            val appId = com.blindpath.module_voice.BuildConfig.IFLYTEK_APP_ID
+            val apiKey = com.blindpath.module_voice.BuildConfig.IFLYTEK_API_KEY
+            val apiSecret = com.blindpath.module_voice.BuildConfig.IFLYTEK_API_SECRET
 
             if (appId.isBlank()) {
-                Timber.e("VoiceCommandRepository: 百度凭证未配置，ASR不可用")
-                return Result.Error(message = "百度语音凭证未配置")
+                Timber.e("VoiceCommandRepository: 讯飞凭证未配置，ASR不可用")
+                return Result.Error(message = "讯飞语音凭证未配置")
             }
 
-            Timber.i("VoiceCommandRepository: 初始化百度ASR (appId=${appId})")
+            Timber.i("VoiceCommandRepository: 初始化讯飞AIKit离线ASR (appId=\${appId})")
 
-            val engine = BaiduAsrEngine(context, appId, apiKey, secretKey)
+            val engine = XfAsrEngine(context, appId, apiKey, apiSecret)
 
             if (!engine.initialize()) {
-                Timber.e("VoiceCommandRepository: 百度ASR引擎初始化失败")
-                return Result.Error(message = "百度ASR引擎初始化失败")
+                Timber.e("VoiceCommandRepository: 讯飞ASR引擎初始化失败")
+                return Result.Error(message = "讯飞ASR引擎初始化失败")
             }
 
             // 设置ASR回调
             engine.onResult = { text, isFinal ->
                 if (isFinal && text.isNotBlank()) {
-                    Timber.i("VoiceCommandRepository: ★ ASR识别结果: \"${text}\"")
+                    Timber.i("VoiceCommandRepository: ★ ASR识别结果: \"\${text}\"")
                     _interactionState.update {
                         it.copy(
                             isListening = false,
@@ -83,18 +83,14 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             }
 
             engine.onError = { code, msg ->
-                Timber.w("VoiceCommandRepository: ASR错误 - code=${code}, msg=${msg}")
+                Timber.w("VoiceCommandRepository: ASR错误 - code=\${code}, msg=\${msg}")
                 val userMsg = when (code) {
-                    BaiduAsrEngine.ERROR_AUDIO -> "录音异常，请重试"
-                    BaiduAsrEngine.ERROR_NETWORK -> "网络错误，语音识别需要网络连接"
-                    BaiduAsrEngine.ERROR_AUDIO_TOO_LONG -> "语音过长，请简短指令"
-                    BaiduAsrEngine.ERROR_SERVER -> "服务器暂时无法响应"
-                    BaiduAsrEngine.ERROR_EMPTY_RESULT, BaiduAsrEngine.ERROR_NO_MATCH -> "没有听清，请再说一遍"
-                    BaiduAsrEngine.ERROR_NOT_READY -> "识别引擎未就绪，请重试"
-                    else -> "语音识别异常: ${msg}"
+                    XfAsrEngine.ERROR_AUDIO -> "录音异常，请重试"
+                    XfAsrEngine.ERROR_NOT_READY -> "识别引擎未就绪，请重试"
+                    XfAsrEngine.ERROR_TIMEOUT -> "识别超时，请再说一遍"
+                    XfAsrEngine.ERROR_SDK -> msg // SDK错误直接传递（含授权信息）
+                    else -> "语音识别异常: \${msg}"
                 }
-
-                // ★ 所有错误都传递给Pipeline，避免用户白等10秒超时
                 _interactionState.update {
                     it.copy(
                         isListening = false,
@@ -106,14 +102,18 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             }
 
             engine.onReady = {
-                Timber.d("VoiceCommandRepository: 百度ASR就绪")
+                Timber.d("VoiceCommandRepository: 讯飞ASR就绪")
                 _interactionState.update {
                     it.copy(isListening = true, lastError = null)
                 }
             }
 
+            engine.onBegin = {
+                Timber.d("VoiceCommandRepository: VAD检测到说话开始")
+            }
+
             engine.onEnd = {
-                Timber.d("VoiceCommandRepository: 语音结束")
+                Timber.d("VoiceCommandRepository: VAD检测到说话结束")
                 _interactionState.update { it.copy(isListening = false) }
             }
 
@@ -123,7 +123,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
 
             asrEngine = engine
             isInitialized = true
-            Timber.i("VoiceCommandRepository: 百度ASR引擎初始化成功")
+            Timber.i("VoiceCommandRepository: 讯飞ASR引擎初始化成功（离线模式）")
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "VoiceCommandRepository: 初始化异常")
@@ -139,7 +139,6 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         }
 
         return try {
-            // 清除上一次的结果和状态
             _interactionState.update {
                 it.copy(
                     isListening = false,
@@ -150,7 +149,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             }
 
             engine.startListening()
-            Timber.i("VoiceCommandRepository: 百度ASR开始监听 (state cleared)")
+            Timber.i("VoiceCommandRepository: 讯飞ASR开始监听 (VAD自动端点检测)")
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "VoiceCommandRepository: 启动ASR失败")
@@ -164,7 +163,6 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     override suspend fun stopListening(): Result<Boolean> {
         return try {
             asrEngine?.stopListening()
-            // ★ 完全清除状态，确保restart时干净
             _interactionState.update {
                 it.copy(
                     isListening = false,
@@ -183,7 +181,6 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         val startResult = startListening()
         if (startResult is Result.Error) return startResult
 
-        // 等待识别结果（最多10秒）
         kotlinx.coroutines.withTimeoutOrNull(10000L) {
             interactionState.first { it.lastCommand != null }
         }
@@ -215,7 +212,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     }
 
     override fun triggerWakeWordDetected(wakeWord: String) {
-        Timber.i("VoiceCommandRepository: ★ 唤醒词检测到: ${wakeWord}")
+        Timber.i("VoiceCommandRepository: ★ 唤醒词检测到: \${wakeWord}")
         _interactionState.update {
             it.copy(
                 isWakeWordDetected = true,
@@ -228,15 +225,14 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     override fun consumeLastCommand(): VoiceCommandResult? {
         val result = _interactionState.value.lastCommand
         _interactionState.update { it.copy(lastCommand = null) }
-        Timber.d("VoiceCommandRepository: consumeLastCommand: ${result?.rawText}")
+        Timber.d("VoiceCommandRepository: consumeLastCommand: \${result?.rawText}")
         return result
     }
 
     override fun notifyTtsStart() {
-        // TTS开始播报时取消ASR，避免TTS音频被误识别
         try {
             asrEngine?.cancel()
-        } catch (_: Exception) {}
+        } catch (e: Exception) { }
     }
 
     override fun notifyTtsStop() {
