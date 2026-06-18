@@ -162,12 +162,12 @@ class VoiceInteractionPipeline @Inject constructor(
                 // ★ 等待跨进程暂停完成，确保麦克风完全释放
                 delay(500)
 
-                // ★ PRD: 唤醒成功反馈 — "滴"声+短震50ms + TTS提示
-                speakWithResourceManagement("我在，请说指令", VoiceType.SYSTEM_STATUS)
+                // ★★★ 时序修复：先启动ASR，再播报TTS
+                // 原流程：TTS→startASR→等ready → 用户说完话了ASR才启动！
+                // 新流程：startASR→等ready→TTS→cancel+restart ASR → ASR已就绪，用户说话即可识别
 
-                // 2. 启动 ASR 监听
+                // 1. 启动 ASR
                 _sessionState.value = SessionState.Listening
-
                 val startResult = commandRepository.startListening()
                 if (startResult !is com.blindpath.base.common.Result.Success || !startResult.data) {
                     Timber.e("VoiceInteractionPipeline: ASR启动失败")
@@ -176,7 +176,7 @@ class VoiceInteractionPipeline @Inject constructor(
                     return@launch
                 }
 
-                // ★ 等待ASR就绪（百度SDK的asr.ready事件）
+                // 2. 等待ASR就绪（百度SDK的asr.ready事件）
                 val ready = withTimeoutOrNull(5000) {
                     commandRepository.interactionState.first { it.isListening }
                 }
@@ -186,9 +186,25 @@ class VoiceInteractionPipeline @Inject constructor(
                     speakWithResourceManagement("语音识别未就绪，请重试", VoiceType.SYSTEM_STATUS)
                     return@launch
                 }
-                Timber.i("VoiceInteractionPipeline: ASR就绪，等待用户说话...")
+                Timber.i("VoiceInteractionPipeline: ASR就绪，开始播报提示音")
 
-                // 3. 等待识别结果或错误
+                // 3. 播报"我在，请说指令" — ASR已在录音，但TTS音频会被cancel清除
+                speakWithResourceManagement("我在，请说指令", VoiceType.SYSTEM_STATUS)
+
+                // 4. TTS播完后，cancel ASR清除TTS音频，再restart监听用户真实指令
+                commandRepository.stopListening()
+                delay(100) // 等待stop完成
+                // 清除stop产生的状态
+                commandRepository.consumeLastCommand()
+                commandRepository.startListening()
+
+                // 5. 等待ASR再次就绪（应该很快，<1秒）
+                withTimeoutOrNull(3000) {
+                    commandRepository.interactionState.first { it.isListening }
+                }
+                Timber.i("VoiceInteractionPipeline: ASR重启就绪，等待用户说话...")
+
+                // 6. 等待识别结果或错误
                 var rawText = ""
                 var commandProcessed = false
                 var errorMessage: String? = null

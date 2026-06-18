@@ -139,7 +139,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
         }
 
         return try {
-            // 清除上一次的结果
+            // 清除上一次的结果和状态
             _interactionState.update {
                 it.copy(
                     isListening = false,
@@ -150,7 +150,7 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             }
 
             engine.startListening()
-            Timber.i("VoiceCommandRepository: 百度ASR开始监听")
+            Timber.i("VoiceCommandRepository: 百度ASR开始监听 (state cleared)")
             Result.Success(true)
         } catch (e: Exception) {
             Timber.e(e, "VoiceCommandRepository: 启动ASR失败")
@@ -164,8 +164,15 @@ class VoiceCommandRepositoryImpl @Inject constructor(
     override suspend fun stopListening(): Result<Boolean> {
         return try {
             asrEngine?.stopListening()
-            _interactionState.update { it.copy(isListening = false) }
-            Timber.d("VoiceCommandRepository: 停止ASR监听")
+            // ★ 完全清除状态，确保restart时干净
+            _interactionState.update {
+                it.copy(
+                    isListening = false,
+                    lastCommand = null,
+                    lastError = null
+                )
+            }
+            Timber.d("VoiceCommandRepository: 停止ASR监听 (state fully cleared)")
             Result.Success(true)
         } catch (e: Exception) {
             Result.Error(message = e.message ?: "停止ASR失败")

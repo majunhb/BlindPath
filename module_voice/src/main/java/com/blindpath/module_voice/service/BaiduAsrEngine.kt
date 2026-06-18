@@ -211,6 +211,7 @@ class BaiduAsrEngine(
             Timber.w("$TAG: Not initialized, attempting re-init")
             if (!initialize()) {
                 Timber.e("$TAG: Re-init failed, cannot start listening")
+                onError?.invoke(ERROR_NOT_READY, "语音识别引擎初始化失败")
                 return
             }
         }
