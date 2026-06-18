@@ -243,7 +243,7 @@ class BaiduAsrEngine(
             val json = params.toString()
             Timber.i("$TAG: Starting ASR with params")
 
-            asrManager?.start(json)
+            asrManager?.send(SpeechConstant.ASR_START, json, null, 0, 0)
             isListening = true
             Timber.i("$TAG: ASR started, waiting for speech...")
         } catch (e: Exception) {
@@ -259,7 +259,7 @@ class BaiduAsrEngine(
     fun stopListening() {
         if (asrManager == null || !isListening) return
         try {
-            asrManager?.stop()
+            asrManager?.send(SpeechConstant.ASR_STOP, null, null, 0, 0)
             isListening = false
             Timber.i("$TAG: ASR stopped")
         } catch (e: Exception) {
@@ -273,7 +273,7 @@ class BaiduAsrEngine(
     fun cancel() {
         if (asrManager == null) return
         try {
-            asrManager?.cancel()
+            asrManager?.send(SpeechConstant.ASR_CANCEL, null, null, 0, 0)
             isListening = false
             Timber.d("$TAG: ASR cancelled")
         } catch (e: Exception) {
