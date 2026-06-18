@@ -72,8 +72,8 @@ class BaiduAsrEngine(
                 Timber.e("$TAG: EventManagerFactory returned null")
             }
             isInitialized
-        } catch (e: Exception) {
-            Timber.e(e, "$TAG: Failed to initialize ASR engine")
+        } catch (e: Throwable) {
+            Timber.e(e, "$TAG: Failed to initialize ASR engine (class loading error? SDK JAR missing?)")
             isInitialized = false
             false
         }
@@ -246,9 +246,10 @@ class BaiduAsrEngine(
             asrManager?.send(SpeechConstant.ASR_START, json, null, 0, 0)
             isListening = true
             Timber.i("$TAG: ASR started, waiting for speech...")
-        } catch (e: Exception) {
-            Timber.e(e, "$TAG: Failed to start ASR")
+        } catch (e: Throwable) {
+            Timber.e(e, "$TAG: Failed to start ASR (SDK class loading error? JAR missing from APK?)")
             isListening = false
+            onError?.invoke(ERROR_NOT_READY, "语音识别引擎启动失败: ${e.message}")
         }
     }
 

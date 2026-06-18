@@ -177,7 +177,7 @@ dependencies {
 
 
     // 百度语音 SDK (app 模块直接引入 AAR，Library 模块编译时用 compileOnly)
-    implementation(fileTree("$rootDir/module_voice/libs") { include("*.aar") })
+    implementation(fileTree("$rootDir/module_voice/libs") { include("*.aar", "*.jar") })
 
     // 讯飞 AIKit SDK
     implementation(files("libs/AIKit.aar"))
