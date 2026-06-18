@@ -207,6 +207,7 @@ class VoiceInteractionPipeline @Inject constructor(
                         state.lastError != null -> {
                             errorMessage = state.lastError
                         }
+                        else -> Unit
                     }
                 }
 
