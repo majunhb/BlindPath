@@ -146,16 +146,19 @@ class VoiceInteractionPipeline @Inject constructor(
 
     /**
      * ★ 启动语音交互会话 v2.0
-     * 完整链路：唤醒 → 识别 → NLU → 路由 → 反馈
+     * 完整链路：唤醒 → 暂停唤醒服务 → 识别 → NLU → 路由 → 反馈 → 恢复唤醒服务
      */
     fun startVoiceSession(wakeWord: String) {
         currentSession?.cancel()
 
-        Timber.i("VoiceInteractionPipeline: ★ 启动语音会话 (wakeWord=$wakeWord)")
+        Timber.i("VoiceInteractionPipeline: ★ 启动语音会话 (wakeWord=${wakeWord})")
 
         currentSession = scope.launch {
             try {
                 _sessionState.value = SessionState.WakeWordDetected
+
+                // ★ 暂停唤醒服务，释放麦克风给ASR
+                pauseWakeWordService()
 
                 // ★ PRD: 唤醒成功反馈 — "滴"声+短震50ms + TTS提示
                 speakWithResourceManagement("我在，请说指令", VoiceType.SYSTEM_STATUS)
@@ -229,6 +232,8 @@ class VoiceInteractionPipeline @Inject constructor(
                 speakWithResourceManagement("抱歉，暂时无法响应，请稍后再试", VoiceType.SYSTEM_STATUS)
             } finally {
                 commandRepository.stopListening()
+                // ★ 恢复唤醒服务
+                resumeWakeWordService()
                 if (_sessionState.value !is SessionState.WaitingFollowUp) {
                     _sessionState.value = SessionState.Idle
                 }
@@ -297,6 +302,36 @@ class VoiceInteractionPipeline @Inject constructor(
         voiceRepository.voiceState
             .first { !it.isSpeaking }
         delay(200)
+    }
+
+    /**
+     * ★ 暂停唤醒服务，释放麦克风给ASR使用
+     */
+    private fun pauseWakeWordService() {
+        try {
+            val intent = Intent(context, WakeWordServiceEnhanced::class.java).apply {
+                action = WakeWordServiceEnhanced.ACTION_PAUSE
+            }
+            context.startService(intent)
+            Timber.i("VoiceInteractionPipeline: Sent PAUSE to WakeWordServiceEnhanced")
+        } catch (e: Exception) {
+            Timber.e(e, "VoiceInteractionPipeline: Failed to pause wake word service")
+        }
+    }
+
+    /**
+     * ★ 恢复唤醒服务
+     */
+    private fun resumeWakeWordService() {
+        try {
+            val intent = Intent(context, WakeWordServiceEnhanced::class.java).apply {
+                action = WakeWordServiceEnhanced.ACTION_RESUME
+            }
+            context.startService(intent)
+            Timber.i("VoiceInteractionPipeline: Sent RESUME to WakeWordServiceEnhanced")
+        } catch (e: Exception) {
+            Timber.e(e, "VoiceInteractionPipeline: Failed to resume wake word service")
+        }
     }
 
     /**

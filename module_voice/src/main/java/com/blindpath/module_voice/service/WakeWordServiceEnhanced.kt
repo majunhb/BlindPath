@@ -100,6 +100,8 @@ class WakeWordServiceEnhanced : Service() {
         const val ACTION_START = "com.blindpath.wakeword.START"
         const val ACTION_STOP = "com.blindpath.wakeword.STOP"
         const val ACTION_RESTART = "com.blindpath.wakeword.RESTART"
+        const val ACTION_PAUSE = "com.blindpath.wakeword.PAUSE"
+        const val ACTION_RESUME = "com.blindpath.wakeword.RESUME"
         const val ACTION_WAKE_WORD_DETECTED = "com.blindpath.wakeword.DETECTED"
         const val EXTRA_WAKE_WORD = "wake_word"
         const val EXTRA_SCENE = "scene"
@@ -157,6 +159,14 @@ class WakeWordServiceEnhanced : Service() {
             ACTION_RESTART -> {
                 Timber.i("WakeWordServiceEnhanced: Received RESTART action")
                 restartService()
+            }
+            ACTION_PAUSE -> {
+                Timber.i("WakeWordServiceEnhanced: ★ Received PAUSE action (ASR需要麦克风)")
+                pauseForAsr()
+            }
+            ACTION_RESUME -> {
+                Timber.i("WakeWordServiceEnhanced: ★ Received RESUME action (ASR结束，恢复唤醒)")
+                resumeFromAsr()
             }
         }
 
@@ -540,6 +550,45 @@ class WakeWordServiceEnhanced : Service() {
             Timber.d("WakeWordServiceEnhanced: Audio capture stopped")
         } catch (e: Exception) {
             Timber.e(e, "WakeWordServiceEnhanced: Error stopping audio capture")
+        }
+    }
+
+    /**
+     * 暂停唤醒检测，释放麦克风给ASR使用
+     */
+    @Volatile
+    private var isPausedForAsr = false
+
+    private fun pauseForAsr() {
+        if (!isRunning) {
+            Timber.w("WakeWordServiceEnhanced: Service not running, skip pause")
+            return
+        }
+        isPausedForAsr = true
+        // 停止音频采集，释放AudioRecord（引擎拿不到数据自然空转）
+        stopAudioCapture()
+        // 释放音频焦点
+        unifiedAudioScheduler.releaseAudioResource(UnifiedAudioScheduler.AudioModule.WAKE_WORD)
+        Timber.i("WakeWordServiceEnhanced: ★ Paused for ASR (mic released)")
+    }
+
+    /**
+     * 恢复唤醒检测
+     */
+    private fun resumeFromAsr() {
+        if (!isPausedForAsr) {
+            Timber.d("WakeWordServiceEnhanced: Not paused, skip resume")
+            return
+        }
+        isPausedForAsr = false
+        // 短暂延迟确保ASR完全释放了麦克风
+        serviceScope.launch {
+            delay(300)
+            if (isRunning && !isPausedForAsr) {
+                Timber.i("WakeWordServiceEnhanced: ★ Resuming wake word detection")
+                stopAudioCapture() // 确保旧实例已释放
+                startWakeWordDetection()
+            }
         }
     }
 
