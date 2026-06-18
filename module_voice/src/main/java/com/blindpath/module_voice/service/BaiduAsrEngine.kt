@@ -229,15 +229,15 @@ class BaiduAsrEngine(
                 put(SpeechConstant.LANGUAGE, "cmn-Hans-CN")
                 put(SpeechConstant.SAMPLE_RATE, "16000")
                 // PID 1536: 普通话(有标点)
-                put("pid", 1536)
+                put("pid", "1536")
                 // DNN VAD
                 put("vad", SpeechConstant.VAD_DNN)
                 // 音量回调
-                put(SpeechConstant.ACCEPT_AUDIO_VOLUME, true)
+                put(SpeechConstant.ACCEPT_AUDIO_VOLUME, "1")
                 // 静音超时(ms): 说话后1500ms静音认为结束
-                put(SpeechConstant.VAD_ENDPOINT_TIMEOUT, 1500)
-                // 启用长语音模式（避免长指令被截断）
-                put(SpeechConstant.BDS_ASR_ENABLE_LONG_SPEECH, false)
+                put(SpeechConstant.VAD_ENDPOINT_TIMEOUT, "1500")
+                // 禁用长语音模式（短指令识别）
+                put(SpeechConstant.BDS_ASR_ENABLE_LONG_SPEECH, "false")
             }
 
             val json = params.toString()

@@ -406,7 +406,7 @@ class WakeWordServiceEnhanced : Service() {
         val buffer = ShortArray(bufferSize)
         var consecutiveEmptyReads = 0
 
-        while (isRunning && currentCoroutineContext().isActive) {
+        while (isRunning && !isPausedForAsr && currentCoroutineContext().isActive) {
             try {
                 val readSize = audioRecord?.read(buffer, 0, bufferSize) ?: 0
 
@@ -434,6 +434,8 @@ class WakeWordServiceEnhanced : Service() {
                 break
             }
         }
+
+        Timber.i("WakeWordServiceEnhanced: Audio processing loop exited (running=${isRunning}, paused=${isPausedForAsr})")
     }
 
     /**
@@ -581,13 +583,24 @@ class WakeWordServiceEnhanced : Service() {
             return
         }
         isPausedForAsr = false
-        // 短暂延迟确保ASR完全释放了麦克风
-        serviceScope.launch {
-            delay(300)
+        isWakeWordDetected = false
+
+        // ★ 直接重启音频采集，不经过 startWakeWordDetection()
+        // 原因：startWakeWordDetection() 检查 isRunning==true 直接 return，导致唤醒服务永久失效
+        serviceScope.launch(highPriorityExecutor) {
+            delay(300) // 等待ASR完全释放麦克风
             if (isRunning && !isPausedForAsr) {
                 Timber.i("WakeWordServiceEnhanced: ★ Resuming wake word detection")
-                stopAudioCapture() // 确保旧实例已释放
-                startWakeWordDetection()
+                try {
+                    stopAudioCapture() // 确保旧实例已释放
+                    initAudioRecord()
+                    startAudioProcessing()
+                    lastAudioDataTime = System.currentTimeMillis()
+                    Timber.i("WakeWordServiceEnhanced: ★ Wake word detection resumed successfully")
+                } catch (e: Exception) {
+                    Timber.e(e, "WakeWordServiceEnhanced: Failed to resume audio capture")
+                    handleDetectionError(e)
+                }
             }
         }
     }

@@ -159,6 +159,8 @@ class VoiceInteractionPipeline @Inject constructor(
 
                 // ★ 暂停唤醒服务，释放麦克风给ASR
                 pauseWakeWordService()
+                // ★ 等待跨进程暂停完成，确保麦克风完全释放
+                delay(500)
 
                 // ★ PRD: 唤醒成功反馈 — "滴"声+短震50ms + TTS提示
                 speakWithResourceManagement("我在，请说指令", VoiceType.SYSTEM_STATUS)
@@ -174,18 +176,42 @@ class VoiceInteractionPipeline @Inject constructor(
                     return@launch
                 }
 
-                // 3. 等待识别结果
+                // ★ 等待ASR就绪（百度SDK的asr.ready事件）
+                val ready = withTimeoutOrNull(5000) {
+                    commandRepository.interactionState.first { it.isListening }
+                }
+                if (ready == null) {
+                    Timber.e("VoiceInteractionPipeline: ASR未就绪（5秒内未收到asr.ready事件）")
+                    _sessionState.value = SessionState.Error("语音识别未就绪")
+                    speakWithResourceManagement("语音识别未就绪，请重试", VoiceType.SYSTEM_STATUS)
+                    return@launch
+                }
+                Timber.i("VoiceInteractionPipeline: ASR就绪，等待用户说话...")
+
+                // 3. 等待识别结果或错误
                 var rawText = ""
                 var commandProcessed = false
+                var errorMessage: String? = null
 
                 withTimeoutOrNull(config.maxListeningDuration) {
                     commandRepository.interactionState.first { state ->
-                        state.lastCommand != null
+                        state.lastCommand != null || state.lastError != null
                     }
                 }?.let { state ->
-                    commandProcessed = true
-                    rawText = state.lastCommand?.rawText ?: ""
-                    commandRepository.consumeLastCommand()
+                    if (state.lastCommand != null) {
+                        commandProcessed = true
+                        rawText = state.lastCommand?.rawText ?: ""
+                        commandRepository.consumeLastCommand()
+                    } else if (state.lastError != null) {
+                        errorMessage = state.lastError
+                    }
+                }
+
+                // ★ 错误优先处理
+                if (errorMessage != null) {
+                    Timber.w("VoiceInteractionPipeline: ASR错误: ${errorMessage}")
+                    speakWithResourceManagement(errorMessage!!, VoiceType.SYSTEM_STATUS)
+                    return@launch
                 }
 
                 if (!commandProcessed || rawText.isBlank()) {

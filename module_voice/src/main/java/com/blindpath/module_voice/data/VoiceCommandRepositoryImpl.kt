@@ -85,23 +85,21 @@ class VoiceCommandRepositoryImpl @Inject constructor(
             engine.onError = { code, msg ->
                 Timber.w("VoiceCommandRepository: ASR错误 - code=${code}, msg=${msg}")
                 val userMsg = when (code) {
-                    BaiduAsrEngine.ERROR_AUDIO -> "录音错误"
-                    BaiduAsrEngine.ERROR_NETWORK -> "网络错误，请检查网络连接"
-                    BaiduAsrEngine.ERROR_AUDIO_TOO_LONG -> "语音过长"
-                    BaiduAsrEngine.ERROR_SERVER -> "服务器错误"
-                    BaiduAsrEngine.ERROR_EMPTY_RESULT, BaiduAsrEngine.ERROR_NO_MATCH -> "没有听清"
-                    BaiduAsrEngine.ERROR_NOT_READY -> "识别引擎未就绪"
-                    else -> "语音识别错误: ${msg}"
+                    BaiduAsrEngine.ERROR_AUDIO -> "录音异常，请重试"
+                    BaiduAsrEngine.ERROR_NETWORK -> "网络错误，语音识别需要网络连接"
+                    BaiduAsrEngine.ERROR_AUDIO_TOO_LONG -> "语音过长，请简短指令"
+                    BaiduAsrEngine.ERROR_SERVER -> "服务器暂时无法响应"
+                    BaiduAsrEngine.ERROR_EMPTY_RESULT, BaiduAsrEngine.ERROR_NO_MATCH -> "没有听清，请再说一遍"
+                    BaiduAsrEngine.ERROR_NOT_READY -> "识别引擎未就绪，请重试"
+                    else -> "语音识别异常: ${msg}"
                 }
 
-                val isNoMatch = (code == BaiduAsrEngine.ERROR_NO_MATCH ||
-                    code == BaiduAsrEngine.ERROR_EMPTY_RESULT)
-
+                // ★ 所有错误都传递给Pipeline，避免用户白等10秒超时
                 _interactionState.update {
                     it.copy(
                         isListening = false,
                         isWakeWordDetected = false,
-                        lastError = if (isNoMatch) null else userMsg,
+                        lastError = userMsg,
                         lastCommand = null
                     )
                 }

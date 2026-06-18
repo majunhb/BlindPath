@@ -74,3 +74,4 @@ secrets.properties
 
 # OS files
 Thumbs.db
+apk/*.zip
