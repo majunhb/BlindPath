@@ -50,6 +50,8 @@ import com.blindpath.app.voice.BlindPathVoiceControlExecutor
 
 import androidx.lifecycle.lifecycleScope
 
+import timber.log.Timber
+
 import dagger.hilt.android.AndroidEntryPoint
 
 import kotlinx.coroutines.launch
@@ -164,10 +166,11 @@ class MainActivity : ComponentActivity() {
 
         //   initialize() → speakWelcome() → setWakeWordEnabled(true) → startContinuousListening()
 
-
+        // ★★★ v2.0 修复（2026-06-18）：启动时请求录音权限 + 重启唤醒服务
+        // 根因：RECORD_AUDIO 从未在运行时请求，WakeWordServiceEnhanced 无法采集音频
+        requestAudioPermissionAndRestartWakeWord()
 
         // 自动启动定位服务（不需要用户点击）
-
         autoStartLocationIfPermitted()
 
 
@@ -218,6 +221,69 @@ class MainActivity : ComponentActivity() {
      * 用户在打开APP首页时即获得实时定位信息，无需跳转
 
      */
+
+    /**
+     * ★★★ v2.0 修复：请求录音权限并重启唤醒服务
+     * 视障用户核心需求 — 没有录音权限，语音助手完全无法工作
+     */
+    private fun requestAudioPermissionAndRestartWakeWord() {
+        val permissions = mutableListOf(Manifest.permission.RECORD_AUDIO)
+
+        // Android 13+ 需要通知权限（前台服务通知）
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        val allGranted = permissions.all {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+
+        if (allGranted) {
+            Timber.i("MainActivity: RECORD_AUDIO already granted, restarting wake word service")
+            restartWakeWordService()
+        } else {
+            Timber.w("MainActivity: ★ Requesting RECORD_AUDIO permission (critical for voice assistant)")
+            // 使用单独的 launcher 请求录音权限
+            audioPermissionLauncher.launch(permissions.toTypedArray())
+        }
+    }
+
+    private val audioPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val audioGranted = permissions[Manifest.permission.RECORD_AUDIO] == true
+        if (audioGranted) {
+            Timber.i("MainActivity: ★★★ RECORD_AUDIO granted! Restarting wake word service...")
+            lifecycleScope.launch {
+                voiceRepository.speak("语音助手已就绪，请说小智小智唤醒我", queueMode = false)
+            }
+            restartWakeWordService()
+        } else {
+            Timber.e("MainActivity: ✗ RECORD_AUDIO DENIED — voice assistant will not work!")
+            lifecycleScope.launch {
+                voiceRepository.speak("需要麦克风权限才能使用语音助手，请在设置中授权", queueMode = false)
+            }
+        }
+    }
+
+    /**
+     * 重启唤醒服务（权限授予后调用）
+     */
+    private fun restartWakeWordService() {
+        try {
+            val intent = Intent(this, com.blindpath.module_voice.service.WakeWordServiceEnhanced::class.java).apply {
+                action = com.blindpath.module_voice.service.WakeWordServiceEnhanced.ACTION_RESTART
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+            Timber.i("MainActivity: ★ Wake word service restart intent sent")
+        } catch (e: Exception) {
+            Timber.e(e, "MainActivity: Failed to restart wake word service")
+        }
+    }
 
     private fun autoStartLocationIfPermitted() {
 

@@ -107,7 +107,7 @@ class WakeWordServiceEnhanced : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "wakeword_service_channel_enhanced"
         private const val NOTIFICATION_ID = 2001
 
-        private const val MAX_RESTART_ATTEMPTS = 5
+        private const val MAX_RESTART_ATTEMPTS = 10
         private const val RESTART_DELAY_MS = 3000L
 
         @Volatile
@@ -288,18 +288,19 @@ class WakeWordServiceEnhanced : Service() {
         serviceScope.launch(highPriorityExecutor) {
             try {
                 if (engineManager.isCurrentEngineSelfManaged()) {
-                    // 自管理音频引擎（百度/讯飞）
-                    Timber.i("WakeWordServiceEnhanced: Using self-managed engine")
+                    // 自管理音频引擎（仅百度 SDK）
+                    Timber.i("WakeWordServiceEnhanced: Using self-managed engine (Baidu)")
                     engineManager.getCurrentEngine()?.let { engine ->
                         if (engine is BaiduWakeWordDetector) {
-                            engine.startListening()
-                        } else if (engine is XfWakeWordDetector) {
                             engine.startListening()
                         }
                     }
                 } else {
-                    // 手动音频采集（能量检测）
-                    Timber.i("WakeWordServiceEnhanced: Starting manual audio capture")
+                    // ★ v2.0: 手动音频采集（讯飞 AIKit + 能量检测）
+                    // 讯飞 AIKit 等待异步授权，但音频采集立即开始
+                    // 授权成功后 XfWakeWordDetector 会自动启动写入线程消费音频
+                    val engineType = engineManager.getCurrentEngineType()
+                    Timber.i("WakeWordServiceEnhanced: ★ Starting manual audio capture (engine=$engineType)")
                     initAudioRecord()
                     startAudioProcessing()
                 }
@@ -438,9 +439,10 @@ class WakeWordServiceEnhanced : Service() {
             audioBuffer.add(buffer[i])
         }
 
-        // 获取引擎帧长度
+        // ★ v2.0 修复：获取引擎帧长度 — 讯飞需要 320，能量检测需要 512
         val frameLength = when (engine) {
             is EnergyWakeWordDetector -> engine.getFrameLength()
+            is XfWakeWordDetector -> engine.getFrameLength()  // 320 (讯飞官方文档规定)
             else -> 512
         }
 
@@ -593,7 +595,11 @@ class WakeWordServiceEnhanced : Service() {
      * 重启服务
      */
     private fun restartService() {
-        Timber.i("WakeWordServiceEnhanced: Restarting service")
+        Timber.i("WakeWordServiceEnhanced: ★ Restarting service (ACTION_RESTART)")
+
+        // ★ v2.0 修复：必须先重置 isRunning，否则 startWakeWordDetection 会直接 return
+        isRunning = false
+        isServiceRunning = false
 
         stopAudioCapture()
         restartAttempts = 0

@@ -1,35 +1,38 @@
-﻿package com.blindpath.module_voice.service
+package com.blindpath.module_voice.service
 
 import android.content.Context
 import com.blindpath.module_voice.domain.WakeWordDetector
 import com.blindpath.module_voice.domain.model.WakeWordConfig
 import timber.log.Timber
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
- * 唤醒词引擎管理器
+ * 唤醒词引擎管理器 v2.0
  *
- * 支持多引擎架构：
- * - 主引擎：百度语音唤醒（自动管理音频采集）
- * - 备选引擎：科大讯飞 MSC（自管理音频采集）
- * - 降级方案：能量检测（需要外部传入音频帧）
+ * ★★★ v2.0 修复（2026-06-18）：
+ * 1. XF_IFLYTEK 改为非 self-managed（由 WakeWordServiceEnhanced 统一采集音频）
+ * 2. createXfEngine 不再立即调 startListening()，由 AuthListener 回调触发
+ * 3. 授权超时降级：15秒未授权成功 → 自动切换 Energy 引擎
  *
  * 引擎模式：
- * - SELF_MANAGED：引擎自己管理音频采集（如百度 SDK）
- * - EXTERNAL_AUDIO：需要外部传入音频数据（如能量检测）
+ * - SELF_MANAGED：引擎自己管理音频采集（仅百度 SDK）
+ * - EXTERNAL_AUDIO：需要外部传入音频数据（讯飞 AIKit + 能量检测）
  */
 class WakeWordEngineManager(private val context: Context) {
 
     enum class EngineType {
         BAIDU,          // 百度语音唤醒引擎（自管理音频）
-        XF_IFLYTEK,     // 科大讯飞 MSC 唤醒引擎（自管理音频）
+        XF_IFLYTEK,     // 科大讯飞 AIKit 唤醒引擎（外部音频，SDK 异步授权）
         ENERGY          // 能量检测（降级方案，需要外部音频）
     }
 
     /**
      * 引擎是否自己管理音频采集
+     * ★ v2.0: XF_IFLYTEK 改为 false — 由 WakeWordServiceEnhanced 统一采集并喂入
      */
     fun isSelfManagedAudio(engineType: EngineType): Boolean {
-        return engineType == EngineType.BAIDU || engineType == EngineType.XF_IFLYTEK
+        return engineType == EngineType.BAIDU
     }
 
     data class EngineConfig(
@@ -52,12 +55,22 @@ class WakeWordEngineManager(private val context: Context) {
     // 引擎切换监听器
     var onEngineSwitched: ((EngineType) -> Unit)? = null
 
+    // 唤醒词检测回调
+    var onWakeWordDetected: ((String) -> Unit)? = null
+
+    // ★ 授权超时检查线程池
+    private val timeoutExecutor = Executors.newSingleThreadScheduledExecutor()
+
+    companion object {
+        private const val AUTH_TIMEOUT_SECONDS = 15L
+    }
+
     /**
      * 初始化引擎管理器
      */
     fun initialize(config: EngineConfig) {
         this.config = config
-        Timber.i("WakeWordEngineManager: Initializing with primary engine: ${config.primaryEngine}")
+        Timber.i("WakeWordEngineManager v2.0: Initializing with primary engine: ${config.primaryEngine}")
 
         // 尝试初始化主引擎
         val initialized = tryInitializeEngine(config.primaryEngine)
@@ -92,7 +105,7 @@ class WakeWordEngineManager(private val context: Context) {
 
             if (currentEngine != null) {
                 currentEngineType = engineType
-                Timber.i("WakeWordEngineManager: Engine initialized: $engineType")
+                Timber.i("WakeWordEngineManager: ★ Engine initialized: $engineType")
                 onEngineSwitched?.invoke(engineType)
                 true
             } else {
@@ -139,13 +152,18 @@ class WakeWordEngineManager(private val context: Context) {
             Timber.i("WakeWordEngineManager: Baidu engine initialized successfully")
             detector
         } catch (e: Exception) {
-            Timber.e(e, "WakeWordEngineManager: Baidu engine creation failed (likely SDK bug)")
+            Timber.e(e, "WakeWordEngineManager: Baidu engine creation failed")
             null
         }
     }
 
     /**
-     * 创建科大讯飞 MSC 唤醒引擎
+     * ★★★ v2.0: 创建科大讯飞 AIKit 唤醒引擎
+     *
+     * 关键变化：
+     * - 不再立即调 startListening()，由 AuthListener 回调自动触发
+     * - 设置授权超时：15秒未授权 → 降级到 Energy
+     * - 设置 onAuthSuccess/onAuthFailed 回调
      */
     private fun createXfEngine(): XfWakeWordDetector? {
         if (config.xfAppId.isBlank() || config.xfApiKey.isBlank() || config.xfApiSecret.isBlank()) {
@@ -164,24 +182,68 @@ class WakeWordEngineManager(private val context: Context) {
                     onWakeWordDetected?.invoke(keyword)
                 }
             )
-            detector.startListening()
+
+            // ★ 不立即调 startListening()！等 AuthListener 回调
+            // SDK 初始化时已启动异步授权，授权成功后会自动调 startListening()
+
+            // ★ 设置授权回调
+            detector.onAuthSuccess = {
+                Timber.i("WakeWordEngineManager: ★ XF auth success callback received")
+            }
+            detector.onAuthFailed = {
+                Timber.e("WakeWordEngineManager: ✗ XF auth failed callback, switching to Energy")
+                switchToEnergy()
+            }
+
+            // ★ 授权超时检查：15秒未授权成功 → 降级到 Energy
+            timeoutExecutor.schedule({
+                if (!detector.isAuthComplete()) {
+                    Timber.w("WakeWordEngineManager: ⏰ XF auth timeout (${AUTH_TIMEOUT_SECONDS}s), switching to Energy")
+                    switchToEnergy()
+                }
+            }, AUTH_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+            Timber.i("WakeWordEngineManager: ★ XF engine created, waiting for auth (timeout=${AUTH_TIMEOUT_SECONDS}s)...")
             detector
         } catch (e: Exception) {
-            Timber.e(e, "WakeWordEngineManager: iFlytek engine creation failed (is MSC SDK in libs/?)")
+            Timber.e(e, "WakeWordEngineManager: iFlytek engine creation failed")
             null
         }
     }
 
     /**
-     * 创建能量检测引擎（降级方案）
+     * ★ 创建能量检测引擎（降级方案）
+     * 阈值降低到 800，更敏感地检测声音
      */
     private fun createEnergyEngine(): EnergyWakeWordDetector {
         return EnergyWakeWordDetector(
-            threshold = 1000,
+            threshold = 800,  // ★ 降低阈值，更敏感
             onWakeWordDetected = { keyword ->
                 onWakeWordDetected?.invoke(keyword)
             }
         )
+    }
+
+    /**
+     * ★ 降级到 Energy 引擎
+     */
+    private fun switchToEnergy() {
+        if (currentEngineType == EngineType.ENERGY) return
+
+        Timber.w("WakeWordEngineManager: ★ Switching from $currentEngineType to ENERGY")
+
+        // 释放当前引擎
+        try {
+            currentEngine?.release()
+        } catch (e: Exception) {
+            Timber.w(e, "WakeWordEngineManager: Error releasing previous engine")
+        }
+        currentEngine = null
+
+        // 初始化 Energy 引擎
+        currentEngine = createEnergyEngine()
+        currentEngineType = EngineType.ENERGY
+        onEngineSwitched?.invoke(EngineType.ENERGY)
     }
 
     /**
@@ -192,15 +254,12 @@ class WakeWordEngineManager(private val context: Context) {
             return true
         }
 
-        // 释放当前引擎
         currentEngine?.release()
         currentEngine = null
 
-        // 初始化新引擎
         val success = tryInitializeEngine(engineType)
 
         if (!success && config.fallbackEnabled) {
-            // 切换失败，回退到能量检测
             tryInitializeEngine(EngineType.ENERGY)
         }
 
@@ -235,9 +294,7 @@ class WakeWordEngineManager(private val context: Context) {
     fun release() {
         currentEngine?.release()
         currentEngine = null
+        timeoutExecutor.shutdownNow()
         Timber.i("WakeWordEngineManager: Released")
     }
-
-    // 唤醒词检测回调
-    var onWakeWordDetected: ((String) -> Unit)? = null
 }
