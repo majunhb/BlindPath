@@ -198,12 +198,15 @@ class VoiceInteractionPipeline @Inject constructor(
                         state.lastCommand != null || state.lastError != null
                     }
                 }?.let { state ->
-                    if (state.lastCommand != null) {
-                        commandProcessed = true
-                        rawText = state.lastCommand?.rawText ?: ""
-                        commandRepository.consumeLastCommand()
-                    } else if (state.lastError != null) {
-                        errorMessage = state.lastError
+                    when {
+                        state.lastCommand != null -> {
+                            commandProcessed = true
+                            rawText = state.lastCommand?.rawText ?: ""
+                            commandRepository.consumeLastCommand()
+                        }
+                        state.lastError != null -> {
+                            errorMessage = state.lastError
+                        }
                     }
                 }
 
