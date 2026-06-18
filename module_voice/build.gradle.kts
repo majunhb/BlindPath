@@ -64,7 +64,7 @@ dependencies {
     implementation(libs.coroutines.android)
 
     // 百度语音 SDK (编译时依赖，实际打包由 app 模块负责，避免 Library AAR 内嵌本地 AAR)
-    compileOnly(fileTree("libs") { include("*.aar", "*.jar") })
+    compileOnly(fileTree("libs") { include("*.aar") })
 
     // 讯飞 AIKit SDK (编译时依赖，实际打包由 app 模块负责)
     compileOnly(files("$rootDir/app/libs/AIKit.aar"))
