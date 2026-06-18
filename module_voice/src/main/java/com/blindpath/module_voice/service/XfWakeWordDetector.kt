@@ -187,7 +187,7 @@ class XfWakeWordDetector(
             builderClass.getMethod("apiKey", String::class.java).invoke(builder, apiKey)
             builderClass.getMethod("apiSecret", String::class.java).invoke(builder, apiSecret)
             builderClass.getMethod("workDir", String::class.java).invoke(builder, workDirPath)
-            builderClass.getMethod("ability", String::class.java).invoke(builder, IVW_ID)
+            builderClass.getMethod("ability", String::class.java).invoke(builder, "e867a88f2;e75f07b62")
             builderClass.getMethod("authInterval", Int::class.javaPrimitiveType).invoke(builder, AUTH_INTERVAL)
             builderClass.getMethod("iLogMaxCount", Int::class.javaPrimitiveType).invoke(builder, 1)
 
