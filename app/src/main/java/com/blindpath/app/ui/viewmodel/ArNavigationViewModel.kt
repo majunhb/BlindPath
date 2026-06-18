@@ -181,6 +181,9 @@ class ArNavigationViewModel @Inject constructor(
     // ============================================================
 
     private fun handlePavingAlert(result: TactilePavingResult?) {
+        // ★ v3.1 修复：不再在此处播报盲道语音
+        // 盲道语音引导由 BlindPathGuidanceEngine 统一管理（通过 NavigationViewModel.processBlindPathDetection）
+        // 此处只更新UI状态，避免双重播报
         if (result == null || !result.detected) {
             if (lastPavingWarning.isNotEmpty()) {
                 lastPavingWarning = ""
@@ -198,11 +201,9 @@ class ArNavigationViewModel @Inject constructor(
             else -> null
         }
 
+        // ★ 只更新UI状态，不调用 voiceRepository.speak
         if (warning != null && warning != lastPavingWarning) {
             lastPavingWarning = warning
-            viewModelScope.launch {
-                voiceRepository.speak(warning)
-            }
             _uiState.value = _uiState.value.copy(
                 pavingWarning = PavingWarning(
                     message = warning,

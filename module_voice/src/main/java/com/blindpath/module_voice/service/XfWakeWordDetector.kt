@@ -187,7 +187,9 @@ class XfWakeWordDetector(
             builderClass.getMethod("apiKey", String::class.java).invoke(builder, apiKey)
             builderClass.getMethod("apiSecret", String::class.java).invoke(builder, apiSecret)
             builderClass.getMethod("workDir", String::class.java).invoke(builder, workDirPath)
-            builderClass.getMethod("ability", String::class.java).invoke(builder, "e867a88f2;e75f07b62")
+            // ★★★ v3.1 修复：:wakeword进程只注册IVW唤醒能力，不注册ESR
+            // 双进程各自注册对方能力会导致AiHelper单例冲突，授权失败
+            builderClass.getMethod("ability", String::class.java).invoke(builder, IVW_ID)
             builderClass.getMethod("authInterval", Int::class.javaPrimitiveType).invoke(builder, AUTH_INTERVAL)
             builderClass.getMethod("iLogMaxCount", Int::class.javaPrimitiveType).invoke(builder, 1)
 

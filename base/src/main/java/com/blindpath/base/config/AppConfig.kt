@@ -23,7 +23,7 @@ object AppConfig {
         const val NUM_THREADS = 8
         
         /** 置信度阈值 (0.0-1.0) - 0.4 平衡检出率与误报 */
-        const val CONFIDENCE_THRESHOLD = 0.4f
+        const val CONFIDENCE_THRESHOLD = 0.3f  // ★ v3.1: 降低阈值提高检出率，对盲人宁可多报不可漏报
 
         /** IoU 阈值 (0.0-1.0) */
         const val IOU_THRESHOLD = 0.45f

@@ -28,12 +28,53 @@ class BlindPathNavigationExecutor @Inject constructor(
 
     override suspend fun navigateTo(destination: String): String {
         Timber.i("BlindPathNavigationExecutor: navigateTo($destination)")
-        return "正在为您导航到${destination}，请跟随语音指引前行"
+        // ★ v3.1 修复：真正执行搜索，而不是只返回文本
+        return try {
+            when (val result = navigationRepository.searchAddress(destination)) {
+                is com.blindpath.base.common.Result.Success -> {
+                    val items = result.data
+                    if (items.isEmpty()) {
+                        "未找到${destination}，请换个关键词再说一遍"
+                    } else {
+                        val nearest = items.first()
+                        // 设置目的地并规划路线
+                        val setResult = navigationRepository.setDestination(
+                            nearest.latitude, nearest.longitude, nearest.name
+                        )
+                        if (setResult is com.blindpath.base.common.Result.Success) {
+                            navigationRepository.startNavigation()
+                            val planResult = navigationRepository.planRoute(
+                                navigationRepository.getCurrentLocation()?.latitude ?: 0.0,
+                                navigationRepository.getCurrentLocation()?.longitude ?: 0.0,
+                                nearest.latitude, nearest.longitude
+                            )
+                            when (planResult) {
+                                is com.blindpath.base.common.Result.Success ->
+                                    "已找到${nearest.name}，距离约${if (nearest.distance >= 1000) "${"%.1f".format(nearest.distance / 1000.0)}公里" else "${nearest.distance}米"}，正在为您规划路线"
+                                is com.blindpath.base.common.Result.Error ->
+                                    "找到${nearest.name}，但路线规划失败，请稍后重试"
+                                else -> "找到${nearest.name}，正在规划路线"
+                            }
+                        } else {
+                            "找到${nearest.name}，但设置目的地失败"
+                        }
+                    }
+                }
+                is com.blindpath.base.common.Result.Error -> {
+                    "搜索${destination}失败，${result.message}，请检查网络或定位权限"
+                }
+                else -> "正在搜索${destination}，请稍候"
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "BlindPathNavigationExecutor: navigateTo failed")
+            "搜索${destination}时出错，请稍后再试"
+        }
     }
 
     override suspend fun navigateHome(): String {
         Timber.i("BlindPathNavigationExecutor: navigateHome()")
-        return "正在为您导航回家，请跟随语音指引前行"
+        // TODO: 需要用户预设家庭地址，暂时返回提示
+        return "请先设置家庭地址，您可以说：导航到加家庭地址"
     }
 
     override suspend fun queryDistance(): String {
@@ -45,10 +86,16 @@ class BlindPathNavigationExecutor @Inject constructor(
     override suspend fun queryLocation(): String {
         Timber.i("BlindPathNavigationExecutor: queryLocation()")
         val location = navigationRepository.getCurrentLocation()
+        val state = navigationRepository.navigationState.first()
         return if (location != null) {
-            "您当前位于纬度${"%.4f".format(location.latitude)}，经度${"%.4f".format(location.longitude)}"
+            val addr = state.currentLocation?.address ?: state.currentLocation?.poiName ?: ""
+            if (addr.isNotBlank()) {
+                "您当前在${addr}附近"
+            } else {
+                "您当前位于纬度${"%.4f".format(location.latitude)}，经度${"%.4f".format(location.longitude)}"
+            }
         } else {
-            "暂时无法获取当前位置，请检查定位权限"
+            "暂时无法获取当前位置，请检查定位权限是否已开启"
         }
     }
 

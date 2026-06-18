@@ -239,7 +239,18 @@ class NavigationRepositoryImpl @Inject constructor(
         return Result.Success(true)
     }
 
-    override fun getCurrentLocation(): Location? = currentLocation
+    override fun getCurrentLocation(): Location? {
+        // ★ v3.1 修复：如果位置为null，尝试自动初始化定位
+        if (currentLocation == null && hasLocationPermission() && !isInitialized) {
+            try {
+                initAMapLocation()
+                Timber.i("NavigationRepository: getCurrentLocation 自动初始化定位")
+            } catch (e: Exception) {
+                Timber.w(e, "NavigationRepository: 自动初始化定位失败")
+            }
+        }
+        return currentLocation
+    }
 
     override fun isLocationAvailable(): Boolean = currentLocation != null
 
@@ -797,6 +808,8 @@ class NavigationRepositoryImpl @Inject constructor(
      * 自动传入当前坐标使结果按距离排序
      */
     override suspend fun searchAddress(keywords: String): Result<List<SearchResultItem>> {
+        // ★ v3.1 修复：搜索前确保定位服务已初始化
+        ensureLocationInitialized()
         val location = currentLocation?.let { "${it.longitude},${it.latitude}" }
         return amapSearchRepository.searchAddress(keywords, location)
     }
@@ -806,11 +819,27 @@ class NavigationRepositoryImpl @Inject constructor(
      * 自动传入当前坐标优先返回周边结果
      */
     override suspend fun getInputTips(keywords: String): Result<List<SearchResultItem>> {
+        // ★ v3.1 修复：搜索前确保定位服务已初始化
+        ensureLocationInitialized()
         val location = currentLocation?.let { "${it.longitude},${it.latitude}" }
         return amapSearchRepository.getInputTips(keywords, location)
     }
 
     // ==================== 定位相关 ====================
+
+    /**
+     * ★ v3.1 修复：确保定位服务已初始化（搜索/导航前自动调用）
+     * 解决：用户搜索地址时定位服务未启动，导致"无定位权限"假象
+     */
+    private fun ensureLocationInitialized() {
+        if (isInitialized || !hasLocationPermission()) return
+        try {
+            initAMapLocation()
+            Timber.i("NavigationRepository: 定位服务已自动初始化（搜索触发）")
+        } catch (e: Exception) {
+            Timber.w(e, "NavigationRepository: 自动初始化定位失败")
+        }
+    }
 
     private fun hasLocationPermission(): Boolean {
         return ContextCompat.checkSelfPermission(

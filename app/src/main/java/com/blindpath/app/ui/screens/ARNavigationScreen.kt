@@ -416,11 +416,8 @@ fun ARNavigationScreen(
                             viewModel.speak("前方有障碍物，${warningObs.type.chineseName}在${warningObs.direction.getChineseName()}${warningObs.distance.toInt()}米")
                         }
                     }
-                    // 盲道偏离
-                    !isOnSidewalk && now - lastAnnounceTime > 10000L -> {
-                        lastAnnounceTime = now
-                        viewModel.speak("已偏离盲道，请回到盲道上")
-                    }
+                    // ★ v3.1：盲道偏离播报已由 BlindPathGuidanceEngine 统一管理
+                    // 移除此处重复播报，避免"无盲道"语音过于频繁
                     else -> {}
                 }
 

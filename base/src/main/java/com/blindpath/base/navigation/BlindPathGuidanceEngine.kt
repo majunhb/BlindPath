@@ -62,9 +62,11 @@ class BlindPathGuidanceEngine {
     var slightOffsetThreshold: Float = 0.15f
     var majorOffsetThreshold: Float = 0.35f
     var directionChangeThreshold: Float = Math.toRadians(30.0).toFloat()
-    var lostFrameThreshold: Int = 5
-    var speakCooldownMs: Long = 3000L
-    var sameInstructionMinIntervalMs: Long = 5000L
+    var lostFrameThreshold: Int = 10  // ★ v3.1: 提高到10帧，减少误判"无盲道"
+    var speakCooldownMs: Long = 5000L
+    var sameInstructionMinIntervalMs: Long = 15000L
+    // ★ v3.1 修复："未检测到盲道"专用冷却（盲人用户不需要频繁提醒，15秒一次足够）
+    var lostFrameSpeakIntervalMs: Long = 15000L
 
     // ==================== 内部状态 ====================
 
@@ -210,10 +212,19 @@ class BlindPathGuidanceEngine {
      */
     private fun shouldSpeakNow(instruction: String, currentTime: Long): Boolean {
         val timeSinceLastSpeak = currentTime - lastSpeakTime
-        val isUrgent = instruction.contains("大幅调整") || instruction.contains("未检测到盲道")
-        val effectiveCooldown = if (isUrgent) speakCooldownMs / 2 else speakCooldownMs
+
+        // ★ v3.1 修复：分级冷却机制
+        // "未检测到盲道"用长冷却（15秒），避免持续播报干扰用户
+        // "大幅调整"用中等冷却（5秒），确保安全提示及时
+        // 其他指令用短冷却（3秒）
+        val effectiveCooldown = when {
+            instruction.contains("未检测到盲道") -> lostFrameSpeakIntervalMs
+            instruction.contains("大幅调整") -> speakCooldownMs
+            else -> 3000L
+        }
 
         if (timeSinceLastSpeak < effectiveCooldown) return false
+        // ★ v3.1：同一条指令至少间隔 sameInstructionMinIntervalMs
         if (instruction == lastSpokenInstruction && timeSinceLastSpeak < sameInstructionMinIntervalMs) return false
 
         return true

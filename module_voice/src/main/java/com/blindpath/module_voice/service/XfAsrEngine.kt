@@ -157,7 +157,9 @@ class XfAsrEngine(
             builderClass.getMethod("apiSecret", String::class.java).invoke(builder, apiSecret)
             builderClass.getMethod("workDir", String::class.java).invoke(builder, workDirPath)
             // ★ 注册唤醒+ESR双能力（主进程可能两者都用）
-            builderClass.getMethod("ability", String::class.java).invoke(builder, "e867a88f2;$ESR_ID")
+            // ★★★ v3.1 修复：主进程只注册ESR识别能力，不注册IVW
+            // 双进程各自注册对方能力会导致AiHelper单例冲突
+            builderClass.getMethod("ability", String::class.java).invoke(builder, ESR_ID)
             builderClass.getMethod("authInterval", Int::class.javaPrimitiveType).invoke(builder, AUTH_INTERVAL)
             builderClass.getMethod("iLogMaxCount", Int::class.javaPrimitiveType).invoke(builder, 1)
 
@@ -174,7 +176,7 @@ class XfAsrEngine(
             registerAuthListener()
             registerAsrListener()
 
-            Timber.i("$TAG: SDK init called (ability=e867a88f2;$ESR_ID), waiting for auth...")
+            Timber.i("$TAG: SDK init called (ability=$ESR_ID only), waiting for auth...")
             true
         } catch (e: Throwable) {
             Timber.e(e, "$TAG: Failed to init SDK")

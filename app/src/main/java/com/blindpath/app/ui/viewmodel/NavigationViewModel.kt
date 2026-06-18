@@ -322,7 +322,7 @@ class NavigationViewModel @Inject constructor(
             // 1. 获取当前位置
             val location = navigationRepository.getCurrentLocation()
             if (location == null) {
-                voiceRepository.announce("无法获取当前位置，请检查定位权限", VoiceType.SYSTEM_STATUS)
+                voiceRepository.announce("正在获取定位，请稍后再试", VoiceType.SYSTEM_STATUS)
                 _isPlanning.value = false
                 return@launch
             }
@@ -435,7 +435,7 @@ class NavigationViewModel @Inject constructor(
             // 1. 获取当前位置
             val location = navigationRepository.getCurrentLocation()
             if (location == null) {
-                voiceRepository.announce("无法获取当前位置，请检查定位权限", VoiceType.SYSTEM_STATUS)
+                voiceRepository.announce("正在获取定位，请稍后再试", VoiceType.SYSTEM_STATUS)
                 _isPlanning.value = false
                 return@launch
             }
