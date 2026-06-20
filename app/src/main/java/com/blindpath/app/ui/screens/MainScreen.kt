@@ -26,7 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocationOn
@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -58,6 +59,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
@@ -78,10 +80,19 @@ import com.blindpath.module_voice.domain.model.NluResult
 import com.blindpath.module_voice.domain.model.VoiceIntent
 import com.blindpath.module_voice.domain.model.VoiceCommandIntentBridge
 import com.blindpath.module_voice.viewmodel.VoiceInteractionViewModel
+import com.blindpath.app.ui.theme.ModuleIndoor
+import com.blindpath.app.ui.theme.ModuleIndoorBg
+import com.blindpath.app.ui.theme.ModuleNavigation
+import com.blindpath.app.ui.theme.ModuleNavigationBg
+import com.blindpath.app.ui.theme.ModuleScene
+import com.blindpath.app.ui.theme.ModuleSceneBg
+import com.blindpath.app.ui.theme.ModuleSos
+import com.blindpath.app.ui.theme.ModuleSosBg
 import timber.log.Timber
 
 /**
- * 主界面 - 视障友好极简设计
+ * 主界面 - 高对比无障碍设计
+ * 设计原则：WCAG AAA (7:1+对比度) + 大字号 + 鲜明功能色
  * 三大模块入口：室内感知 / 出行导航 / 场景感知
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -117,10 +128,8 @@ fun MainScreen(
 
     // ★ NLU四层架构：注入Executor + 设置意图动作回调
     LaunchedEffect(Unit) {
-        // 注入四大Executor到IntentRouter（Pipeline v2.0使用）
         viewModel.setExecutors(navExecutor, sceneExec, voiceCtrlExec, sosExec)
 
-        // 设置NLU意图动作回调（用于需要Composable上下文的UI导航操作）
         viewModel.setIntentActionHandler { intent, nluResult ->
             Timber.d("MainScreen: NLU意图动作 → ${intent.id}")
             handleVoiceIntent(intent, nluResult,
@@ -138,7 +147,6 @@ fun MainScreen(
             )
         }
 
-        // 兼容旧路径：VoiceCommand回调
         viewModel.setCommandHandler { command ->
             Timber.d("MainScreen: Handling voice command - ${command.name}")
             when (command) {
@@ -178,13 +186,12 @@ fun MainScreen(
                     viewModel.speak("场景感知已停止")
                     true
                 }
-                VoiceCommand.WHERE_AM_I -> {
+                VoiceCommand.QUERY_LOCATION -> {
                     onLocationClick()
                     true
                 }
-                VoiceCommand.SOS, VoiceCommand.CALL_SOS -> {
+                VoiceCommand.SOS -> {
                     onSosClick()
-                    viewModel.speak(VoiceGuidance.SOS_TRIGGERED)
                     true
                 }
                 else -> false
@@ -192,102 +199,93 @@ fun MainScreen(
         }
     }
 
-    // 页面路由 - 使用 when 表达式避免 return 导致不可达代码
-    when {
-        showSettings -> {
-            SettingsScreen(onBackClick = { showSettings = false })
-        }
-        showCommunity -> {
-            CommunityScreen(onBackClick = { showCommunity = false })
-        }
-        showTripAssist -> {
-            TripAssistScreen(onBackClick = { showTripAssist = false })
-        }
-        showIndoorPerception -> {
-            IndoorPerceptionScreen(
-                obstacleRepository = obstacleRepository,
-                navigationRepository = navigationRepository,
-                onBack = { showIndoorPerception = false },
-                viewModel = viewModel
-            )
-        }
-        showOutdoorNavigation -> {
-            OutdoorNavigationScreen(
-                obstacleRepository = obstacleRepository,
-                navigationRepository = navigationRepository,
-                sceneClassifier = sceneClassifier,
-                onBack = { showOutdoorNavigation = false },
-                onHelpClick = { showNavigationGuide = true },
-                onSwitchToAr = {
-                    showOutdoorNavigation = false
-                    showArNavigation = true
-                },
-                viewModel = viewModel
-            )
-        }
-        showArNavigation -> {
-            ARNavigationScreen(
-                obstacleRepository = obstacleRepository,
-                viewModel = viewModel,
-                onBack = { showArNavigation = false },
-                onSwitchToVoice = {
-                    showArNavigation = false
-                    showOutdoorNavigation = true
-                }
-            )
-        }
-        showNavigationGuide -> {
-            NavigationGuideScreen(onBack = { showNavigationGuide = false })
-        }
-        showScenePerception -> {
-            ScenePerceptionScreen(
-                obstacleRepository = obstacleRepository,
-                indoorDetector = indoorDetector,
-                sceneClassifier = sceneClassifier,
-                onBack = { showScenePerception = false },
-                viewModel = viewModel
-            )
-        }
-        else -> {
-            // 主界面内容
-            MainScreenContent(
-                uiState = uiState,
-        obstacleState = obstacleState,
+    // === 子页面全屏覆盖 ===
+    if (showSettings) {
+        SettingsScreen(onBack = { showSettings = false })
+        return
+    }
+    if (showCommunity) {
+        CommunityScreen(onBack = { showCommunity = false })
+        return
+    }
+    if (showTripAssist) {
+        TripAssistScreen(onBack = { showTripAssist = false })
+        return
+    }
+    if (showIndoorPerception) {
+        IndoorPerceptionScreen(
+            indoorDetector = indoorDetector,
+            onBack = { showIndoorPerception = false },
+            voiceViewModel = viewModel
+        )
+        return
+    }
+    if (showOutdoorNavigation) {
+        OutdoorNavigationScreen(
+            navigationRepository = navigationRepository,
+            onBack = { showOutdoorNavigation = false },
+            onSwitchToAr = {
+                showOutdoorNavigation = false
+                showArNavigation = true
+            },
+            viewModel = viewModel
+        )
+        return
+    }
+    if (showArNavigation) {
+        ARNavigationScreen(
+            obstacleRepository = obstacleRepository,
+            navigationRepository = navigationRepository,
+            onBack = {
+                showArNavigation = false
+                showOutdoorNavigation = true
+            },
+            viewModel = viewModel
+        )
+        return
+    }
+    if (showScenePerception) {
+        ScenePerceptionScreen(
+            sceneClassifier = sceneClassifier,
+            onBack = { showScenePerception = false },
+            voiceViewModel = viewModel
+        )
+        return
+    }
+    if (showNavigationGuide) {
+        NavigationGuideScreen(onBack = { showNavigationGuide = false })
+        return
+    }
+
+    // === 主界面 ===
+    MainScreenContent(
+        uiState = uiState,
+        onStartListening = { viewModel.startListening() },
+        onStopListening = { viewModel.stopListening() },
         onIndoorPerceptionClick = { showIndoorPerception = true },
         onOutdoorNavigationClick = { showOutdoorNavigation = true },
         onScenePerceptionClick = { showScenePerception = true },
-        onSettingsClick = { showSettings = true },
-        onCommunityClick = { showCommunity = true },
-        onTripAssistClick = { showTripAssist = true },
-        onArNavigationClick = { showArNavigation = true },
         onSosClick = onSosClick,
-        onStartListening = { viewModel.startListening() },
-        onStopListening = { viewModel.stopListening() },
-        viewModel = viewModel
+        onSettingsClick = { showSettings = true },
+        onCommunityClick = { showCommunity = true }
     )
-        }
-    }
 }
 
 /**
- * 主界面内容
+ * 主界面内容 - 高对比无障碍布局
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreenContent(
-    uiState: com.blindpath.module_voice.viewmodel.VoiceInteractionUiState,
-    obstacleState: ObstacleState,
+    uiState: com.blindpath.module_voice.viewmodel.VoiceUiState,
+    onStartListening: () -> Unit,
+    onStopListening: () -> Unit,
     onIndoorPerceptionClick: () -> Unit,
     onOutdoorNavigationClick: () -> Unit,
     onScenePerceptionClick: () -> Unit,
-    onSettingsClick: () -> Unit,
-    onCommunityClick: () -> Unit,
-    onTripAssistClick: () -> Unit,
-    onArNavigationClick: () -> Unit,
     onSosClick: () -> Unit,
-    onStartListening: () -> Unit,
-    onStopListening: () -> Unit,
-    viewModel: VoiceInteractionViewModel
+    onSettingsClick: () -> Unit,
+    onCommunityClick: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -301,130 +299,139 @@ private fun MainScreenContent(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 20.dp)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(20.dp))
 
-            // 欢迎语
+            // 欢迎语 - 大号高对比
             Text(
                 text = "您好，我是小智",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFF1A1A3E)
+                color = MaterialTheme.colorScheme.onSurface  // 白色(暗)/深色(亮)
             )
             Text(
                 text = "请说\"小智小智\"唤醒我",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF666666),
-                modifier = Modifier.padding(top = 4.dp)
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant  // 亮灰(暗)/深灰(亮)
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
-            // 三大核心模块入口
-            Text(
-                text = "选择功能模块",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1A1A3E),
-                modifier = Modifier.align(Alignment.Start)
-            )
+            // 分区标题
+            SectionTitle(text = "选择功能模块")
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // 模块 1：室内感知
+            // ★ 三大核心模块 — 实色卡片 + 白字
             ModuleCard(
                 title = "室内感知",
                 subtitle = "室内导航 · 障碍物检测 · 空间理解",
                 icon = Icons.Default.Home,
-                backgroundColor = Color(0xFF1E90FF),
+                accentColor = ModuleIndoor,
+                cardBgColor = ModuleIndoorBg,
                 onClick = onIndoorPerceptionClick,
                 modifier = Modifier.fillMaxWidth()
             )
 
+            Spacer(modifier = Modifier.height(14.dp))
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 模块 3：出行导航
             ModuleCard(
                 title = "出行导航",
                 subtitle = "路线规划 · 盲道引导 · 交通辅助",
                 icon = Icons.Default.Place,
-                backgroundColor = Color(0xFF4CAF50),
+                accentColor = ModuleNavigation,
+                cardBgColor = ModuleNavigationBg,
                 onClick = onOutdoorNavigationClick,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // 模块 4：场景感知
             ModuleCard(
                 title = "场景感知",
                 subtitle = "物体识别 · 场景描述 · 文字朗读",
                 icon = Icons.Default.Search,
-                backgroundColor = Color(0xFFFF9800),
+                accentColor = ModuleScene,
+                cardBgColor = ModuleSceneBg,
                 onClick = onScenePerceptionClick,
                 modifier = Modifier.fillMaxWidth()
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
             // 快速功能
-            Text(
-                text = "快速功能",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF1A1A3E),
-                modifier = Modifier.align(Alignment.Start)
-            )
+            SectionTitle(text = "快速功能")
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 QuickActionButton(
                     icon = Icons.Default.LocationOn,
                     label = "我的位置",
+                    accentColor = ModuleIndoor,
+                    cardBgColor = ModuleIndoorBg,
                     onClick = { /* TODO */ },
                     modifier = Modifier.weight(1f)
                 )
                 QuickActionButton(
                     icon = Icons.Default.Call,
                     label = "紧急求助",
+                    accentColor = ModuleSos,
+                    cardBgColor = ModuleSosBg,
                     onClick = onSosClick,
-                    backgroundColor = Color(0xFFE53935),
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
 
-            // 语音唤醒按钮
+            // 语音唤醒按钮 - 大号醒目
             VoiceWakeUpButton(
                 isListening = uiState.isListening,
                 onClick = { if (uiState.isListening) onStopListening() else onStartListening() },
-                modifier = Modifier.size(80.dp)
+                modifier = Modifier.size(88.dp)
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             Text(
                 text = if (uiState.isListening) "正在聆听..." else "点击唤醒",
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (uiState.isListening) Color(0xFF4CAF50) else Color(0xFF666666)
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Bold,
+                color = if (uiState.isListening) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(28.dp))
         }
     }
 }
 
 /**
- * 模块卡片
+ * 分区标题 - 高对比
+ */
+@Composable
+private fun SectionTitle(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = text }
+    )
+}
+
+/**
+ * 功能模块卡片 - 实色背景 + 白字 + 高对比
+ * 设计：深色实底卡片，左侧亮色图标区，右侧白色标题+亮色副标题
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -432,103 +439,112 @@ private fun ModuleCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
-    backgroundColor: Color,
+    accentColor: Color,
+    cardBgColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Card(
         onClick = onClick,
         modifier = modifier
-            .height(100.dp)
+            .height(108.dp)
             .semantics {
                 contentDescription = "$title，$subtitle"
             },
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor.copy(alpha = 0.1f))
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(16.dp),
+                .padding(18.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 左侧图标区 - 亮色方块
             Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(backgroundColor),
+                    .size(60.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(accentColor),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
                     tint = Color.White,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(34.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(18.dp))
 
+            // 右侧文字
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1A1A3E)
+                    color = Color.White  // 纯白，对比度最高
                 )
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFF666666)
+                    fontWeight = FontWeight.Medium,
+                    color = accentColor  // 亮色副标题，与图标色呼应
                 )
             }
 
+            // 右箭头
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = null,
-                tint = backgroundColor,
-                modifier = Modifier.size(24.dp)
+                tint = accentColor,
+                modifier = Modifier.size(26.dp)
             )
         }
     }
 }
 
 /**
- * 快速操作按钮
+ * 快速操作按钮 - 实色底 + 白字
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun QuickActionButton(
     icon: ImageVector,
     label: String,
+    accentColor: Color,
+    cardBgColor: Color,
     onClick: () -> Unit,
-    backgroundColor: Color = Color(0xFF1E90FF),
     modifier: Modifier = Modifier
 ) {
     Card(
         onClick = onClick,
         modifier = modifier
-            .height(80.dp)
+            .height(88.dp)
             .semantics { contentDescription = label },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor.copy(alpha = 0.1f))
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBgColor),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = backgroundColor,
-                modifier = Modifier.size(32.dp)
+                tint = accentColor,
+                modifier = Modifier.size(34.dp)
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = label,
-                style = MaterialTheme.typography.bodyMedium,
-                color = backgroundColor,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -536,7 +552,7 @@ private fun QuickActionButton(
 }
 
 /**
- * 语音唤醒按钮
+ * 语音唤醒按钮 - 高对比大号
  */
 @Composable
 private fun VoiceWakeUpButton(
@@ -547,7 +563,7 @@ private fun VoiceWakeUpButton(
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 1f,
-        targetValue = if (isListening) 1.1f else 1f,
+        targetValue = if (isListening) 1.08f else 1f,
         animationSpec = infiniteRepeatable(
             animation = tween(1000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -555,29 +571,28 @@ private fun VoiceWakeUpButton(
         label = "scale"
     )
 
+    val buttonColor = if (isListening) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+
     Box(
         modifier = modifier
             .scale(pulseScale)
             .clip(CircleShape)
-            .background(
-                if (isListening) Color(0xFF4CAF50) else Color(0xFF1E90FF)
-            )
+            .background(buttonColor)
             .clickable(onClick = onClick)
             .semantics { contentDescription = if (isListening) "正在聆听，点击停止" else "点击唤醒语音助手" },
         contentAlignment = Alignment.Center
     ) {
-        // 使用 Home 图标代替 Mic（避免 material-icons-extended 依赖问题）
         Icon(
             imageVector = if (isListening) Icons.Default.Home else Icons.Default.Search,
             contentDescription = null,
             tint = Color.White,
-            modifier = Modifier.size(40.dp)
+            modifier = Modifier.size(42.dp)
         )
     }
 }
 
 /**
- * 顶部栏
+ * 顶部栏 - 适配主题色
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -590,31 +605,36 @@ private fun MainTopBar(
             Text(
                 text = "智行助盲",
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
             )
         },
         actions = {
             IconButton(onClick = onCommunityClick) {
                 Icon(
                     imageVector = Icons.Default.Place,
-                    contentDescription = "社区"
+                    contentDescription = "社区",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             IconButton(onClick = onSettingsClick) {
                 Icon(
                     imageVector = Icons.Default.Settings,
-                    contentDescription = "设置"
+                    contentDescription = "设置",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.background,
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            actionIconContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     )
 }
 
 /**
  * 处理NLU意图 → UI动作映射
- *
- * Pipeline v2.0 路由后的UI层回调，负责页面导航等需要Composable上下文的操作。
- * Executor负责数据层操作（查询位置、开启检测等），此函数负责UI层操作（切换页面）。
  */
 private fun handleVoiceIntent(
     intent: VoiceIntent,
@@ -632,7 +652,6 @@ private fun handleVoiceIntent(
     viewModel: VoiceInteractionViewModel
 ): Boolean {
     return when (intent) {
-        // 导航类 → 切换页面
         VoiceIntent.NAVIGATE_TO -> {
             onShowOutdoor()
             true
@@ -656,8 +675,6 @@ private fun handleVoiceIntent(
             onShowOutdoor()
             true
         }
-
-        // 场景识别
         VoiceIntent.LOOK_AHEAD -> {
             onShowScene()
             true
@@ -670,26 +687,18 @@ private fun handleVoiceIntent(
             onHideScene()
             true
         }
-
-        // 室内导航
         VoiceIntent.INDOOR_NAVIGATE -> {
             onShowIndoor()
             true
         }
-
-        // SOS → 立即触发
         VoiceIntent.SOS -> {
             onSos()
             true
         }
-
-        // 位置查询
         VoiceIntent.QUERY_LOCATION -> {
             onLocation()
             true
         }
-
-        // 音量/语速控制 → 无需页面切换，Executor已处理
         VoiceIntent.VOLUME_UP,
         VoiceIntent.VOLUME_DOWN,
         VoiceIntent.SPEED_UP,
@@ -697,17 +706,11 @@ private fun handleVoiceIntent(
         VoiceIntent.QUERY_DISTANCE,
         VoiceIntent.QUERY_FLOOR,
         VoiceIntent.REPEAT -> {
-            // Executor已返回播报文本，无需额外UI操作
             true
         }
-
-        // 帮助
         VoiceIntent.HELP -> {
-            // Executor已返回帮助文本
             true
         }
-
-        // 未知意图
         VoiceIntent.UNKNOWN -> {
             Timber.w("MainScreen: 未知意图 → ${nluResult.rawText}")
             false
