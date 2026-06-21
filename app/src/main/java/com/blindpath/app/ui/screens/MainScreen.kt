@@ -59,7 +59,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.blindpath.module_obstacle.data.detection.SceneClassifier
@@ -186,7 +185,7 @@ fun MainScreen(
                     viewModel.speak("场景感知已停止")
                     true
                 }
-                VoiceCommand.QUERY_LOCATION -> {
+                VoiceCommand.WHERE_AM_I -> {
                     onLocationClick()
                     true
                 }
@@ -199,76 +198,77 @@ fun MainScreen(
         }
     }
 
-    // === 子页面全屏覆盖 ===
-    if (showSettings) {
-        SettingsScreen(onBack = { showSettings = false })
-        return
+    // 页面路由 - when表达式避免return不可达代码
+    when {
+        showSettings -> {
+            SettingsScreen(onBackClick = { showSettings = false })
+        }
+        showCommunity -> {
+            CommunityScreen(onBackClick = { showCommunity = false })
+        }
+        showTripAssist -> {
+            TripAssistScreen(onBackClick = { showTripAssist = false })
+        }
+        showIndoorPerception -> {
+            IndoorPerceptionScreen(
+                obstacleRepository = obstacleRepository,
+                navigationRepository = navigationRepository,
+                onBack = { showIndoorPerception = false },
+                viewModel = viewModel
+            )
+        }
+        showOutdoorNavigation -> {
+            OutdoorNavigationScreen(
+                obstacleRepository = obstacleRepository,
+                navigationRepository = navigationRepository,
+                sceneClassifier = sceneClassifier,
+                onBack = { showOutdoorNavigation = false },
+                onHelpClick = { showNavigationGuide = true },
+                onSwitchToAr = {
+                    showOutdoorNavigation = false
+                    showArNavigation = true
+                },
+                viewModel = viewModel
+            )
+        }
+        showArNavigation -> {
+            ARNavigationScreen(
+                obstacleRepository = obstacleRepository,
+                viewModel = viewModel,
+                onBack = { showArNavigation = false },
+                onSwitchToVoice = {
+                    showArNavigation = false
+                    showOutdoorNavigation = true
+                }
+            )
+        }
+        showNavigationGuide -> {
+            NavigationGuideScreen(onBack = { showNavigationGuide = false })
+        }
+        showScenePerception -> {
+            ScenePerceptionScreen(
+                obstacleRepository = obstacleRepository,
+                indoorDetector = indoorDetector,
+                sceneClassifier = sceneClassifier,
+                onBack = { showScenePerception = false },
+                viewModel = viewModel
+            )
+        }
+        else -> {
+            // === 主界面内容 ===
+            MainScreenContent(
+                uiState = uiState,
+                onStartListening = { viewModel.startListening() },
+                onStopListening = { viewModel.stopListening() },
+                onIndoorPerceptionClick = { showIndoorPerception = true },
+                onOutdoorNavigationClick = { showOutdoorNavigation = true },
+                onScenePerceptionClick = { showScenePerception = true },
+                onSosClick = onSosClick,
+                onSettingsClick = { showSettings = true },
+                onCommunityClick = { showCommunity = true }
+            )
+        }
     }
-    if (showCommunity) {
-        CommunityScreen(onBack = { showCommunity = false })
-        return
-    }
-    if (showTripAssist) {
-        TripAssistScreen(onBack = { showTripAssist = false })
-        return
-    }
-    if (showIndoorPerception) {
-        IndoorPerceptionScreen(
-            indoorDetector = indoorDetector,
-            onBack = { showIndoorPerception = false },
-            voiceViewModel = viewModel
-        )
-        return
-    }
-    if (showOutdoorNavigation) {
-        OutdoorNavigationScreen(
-            navigationRepository = navigationRepository,
-            onBack = { showOutdoorNavigation = false },
-            onSwitchToAr = {
-                showOutdoorNavigation = false
-                showArNavigation = true
-            },
-            viewModel = viewModel
-        )
-        return
-    }
-    if (showArNavigation) {
-        ARNavigationScreen(
-            obstacleRepository = obstacleRepository,
-            navigationRepository = navigationRepository,
-            onBack = {
-                showArNavigation = false
-                showOutdoorNavigation = true
-            },
-            viewModel = viewModel
-        )
-        return
-    }
-    if (showScenePerception) {
-        ScenePerceptionScreen(
-            sceneClassifier = sceneClassifier,
-            onBack = { showScenePerception = false },
-            voiceViewModel = viewModel
-        )
-        return
-    }
-    if (showNavigationGuide) {
-        NavigationGuideScreen(onBack = { showNavigationGuide = false })
-        return
-    }
-
-    // === 主界面 ===
-    MainScreenContent(
-        uiState = uiState,
-        onStartListening = { viewModel.startListening() },
-        onStopListening = { viewModel.stopListening() },
-        onIndoorPerceptionClick = { showIndoorPerception = true },
-        onOutdoorNavigationClick = { showOutdoorNavigation = true },
-        onScenePerceptionClick = { showScenePerception = true },
-        onSosClick = onSosClick,
-        onSettingsClick = { showSettings = true },
-        onCommunityClick = { showCommunity = true }
-    )
 }
 
 /**
@@ -277,7 +277,7 @@ fun MainScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainScreenContent(
-    uiState: com.blindpath.module_voice.viewmodel.VoiceUiState,
+    uiState: com.blindpath.module_voice.viewmodel.VoiceInteractionUiState,
     onStartListening: () -> Unit,
     onStopListening: () -> Unit,
     onIndoorPerceptionClick: () -> Unit,
@@ -310,13 +310,13 @@ private fun MainScreenContent(
                 text = "您好，我是小智",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface  // 白色(暗)/深色(亮)
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = "请说\"小智小智\"唤醒我",
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant  // 亮灰(暗)/深灰(亮)
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(modifier = Modifier.height(28.dp))
@@ -431,7 +431,6 @@ private fun SectionTitle(text: String) {
 
 /**
  * 功能模块卡片 - 实色背景 + 白字 + 高对比
- * 设计：深色实底卡片，左侧亮色图标区，右侧白色标题+亮色副标题
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -485,14 +484,14 @@ private fun ModuleCard(
                     text = title,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White  // 纯白，对比度最高
+                    color = Color.White
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
-                    color = accentColor  // 亮色副标题，与图标色呼应
+                    color = accentColor
                 )
             }
 
@@ -532,7 +531,7 @@ private fun QuickActionButton(
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.Center
         ) {
             Icon(
                 imageVector = icon,
