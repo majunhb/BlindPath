@@ -60,9 +60,15 @@ class WakeWordEngineManager(private val context: Context) {
 
     // ★ 授权超时检查线程池
     private val timeoutExecutor = Executors.newSingleThreadScheduledExecutor()
+    
+    // ★ 重试机制：降级后定期尝试恢复高级引擎
+    private var retryCount = 0
+    private val maxRetryCount = 3
+    private val retryExecutor = Executors.newSingleThreadScheduledExecutor()
 
     companion object {
         private const val AUTH_TIMEOUT_SECONDS = 15L
+        private const val RETRY_INTERVAL_SECONDS = 30L  // 降级后30秒重试
     }
 
     /**
@@ -212,12 +218,12 @@ class WakeWordEngineManager(private val context: Context) {
     }
 
     /**
-     * ★ 创建能量检测引擎（降级方案）
-     * 阈值降低到 800，更敏感地检测声音
+     * ★ 创建能量检测引擎（降级方案）v2.0
+     * 阈值 1200 + 过零率检测，减少误触发
      */
     private fun createEnergyEngine(): EnergyWakeWordDetector {
         return EnergyWakeWordDetector(
-            threshold = 800,  // ★ 降低阈值，更敏感
+            threshold = 1200,  // ★ v2.0: 提高阈值，减少环境噪声误触发
             onWakeWordDetected = { keyword ->
                 onWakeWordDetected?.invoke(keyword)
             }
@@ -225,7 +231,7 @@ class WakeWordEngineManager(private val context: Context) {
     }
 
     /**
-     * ★ 降级到 Energy 引擎
+     * ★ 降级到 Energy 引擎，并安排重试
      */
     private fun switchToEnergy() {
         if (currentEngineType == EngineType.ENERGY) return
@@ -244,6 +250,45 @@ class WakeWordEngineManager(private val context: Context) {
         currentEngine = createEnergyEngine()
         currentEngineType = EngineType.ENERGY
         onEngineSwitched?.invoke(EngineType.ENERGY)
+        
+        // ★ 安排重试：30秒后尝试恢复讯飞引擎
+        scheduleRetry()
+    }
+    
+    /**
+     * ★ 安排重试：降级后定期尝试恢复高级引擎
+     */
+    private fun scheduleRetry() {
+        if (retryCount >= maxRetryCount) {
+            Timber.w("WakeWordEngineManager: Max retry count reached ($maxRetryCount), staying on Energy")
+            return
+        }
+        
+        retryExecutor.schedule({
+            retryCount++
+            Timber.i("WakeWordEngineManager: ★ Retry attempt #$retryCount to restore XF engine...")
+            
+            // 尝试重新初始化讯飞引擎
+            val xfEngine = createXfEngine()
+            if (xfEngine != null) {
+                // 释放 Energy 引擎
+                try {
+                    currentEngine?.release()
+                } catch (e: Exception) {
+                    Timber.w(e, "WakeWordEngineManager: Error releasing Energy engine")
+                }
+                
+                currentEngine = xfEngine
+                currentEngineType = EngineType.XF_IFLYTEK
+                onEngineSwitched?.invoke(EngineType.XF_IFLYTEK)
+                retryCount = 0  // 成功恢复，重置重试计数
+                Timber.i("WakeWordEngineManager: ★★ Successfully restored XF engine on retry #$retryCount")
+            } else {
+                Timber.w("WakeWordEngineManager: Retry #$retryCount failed, still on Energy")
+                // 继续安排下一次重试
+                scheduleRetry()
+            }
+        }, RETRY_INTERVAL_SECONDS, TimeUnit.SECONDS)
     }
 
     /**
@@ -295,6 +340,7 @@ class WakeWordEngineManager(private val context: Context) {
         currentEngine?.release()
         currentEngine = null
         timeoutExecutor.shutdownNow()
+        retryExecutor.shutdownNow()
         Timber.i("WakeWordEngineManager: Released")
     }
 }
