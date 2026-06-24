@@ -177,10 +177,13 @@ dependencies {
 
 
     // 百度语音 SDK (app 模块直接引入 AAR，Library 模块编译时用 compileOnly)
-    implementation(fileTree("$rootDir/module_voice/libs") { include("*.aar") })
+    implementation(name: "bdasr_aipd_V3_20250717_1e379e2", ext: "aar")
 
     // 讯飞 AIKit SDK
-    implementation(files("libs/AIKit.aar"))
+    implementation(name: "AIKit", ext: "aar")
+
+    // SparkChain SDK (AAR via flatDir)
+    implementation(name: "SparkChain", ext: "aar")
 
     // 讯飞语音交互 - 后续按需添加 MSC 等依赖
     
