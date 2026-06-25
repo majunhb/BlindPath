@@ -1,9 +1,5 @@
 pluginManagement {
     repositories {
-        // 本地AAR仓库
-        flatDir {
-            dirs("app/libs", "module_voice/libs")
-        }
         mavenLocal()
         maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
         maven { url = uri("https://dl.google.com/dl/android/maven2/") }
@@ -19,6 +15,10 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
+        // 本地AAR仓库
+        flatDir {
+            dirs("app/libs", "module_voice/libs")
+        }
         mavenLocal()
         maven { url = uri("https://mirrors.huaweicloud.com/repository/maven/") }
         google()
