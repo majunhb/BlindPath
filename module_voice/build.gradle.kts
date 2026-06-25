@@ -64,10 +64,10 @@ dependencies {
     implementation(libs.coroutines.android)
 
     // 百度语音 SDK (编译时依赖，实际打包由 app 模块负责，避免 Library AAR 内嵌本地 AAR)
-    compileOnly(name: "bdasr_aipd_V3_20250717_1e379e2", ext: "aar")
+    compileOnly("bdasr_aipd_V3_20250717_1e379e2@aar")
 
     // 讯飞 AIKit SDK (编译时依赖，实际打包由 app 模块负责)
-    compileOnly(name: "AIKit", ext: "aar")
+    compileOnly("AIKit@aar")
     
     // Test dependencies
     testImplementation(libs.junit)
