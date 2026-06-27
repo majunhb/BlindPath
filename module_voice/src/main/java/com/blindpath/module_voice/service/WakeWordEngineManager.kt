@@ -24,7 +24,8 @@ class WakeWordEngineManager(private val context: Context) {
     enum class EngineType {
         BAIDU,          // 百度语音唤醒引擎（自管理音频）
         XF_IFLYTEK,     // 科大讯飞 AIKit 唤醒引擎（外部音频，SDK 异步授权）
-        ENERGY          // 能量检测（降级方案，需要外部音频）
+        PORCUPINE,      // Porcupine 离线唤醒引擎（外部音频，降级方案）
+        ENERGY          // 能量检测（最终降级方案，需要外部音频）
     }
 
     /**
@@ -45,6 +46,8 @@ class WakeWordEngineManager(private val context: Context) {
         val xfAppId: String = "",
         val xfApiKey: String = "",
         val xfApiSecret: String = "",
+        val porcupineAccessKey: String = "",
+        val porcupineKeywordAsset: String = WakeWordConfig.PORCUPINE_KEYWORD_ASSET,
         val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD
     )
 
@@ -85,16 +88,28 @@ class WakeWordEngineManager(private val context: Context) {
             // 主引擎失败，尝试备选引擎
             Timber.w("WakeWordEngineManager: Primary engine failed, trying fallback")
             when (config.primaryEngine) {
-                EngineType.BAIDU -> tryInitializeEngine(EngineType.XF_IFLYTEK)
-                EngineType.XF_IFLYTEK -> tryInitializeEngine(EngineType.BAIDU)
+                EngineType.BAIDU -> {
+                    if (!tryInitializeEngine(EngineType.XF_IFLYTEK)) {
+                        tryInitializeEngine(EngineType.PORCUPINE)
+                    }
+                }
+                EngineType.XF_IFLYTEK -> {
+                    if (!tryInitializeEngine(EngineType.BAIDU)) {
+                        tryInitializeEngine(EngineType.PORCUPINE)
+                    }
+                }
+                EngineType.PORCUPINE -> tryInitializeEngine(EngineType.ENERGY)
                 EngineType.ENERGY -> { /* 已经是最后的降级方案 */ }
             }
         }
 
         if (currentEngine == null) {
-            // 所有引擎都失败，使用能量检测
-            Timber.w("WakeWordEngineManager: All engines failed, using energy detection")
-            tryInitializeEngine(EngineType.ENERGY)
+            // 所有引擎都失败，尝试 Porcupine 或能量检测
+            Timber.w("WakeWordEngineManager: All engines failed, trying Porcupine fallback")
+            if (!tryInitializeEngine(EngineType.PORCUPINE)) {
+                Timber.w("WakeWordEngineManager: Porcupine also failed, using energy detection")
+                tryInitializeEngine(EngineType.ENERGY)
+            }
         }
     }
 
@@ -106,6 +121,7 @@ class WakeWordEngineManager(private val context: Context) {
             currentEngine = when (engineType) {
                 EngineType.BAIDU -> createBaiduEngine()
                 EngineType.XF_IFLYTEK -> createXfEngine()
+                EngineType.PORCUPINE -> createPorcupineEngine()
                 EngineType.ENERGY -> createEnergyEngine()
             }
 
@@ -213,6 +229,33 @@ class WakeWordEngineManager(private val context: Context) {
             detector
         } catch (e: Exception) {
             Timber.e(e, "WakeWordEngineManager: iFlytek engine creation failed")
+            null
+        }
+    }
+
+    /**
+     * 创建 Porcupine 离线唤醒引擎（降级方案）
+     */
+    private fun createPorcupineEngine(): PorcupineWakeWordDetector? {
+        if (config.porcupineAccessKey.isBlank()) {
+            Timber.w("WakeWordEngineManager: Porcupine access key not configured")
+            return null
+        }
+
+        return try {
+            val detector = PorcupineWakeWordDetector(
+                context = context,
+                accessKey = config.porcupineAccessKey,
+                keywordAssetPath = config.porcupineKeywordAsset,
+                wakeWord = config.wakeWord,
+                onWakeWordDetected = { keyword ->
+                    onWakeWordDetected?.invoke(keyword)
+                }
+            )
+            Timber.i("WakeWordEngineManager: Porcupine engine created successfully")
+            detector
+        } catch (e: Exception) {
+            Timber.e(e, "WakeWordEngineManager: Porcupine engine creation failed")
             null
         }
     }

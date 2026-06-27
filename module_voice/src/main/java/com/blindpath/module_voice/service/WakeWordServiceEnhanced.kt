@@ -228,6 +228,7 @@ class WakeWordServiceEnhanced : Service() {
         val xfAppId = getCredential(BuildConfig.IFLYTEK_APP_ID, "IFLYTEK_APP_ID", localProps)
         val xfApiKey = getCredential(BuildConfig.IFLYTEK_API_KEY, "IFLYTEK_API_KEY", localProps)
         val xfApiSecret = getCredential(BuildConfig.IFLYTEK_API_SECRET, "IFLYTEK_API_SECRET", localProps)
+        val porcupineAccessKey = getCredential("", "PORCUPINE_ACCESS_KEY", localProps)
 
         val config = WakeWordEngineManager.EngineConfig(
             primaryEngine = WakeWordEngineManager.EngineType.XF_IFLYTEK,
@@ -239,6 +240,8 @@ class WakeWordServiceEnhanced : Service() {
             xfAppId = xfAppId,
             xfApiKey = xfApiKey,
             xfApiSecret = xfApiSecret,
+            porcupineAccessKey = porcupineAccessKey,
+            porcupineKeywordAsset = WakeWordConfig.PORCUPINE_KEYWORD_ASSET,
             wakeWord = WakeWordConfig.DEFAULT_WAKE_WORD
         )
 
@@ -451,9 +454,10 @@ class WakeWordServiceEnhanced : Service() {
             audioBuffer.add(buffer[i])
         }
 
-        // ★ v2.0 修复：获取引擎帧长度 — 讯飞需要 320，能量检测需要 512
+        // ★ v2.0 修复：获取引擎帧长度 — 讯飞需要 320，Porcupine 需要 512，能量检测需要 512
         val frameLength = when (engine) {
             is EnergyWakeWordDetector -> engine.getFrameLength()
+            is PorcupineWakeWordDetector -> engine.getFrameLength()
             is XfWakeWordDetector -> engine.getFrameLength()  // 320 (讯飞官方文档规定)
             else -> 512
         }
@@ -468,6 +472,7 @@ class WakeWordServiceEnhanced : Service() {
             try {
                 val detected = when (engine) {
                     is EnergyWakeWordDetector -> engine.process(frame)
+                    is PorcupineWakeWordDetector -> engine.process(frame)
                     is XfWakeWordDetector -> {
                         // ★ 将音频帧桥接到讯飞引擎的 write() 管道
                         val bytes = ByteArray(frame.size * 2)
