@@ -95,6 +95,8 @@ class WakeWordServiceEnhanced : Service() {
     // 健康检查
     private var lastAudioDataTime = 0L
     private var audioDataTimeout = 10_000L // 10秒无音频数据视为异常
+    // ★ v3.2 修复：授权阶段不触发健康检查超时（讯飞授权可能需要 10-30 秒）
+    @Volatile private var isWaitingForAuth = false
 
     companion object {
         const val ACTION_START = "com.blindpath.wakeword.START"
@@ -216,6 +218,10 @@ class WakeWordServiceEnhanced : Service() {
         engineManager.onEngineSwitched = { engineType ->
             Timber.i("WakeWordServiceEnhanced: Engine switched to $engineType")
             currentEngineType = engineType.name
+            // ★ v3.2: 引擎切换时重置授权等待状态
+            if (engineType != WakeWordEngineManager.EngineType.XF_IFLYTEK) {
+                isWaitingForAuth = false
+            }
             updateNotification()
         }
 
@@ -314,6 +320,8 @@ class WakeWordServiceEnhanced : Service() {
                     // 授权成功后 XfWakeWordDetector 会自动启动写入线程消费音频
                     val engineType = engineManager.getCurrentEngineType()
                     Timber.i("WakeWordServiceEnhanced: ★ Starting manual audio capture (engine=$engineType)")
+                    // ★ v3.2: 标记等待授权状态
+                    isWaitingForAuth = (engineType == WakeWordEngineManager.EngineType.XF_IFLYTEK)
                     initAudioRecord()
                     startAudioProcessing()
                 }
@@ -686,11 +694,23 @@ class WakeWordServiceEnhanced : Service() {
                 delay(5000)
 
                 if (isRunning) {
-                    val timeSinceLastData = System.currentTimeMillis() - lastAudioDataTime
+                    // ★ v3.2 修复：授权阶段跳过超时检查，避免反复重启
+                    if (isWaitingForAuth) {
+                        // 检查引擎是否已完成授权或启动监听
+                        val engine = engineManager.getCurrentEngine()
+                        if (engine is XfWakeWordDetector && engine.isAuthComplete()) {
+                            isWaitingForAuth = false
+                            Timber.i("WakeWordServiceEnhanced: ★ XF auth complete, health check resumed")
+                            lastAudioDataTime = System.currentTimeMillis() // 重置计时
+                        }
+                        // 授权中，跳过超时检查
+                    } else {
+                        val timeSinceLastData = System.currentTimeMillis() - lastAudioDataTime
 
-                    if (timeSinceLastData > audioDataTimeout) {
-                        Timber.w("WakeWordServiceEnhanced: No audio data for ${timeSinceLastData}ms, restarting...")
-                        handleDetectionError(RuntimeException("Audio data timeout"))
+                        if (timeSinceLastData > audioDataTimeout) {
+                            Timber.w("WakeWordServiceEnhanced: No audio data for ${timeSinceLastData}ms, restarting...")
+                            handleDetectionError(RuntimeException("Audio data timeout"))
+                        }
                     }
                 }
             }

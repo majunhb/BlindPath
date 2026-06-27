@@ -8,7 +8,7 @@ import timber.log.Timber
 import java.io.File
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.ArrayBlockingQueue
 
 /**
  * 科大讯飞 AIKit 语音唤醒检测器（反射实现）
@@ -37,7 +37,9 @@ class XfWakeWordDetector(
     private val apiSecret: String,
     private val threshold: Int = WakeWordConfig.XF_WAKE_THRESHOLD,
     private val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD,
-    private val onWakeWordDetected: (String) -> Unit
+    private val onWakeWordDetected: (String) -> Unit,
+    private val onAuthSuccessCb: (() -> Unit)? = null,
+    private val onAuthFailedCb: (() -> Unit)? = null
 ) : WakeWordDetector {
 
     companion object {
@@ -67,7 +69,8 @@ class XfWakeWordDetector(
     private var aiHandle: Any? = null
     private var callback: WakeWordDetector.Callback? = null
     private var writeThread: Thread? = null
-    private val audioDataRef = AtomicReference<ByteArray?>(null)
+    private val audioDataQueue = ArrayBlockingQueue<ByteArray>(20)
+    private var workDirPath: String = ""
 
     // ★★★ 授权状态
     @Volatile private var isAuthComplete = false
@@ -108,6 +111,7 @@ class XfWakeWordDetector(
         if (!workDir.exists()) {
             workDir.mkdirs()
         }
+        workDirPath = workDir.absolutePath
 
         // ★ 修复1：从 assets 复制唤醒资源文件到 workDir 根目录（非 workDir/ivw/）
         copyResourceFiles(workDir)
@@ -215,6 +219,8 @@ class XfWakeWordDetector(
                     if (typeName.contains("AUTH") && code == 0) {
                         Timber.i("$TAG: ★★★ SDK authorized successfully! Starting engine...")
                         isAuthComplete = true
+                        // ★ v3.2 修复：先通知外部（EngineManager），再启动引擎
+                        onAuthSuccessCb?.invoke()
                         onAuthSuccess?.invoke()
                         // ★ 自动启动引擎（异步，不阻塞回调线程）
                         Thread {
@@ -228,6 +234,7 @@ class XfWakeWordDetector(
                     } else if (typeName.contains("FAIL") || code != 0) {
                         Timber.e("$TAG: ✗ SDK auth FAILED: type=$typeName, code=$code")
                         isAuthFailed = true
+                        onAuthFailedCb?.invoke()
                         onAuthFailed?.invoke()
                     }
                 }
@@ -414,7 +421,8 @@ class XfWakeWordDetector(
 
                 var frameIndex = 0
                 while (isListening.get()) {
-                    val audioData = audioDataRef.getAndSet(null) // ★ 取出并清空，避免重复写入
+                    // ★ v3.2 修复：使用阻塞队列，避免帧丢失
+                    val audioData = audioDataQueue.poll() // 非阻塞取出，无数据返回null
                     if (audioData != null && aiHandle != null) {
                         try {
                             val dataBuilder = builderClass.getMethod("builder").invoke(null)
@@ -455,9 +463,9 @@ class XfWakeWordDetector(
                             }
                         }
                     } else {
-                        Thread.sleep(20)
+                        // 无数据时短暂等待，避免 CPU 空转
+                        Thread.sleep(5)
                     }
-                    Thread.sleep(10)
                 }
             } catch (e: Exception) {
                 Timber.e(e, "$TAG: Audio write thread error")
@@ -475,12 +483,17 @@ class XfWakeWordDetector(
      * WakeWordServiceEnhanced 的 AudioRecorder 回调会调用此方法
      */
     fun feedAudioData(data: ByteArray) {
-        audioDataRef.set(data)
+        // ★ v3.2 修复：使用队列缓冲，队列满时丢弃最旧帧
+        if (!audioDataQueue.offer(data)) {
+            audioDataQueue.poll() // 丢弃最旧帧
+            audioDataQueue.offer(data)
+        }
     }
 
     private fun loadWakeUpWords() {
         try {
-            val keywordFile = File(context.getExternalFilesDir(null), "iflytek/keyword.txt")
+            // ★ v3.2 修复：keyword.txt 必须与 SDK 资源在同一目录（workDir）
+            val keywordFile = File(workDirPath, "keyword.txt")
             if (!keywordFile.exists()) {
                 keywordFile.parentFile?.mkdirs()
                 keywordFile.writeText("$wakeWord;nCM:$threshold;\n")

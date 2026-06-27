@@ -194,6 +194,7 @@ class WakeWordEngineManager(private val context: Context) {
         }
 
         return try {
+            // ★ v3.2 修复：通过构造函数传递回调，消除时序竞争
             val detector = XfWakeWordDetector(
                 context = context,
                 appId = config.xfAppId,
@@ -202,20 +203,18 @@ class WakeWordEngineManager(private val context: Context) {
                 wakeWord = config.wakeWord,
                 onWakeWordDetected = { keyword ->
                     onWakeWordDetected?.invoke(keyword)
+                },
+                onAuthSuccessCb = {
+                    Timber.i("WakeWordEngineManager: ★ XF auth success callback received")
+                },
+                onAuthFailedCb = {
+                    Timber.e("WakeWordEngineManager: ✗ XF auth failed callback, switching to Energy")
+                    switchToEnergy()
                 }
             )
 
             // ★ 不立即调 startListening()！等 AuthListener 回调
             // SDK 初始化时已启动异步授权，授权成功后会自动调 startListening()
-
-            // ★ 设置授权回调
-            detector.onAuthSuccess = {
-                Timber.i("WakeWordEngineManager: ★ XF auth success callback received")
-            }
-            detector.onAuthFailed = {
-                Timber.e("WakeWordEngineManager: ✗ XF auth failed callback, switching to Energy")
-                switchToEnergy()
-            }
 
             // ★ 授权超时检查：15秒未授权成功 → 降级到 Energy
             timeoutExecutor.schedule({
