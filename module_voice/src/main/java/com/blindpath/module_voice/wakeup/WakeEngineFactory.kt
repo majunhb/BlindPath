@@ -256,10 +256,18 @@ class XfWakeEngineAdapter(
                 apiKey = apiKey,
                 apiSecret = apiSecret,
                 threshold = WakeWordConfig.XF_WAKE_THRESHOLD,
-                wakeWord = WakeWordConfig.DEFAULT_WAKE_WORD
-            ) { wakeWord ->
-                onWakeWordDetected?.invoke(wakeWord)
-            }
+                wakeWord = WakeWordConfig.DEFAULT_WAKE_WORD,
+                onWakeWordDetected = { wakeWord ->
+                    onWakeWordDetected?.invoke(wakeWord)
+                },
+                onAuthSuccessCb = {
+                    Timber.i("XfWakeEngineAdapter: Auth success, engine starting...")
+                },
+                onAuthFailedCb = {
+                    Timber.e("XfWakeEngineAdapter: Auth failed")
+                    onError?.invoke("讯飞授权失败")
+                }
+            )
             isInitialized = true
             Timber.i("XfWakeEngineAdapter: AIKit 引擎初始化成功")
             true
