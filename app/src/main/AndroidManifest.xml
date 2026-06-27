@@ -128,10 +128,10 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
-        <!-- 语音唤醒服务（独立进程，防止后台被回收） -->
+        <!-- 语音唤醒服务（已废弃，由 WakeWordServiceEnhanced 替代） -->
         <service
             android:name="com.blindpath.module_voice.service.WakeWordService"
-            android:enabled="true"
+            android:enabled="false"
             android:exported="false"
             android:process=":wakeword"
             android:foregroundServiceType="microphone" />

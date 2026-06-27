@@ -47,6 +47,7 @@ android {
 
 dependencies {
     implementation(project(":base"))
+    implementation(project(":porcupine-wakeup"))
     
     // Hilt
     implementation(libs.hilt.android)

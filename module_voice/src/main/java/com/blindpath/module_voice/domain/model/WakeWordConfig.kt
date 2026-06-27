@@ -15,6 +15,9 @@ object WakeWordConfig {
     
     /** 科大讯飞唤醒词资源文件（assets/ivw/ 目录，格式: {appid}.jet） */
     const val XF_WAKE_THRESHOLD = 1450
+
+    /** Porcupine 唤醒词模型文件（assets 目录） */
+    const val PORCUPINE_KEYWORD_ASSET = "keywords/xiao-zhi_android.ppn"
     
     /**
      * 唤醒词别名集合 —— 用户也可能说这些变体，全部纳入匹配
