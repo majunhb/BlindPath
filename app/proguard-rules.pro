@@ -223,3 +223,26 @@
 -dontwarn javax.annotation.**
 -dontwarn edu.umd.cs.findbugs.annotations.**
 -dontwarn com.google.errorprone.annotations.**
+# ============================================
+# v3.0 新增：讯飞 AIKit SDK ProGuard 规则
+# 将以下内容追加到 app/proguard-rules.pro 末尾
+# ============================================
+
+#############################################
+# 讯飞 AIKit SDK 规则（反射调用需要保留）
+#############################################
+
+# 保留讯飞 AIKit 所有类及其成员（XfWakeWordDetector 通过反射访问）
+-keep class com.iflytek.aikit.** { *; }
+-dontwarn com.iflytek.aikit.**
+
+# 保留 AiAudio$Holder 等内部类（反射 getMethod 需要精确类名匹配）
+-keep class com.iflytek.aikit.core.AiAudio$Holder { *; }
+-keep class com.iflytek.aikit.core.AiRequest$Builder { *; }
+-keep class com.iflytek.aikit.core.BaseLibrary$Params { *; }
+-keep class com.iflytek.aikit.core.BaseLibrary$Params$Builder { *; }
+
+# 保留 JNI 相关（SDK 底层依赖 native 方法）
+-keepclasseswithmembernames class com.iflytek.aikit.** {
+    native <methods>;
+}
