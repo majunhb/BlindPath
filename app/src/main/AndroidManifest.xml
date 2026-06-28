@@ -196,6 +196,16 @@
                 android:resource="@xml/widget_blindpath_info" />
         </receiver>
 
+        <!-- ★ 唤醒词看门狗（主进程定期检查wakeword进程是否被杀） -->
+        <receiver
+            android:name="com.blindpath.base.reliability.WakeWordWatchdogReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.blindpath.action.CHECK_WAKEWORD" />
+            </intent-filter>
+        </receiver>
+
         <!-- 看门狗广播接收器 -->
         <receiver android:name="com.blindpath.base.reliability.WatchdogReceiver"
             android:exported="false">

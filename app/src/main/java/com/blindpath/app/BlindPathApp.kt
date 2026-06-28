@@ -17,6 +17,7 @@ import com.blindpath.module_voice.service.BluetoothDeviceMonitor
 import com.blindpath.module_voice.service.PerformanceMonitor
 import com.blindpath.module_voice.service.SceneAdaptationManager
 import com.blindpath.module_voice.service.WakeWordServiceEnhanced
+import com.blindpath.base.reliability.WakeWordWatchdogReceiver
 import com.blindpath.module_voice.service.VoiceInteractionPipeline
 import android.app.ActivityManager
 import dagger.hilt.android.HiltAndroidApp
@@ -131,8 +132,14 @@ class BlindPathApp : Application() {
             // 启动蓝牙设备监听
             bluetoothMonitor.startMonitoring()
             
+            // ★ 华为/荣耀设备：请求电池优化豁免（防止系统杀死wakeword进程）
+            requestBatteryOptimizationExemption()
+
             // 启动增强版语音唤醒服务
             startWakeWordService()
+            
+            // ★ 启动唤醒词看门狗（每60秒检查wakeword进程是否被杀，被杀则自动重启）
+            WakeWordWatchdogReceiver.start(this)
 
             // 初始化全链路语音交互管道（动态注册 BroadcastReceiver 监听唤醒词）
             voiceInteractionPipeline.initialize()
@@ -179,6 +186,111 @@ class BlindPathApp : Application() {
         }
         
         Timber.d("Wake word service started")
+    }
+
+    /**
+     * ★ 华为/荣耀设备电池优化豁免
+     *
+     * 根因：华为 iAwareF (SystemManager) 会强杀 :wakeword 进程，
+     * 即使前台服务也无法幸免。必须将应用加入电池优化白名单。
+     *
+     * 注意：此方法只是引导，用户仍需在设置中手动确认。
+     */
+    private fun requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            val packageName = packageName
+            
+            // ★ 华为/荣耀特殊处理：尝试打开"启动管理"页面
+            if (isHuaweiOrHonor()) {
+                Timber.w("★ 华为/荣耀设备检测：尝试打开启动管理")
+                if (openHuaweiStartupManager()) {
+                    Timber.i("★ 已打开华为启动管理页面，请用户手动将助盲智行设为「手动管理」并开启所有开关")
+                    return
+                }
+                // 降级到通用电池优化页面
+                Timber.w("★ 无法打开华为启动管理，降级到通用电池优化设置")
+            }
+            
+            if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+                Timber.w("★ Battery optimization NOT exempted for $packageName")
+                
+                try {
+                    val intent = android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS.let {
+                        android.content.Intent(it).apply {
+                            data = android.net.Uri.parse("package:$packageName")
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                    }
+                    startActivity(intent)
+                    Timber.i("★ Opened battery optimization settings")
+                } catch (e: Exception) {
+                    Timber.e(e, "★ Failed to open battery optimization settings")
+                    try {
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = android.net.Uri.parse("package:$packageName")
+                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        startActivity(intent)
+                    } catch (e2: Exception) {
+                        Timber.e(e2, "★ Failed to open app settings")
+                    }
+                }
+            } else {
+                Timber.d("★ Battery optimization already exempted")
+            }
+        }
+    }
+    
+    /**
+     * 判断是否为华为或荣耀设备
+     */
+    private fun isHuaweiOrHonor(): Boolean {
+        val manufacturer = Build.MANUFACTURER.lowercase()
+        return manufacturer.contains("huawei") || manufacturer.contains("honor")
+    }
+    
+    /**
+     * 尝试打开华为"启动管理"页面
+     * 华为 EMUI/HarmonyOS 使用自己的电池管理系统，需要通过特殊 Intent 打开
+     */
+    private fun openHuaweiStartupManager(): Boolean {
+        return try {
+            val intent = android.content.Intent().apply {
+                component = android.content.ComponentName(
+                    "com.huawei.systemmanager",
+                    "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
+                )
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            
+            // 检查是否有应用可以处理此 Intent
+            val pm = packageManager
+            val resolveInfo = pm.resolveActivity(intent, 0)
+            if (resolveInfo != null) {
+                startActivity(intent)
+                true
+            } else {
+                // 尝试备用路径
+                val intent2 = android.content.Intent().apply {
+                    component = android.content.ComponentName(
+                        "com.huawei.systemmanager",
+                        "com.huawei.systemmanager.optimize.process.ProtectActivity"
+                    )
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                val resolveInfo2 = pm.resolveActivity(intent2, 0)
+                if (resolveInfo2 != null) {
+                    startActivity(intent2)
+                    true
+                } else {
+                    false
+                }
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "★ Failed to open Huawei startup manager")
+            false
+        }
     }
     
     /**
