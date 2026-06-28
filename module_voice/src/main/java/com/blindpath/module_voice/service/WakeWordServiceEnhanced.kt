@@ -789,9 +789,9 @@ class WakeWordServiceEnhanced : Service() {
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
             "语音唤醒服务（增强版）",
-            NotificationManager.IMPORTANCE_LOW
+            NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "保持语音唤醒功能在后台持续运行"
+            description = "保持语音唤醒功能在后台持续运行（高优先级防止系统杀死）"
             setShowBadge(false)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
@@ -822,8 +822,9 @@ class WakeWordServiceEnhanced : Service() {
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .setSilent(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
 
