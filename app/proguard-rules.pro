@@ -196,6 +196,25 @@
 -keep class com.blindpath.base.common.BlindPathLog { *; }
 
 #############################################
+# 科大讯飞 AIKit SDK 反射保护规则
+#############################################
+
+# AIKit 核心类（反射调用，必须保留）
+-keep class com.iflytek.aikit.core.** { *; }
+
+# 唤醒词检测器（反射 + Proxy 监听器，禁止混淆）
+-keep class com.blindpath.module_voice.service.XfWakeWordDetector { *; }
+-keep class com.blindpath.module_voice.service.XfWakeWordDetector$Companion { *; }
+
+# 禁止混淆 Proxy 回调方法名（onAuthStateChange, onResult, onEvent, onError）
+-keepclassmembers class * {
+    void onAuthStateChange(...);
+    void onResult(...);
+    void onEvent(...);
+    void onError(...);
+}
+
+#############################################
 # 异常处理
 #############################################
 
