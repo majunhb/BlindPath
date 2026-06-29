@@ -253,44 +253,58 @@ class BlindPathApp : Application() {
     /**
      * 尝试打开华为"启动管理"页面
      * 华为 EMUI/HarmonyOS 使用自己的电池管理系统，需要通过特殊 Intent 打开
+     *
+     * [P2 修复 2026-06-29] 部分华为设备（如 FOA-AL00 HarmonyOS）的启动管理 Activity
+     * 需要 com.huawei.permission.external_app_settings.USE_COMPONENT 权限，
+     * resolveActivity() 能返回结果但 startActivity() 会抛 SecurityException。
+     * 修复：对每个 Intent 分别 try-catch，第一个失败则尝试备用路径。
      */
     private fun openHuaweiStartupManager(): Boolean {
-        return try {
-            val intent = android.content.Intent().apply {
-                component = android.content.ComponentName(
-                    "com.huawei.systemmanager",
-                    "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
-                )
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            
-            // 检查是否有应用可以处理此 Intent
-            val pm = packageManager
-            val resolveInfo = pm.resolveActivity(intent, 0)
-            if (resolveInfo != null) {
-                startActivity(intent)
-                true
-            } else {
-                // 尝试备用路径
-                val intent2 = android.content.Intent().apply {
-                    component = android.content.ComponentName(
-                        "com.huawei.systemmanager",
-                        "com.huawei.systemmanager.optimize.process.ProtectActivity"
-                    )
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                val resolveInfo2 = pm.resolveActivity(intent2, 0)
-                if (resolveInfo2 != null) {
-                    startActivity(intent2)
-                    true
-                } else {
-                    false
-                }
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "★ Failed to open Huawei startup manager")
-            false
+        val pm = packageManager
+
+        // 尝试路径 1：启动管理页面
+        val intent1 = android.content.Intent().apply {
+            component = android.content.ComponentName(
+                "com.huawei.systemmanager",
+                "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"
+            )
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
+
+        if (pm.resolveActivity(intent1, 0) != null) {
+            try {
+                startActivity(intent1)
+                return true
+            } catch (e: SecurityException) {
+                // [P2 修复] 权限被拒，不中断流程，继续尝试备用路径
+                Timber.w("★ Huawei startup manager path 1 denied (SecurityException), trying fallback")
+            } catch (e: Exception) {
+                Timber.w(e, "★ Huawei startup manager path 1 failed, trying fallback")
+            }
+        }
+
+        // 尝试路径 2：电池优化保护页面
+        val intent2 = android.content.Intent().apply {
+            component = android.content.ComponentName(
+                "com.huawei.systemmanager",
+                "com.huawei.systemmanager.optimize.process.ProtectActivity"
+            )
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        if (pm.resolveActivity(intent2, 0) != null) {
+            try {
+                startActivity(intent2)
+                return true
+            } catch (e: SecurityException) {
+                Timber.w("★ Huawei startup manager path 2 denied (SecurityException)")
+            } catch (e: Exception) {
+                Timber.w(e, "★ Huawei startup manager path 2 failed")
+            }
+        }
+
+        Timber.w("★ All Huawei startup manager paths unavailable, will fallback to generic battery settings")
+        return false
     }
     
     /**

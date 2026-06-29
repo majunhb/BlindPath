@@ -64,20 +64,45 @@ class WakeWordWatchdogReceiver : BroadcastReceiver() {
         private fun scheduleNextCheck(context: Context) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pendingIntent = getPendingIntent(context)
+            val triggerTime = SystemClock.elapsedRealtime() + CHECK_INTERVAL_MS
             
-            // 使用 setExactAndAllowWhileIdle 确保在 Doze 模式下也能唤醒
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    SystemClock.elapsedRealtime() + CHECK_INTERVAL_MS,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    SystemClock.elapsedRealtime() + CHECK_INTERVAL_MS,
-                    pendingIntent
-                )
+            when {
+                // Android 12+ 需要检查是否有精确闹钟权限
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
+                    if (alarmManager.canScheduleExactAlarms()) {
+                        alarmManager.setExactAndAllowWhileIdle(
+                            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                            triggerTime,
+                            pendingIntent
+                        )
+                        Timber.d("WakeWordWatchdog: Scheduled exact alarm (SCHEDULE_EXACT_ALARM granted)")
+                    } else {
+                        // [P1 修复 2026-06-29] 降级：使用非精确闹钟，避免 SecurityException 崩溃
+                        // 看门狗间隔60秒，允许几秒偏差，不影响保活效果
+                        alarmManager.setAndAllowWhileIdle(
+                            AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                            triggerTime,
+                            pendingIntent
+                        )
+                        Timber.w("WakeWordWatchdog: ★ SCHEDULE_EXACT_ALARM not granted, fallback to inexact alarm")
+                    }
+                }
+                // Android 6~11：直接使用精确闹钟（无需额外权限）
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M -> {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerTime,
+                        pendingIntent
+                    )
+                }
+                // Android 5 及以下
+                else -> {
+                    alarmManager.setExact(
+                        AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                        triggerTime,
+                        pendingIntent
+                    )
+                }
             }
         }
         

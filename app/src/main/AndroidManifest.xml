@@ -42,6 +42,11 @@
         <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
         <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
         
+        <!-- [P1 修复 2026-06-29] Android 12+ 精确闹钟权限（看门狗 AlarmManager 需要） -->
+        <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+        <!-- [P1 修复 2026-06-29] 活动识别权限（计步器/传感器） -->
+        <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+
         <!-- 后台保活与常驻权限 -->
         <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
         <uses-permission android:name="android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND" />
