@@ -35,7 +35,11 @@ class XfWakeWordDetector(
     private val apiSecret: String,
     private val threshold: Int = WakeWordConfig.XF_WAKE_THRESHOLD,
     private val wakeWord: String = WakeWordConfig.DEFAULT_WAKE_WORD,
-    private val onWakeWordDetected: (String) -> Unit
+    private val onWakeWordDetected: (String) -> Unit,
+    /** 授权成功回调（别名，桥接到 onAuthSuccess） */
+    private val onAuthSuccessCb: (() -> Unit)? = null,
+    /** 授权失败回调（别名，桥接到 onAuthFailed） */
+    private val onAuthFailedCb: (() -> Unit)? = null
 ) : WakeWordDetector {
 
     companion object {
@@ -251,6 +255,7 @@ class XfWakeWordDetector(
                         Timber.i("$TAG: ★★★ SDK authorized! Starting engine...")
                         isAuthComplete = true
                         onAuthSuccess?.invoke()
+                        onAuthSuccessCb?.invoke()
                         // 异步启动引擎（不阻塞回调线程）
                         Thread {
                             try {
@@ -266,6 +271,7 @@ class XfWakeWordDetector(
                         isAuthFailed = true
                         callback?.onError(WakeWordDetector.ERROR_UNKNOWN, "认证失败: $errMsg")
                         onAuthFailed?.invoke()
+                        onAuthFailedCb?.invoke()
                     }
                 }
                 null
