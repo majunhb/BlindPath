@@ -216,8 +216,9 @@ class XfWakeWordDetector(
             aiHelper = getInstMethod.invoke(null)
 
             // 构建 Params
-            val paramsClass = Class.forName("$CLS_AI_HELPER\$Params")
-            val builderClass = Class.forName("$CLS_AI_HELPER\$Params\$Builder")
+            // ★ v3.3 修复：Params 是 BaseLibrary 的内部类，不是 AiHelper 的
+            val paramsClass = Class.forName("com.iflytek.aikit.core.BaseLibrary\$Params")
+            val builderClass = Class.forName("com.iflytek.aikit.core.BaseLibrary\$Params\$Builder")
             val builder = builderClass.getConstructor().newInstance()
 
             builderClass.getMethod("appId", String::class.java).invoke(builder, appId)

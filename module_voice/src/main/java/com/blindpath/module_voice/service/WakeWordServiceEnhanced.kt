@@ -86,7 +86,8 @@ class WakeWordServiceEnhanced : Service() {
 
     // 引擎管理
     private lateinit var engineManager: WakeWordEngineManager
-    private val audioBuffer = ArrayList<Short>(1024)
+    // ★ v3.3 修复：改用线程安全的 ConcurrentLinkedDeque，避免并发访问导致 ArrayIndexOutOfBoundsException
+    private val audioBuffer = java.util.concurrent.ConcurrentLinkedDeque<Short>()
 
     // 场景检测
     private var lastSceneCheckTime = 0L
@@ -457,9 +458,9 @@ class WakeWordServiceEnhanced : Service() {
 
         val engine = engineManager.getCurrentEngine() ?: return
 
-        // 累积音频帧
+        // 累积音频帧（ConcurrentLinkedDeque.offer 为线程安全的 O(1) 操作）
         for (i in 0 until size) {
-            audioBuffer.add(buffer[i])
+            audioBuffer.offer(buffer[i])
         }
 
         // ★ v2.0 修复：获取引擎帧长度 — 讯飞需要 320，Porcupine 需要 512，能量检测需要 512
@@ -471,10 +472,11 @@ class WakeWordServiceEnhanced : Service() {
         }
 
         // 处理完整帧
+        // ★ v3.3 修复：使用 poll() 替代 removeAt(0)，O(1) 且线程安全
         while (audioBuffer.size >= frameLength && !isWakeWordDetected) {
             val frame = ShortArray(frameLength)
             for (i in 0 until frameLength) {
-                frame[i] = audioBuffer.removeAt(0)
+                frame[i] = audioBuffer.poll() ?: break
             }
 
             try {
@@ -501,7 +503,7 @@ class WakeWordServiceEnhanced : Service() {
         // 防止缓冲区无限增长
         val maxBufferSize = frameLength * 4
         while (audioBuffer.size > maxBufferSize) {
-            audioBuffer.removeAt(0)
+            audioBuffer.poll()
         }
     }
 
