@@ -652,13 +652,14 @@ class WakeWordServiceEnhanced : Service() {
         if (restartAttempts <= MAX_RESTART_ATTEMPTS) {
             Timber.i("WakeWordServiceEnhanced: Attempting restart ($restartAttempts/$MAX_RESTART_ATTEMPTS)")
 
+            // ★ 修复：必须先重置 isRunning，否则 startWakeWordDetection 会因 isRunning==true 直接 return
+            isRunning = false
+            isServiceRunning = false
+            stopAudioCapture()
+
             serviceScope.launch {
                 delay(RESTART_DELAY_MS)
-
-                if (isRunning) {
-                    stopAudioCapture()
-                    startWakeWordDetection()
-                }
+                startWakeWordDetection()
             }
         } else {
             Timber.e("WakeWordServiceEnhanced: Max restart attempts reached, stopping service")
