@@ -332,22 +332,22 @@ class XfAsrEngine(
         }
     }
 
-    fun startListening() {
+    fun startListening(): Boolean {
         if (!isInitialized || aiHelper == null) {
             if (!initialize()) {
                 onError?.invoke(ERROR_NOT_READY, "讯飞ESR引擎初始化失败")
-                return
+                return false
             }
         }
         if (!isAuthComplete) {
             if (isAuthFailed) {
                 onError?.invoke(ERROR_NOT_READY, "讯飞ESR授权失败，请检查能力(e75f07b62)是否已开通")
-                return
+                return false
             }
             Thread.sleep(1000)
             if (!isAuthComplete) {
                 onError?.invoke(ERROR_NOT_READY, "讯飞ESR授权中，请稍后重试")
-                return
+                return false
             }
         }
         if (isListening.get()) stopListening()
@@ -373,7 +373,7 @@ class XfAsrEngine(
                 if (engineInitRet != 0 && engineInitRet != 18205) {
                     Timber.e("$TAG: ESR engineInit failed: $engineInitRet")
                     onError?.invoke(ERROR_SDK, "ESR引擎初始化失败($engineInitRet)")
-                    return
+                    return false
                 }
                 engineInited = true
                 Timber.i("$TAG: ★ ESR engineInit success (decNetType=fsa, language=CN)")
@@ -406,17 +406,19 @@ class XfAsrEngine(
                 val code = aiHandle?.javaClass?.getMethod("getCode")?.invoke(aiHandle) as? Int ?: -1
                 Timber.e("$TAG: ESR start failed: code=$code")
                 onError?.invoke(ERROR_SDK, "ESR会话启动失败($code)")
-                return
+                return false
             }
 
             isListening.set(true)
             Timber.i("$TAG: ★ ESR session STARTED!")
             startAudioRecord()
             onReady?.invoke()
+            true
         } catch (e: Throwable) {
             Timber.e(e, "$TAG: Failed to start ESR")
             isListening.set(false)
             onError?.invoke(ERROR_SDK, "ESR启动失败: ${e.message}")
+            false
         }
     }
 

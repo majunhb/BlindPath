@@ -697,8 +697,11 @@ class WakeWordServiceEnhanced : Service() {
                 delay(5000)
 
                 if (isRunning) {
-                    // ★ v3.2 修复：授权阶段跳过超时检查，避免反复重启
-                    if (isWaitingForAuth) {
+                    // ★ v3.4 修复：ASR占用麦克风期间跳过超时检查，避免误触发重启
+                    if (isPausedForAsr) {
+                        // ASR正在使用麦克风，音频采集已暂停，不应检查超时
+                    } else if (isWaitingForAuth) {
+                        // ★ v3.2 修复：授权阶段跳过超时检查，避免反复重启
                         // 检查引擎是否已完成授权或启动监听
                         val engine = engineManager.getCurrentEngine()
                         if (engine is XfWakeWordDetector && engine.isAuthComplete()) {

@@ -156,9 +156,13 @@ class VoiceInteractionPipeline @Inject constructor(
                 _sessionState.value = SessionState.Listening
                 val startResult = commandRepository.startListening()
                 if (startResult !is com.blindpath.base.common.Result.Success || !startResult.data) {
-                    Timber.e("VoiceInteractionPipeline: ASR启动失败")
-                    _sessionState.value = SessionState.Error("无法启动语音识别")
-                    speakWithResourceManagement("语音识别启动失败，请重试", VoiceType.SYSTEM_STATUS)
+                    val errorMsg = when (startResult) {
+                        is com.blindpath.base.common.Result.Error -> startResult.message ?: "未知错误"
+                        else -> "未知错误"
+                    }
+                    Timber.e("VoiceInteractionPipeline: ASR启动失败 - $errorMsg")
+                    _sessionState.value = SessionState.Error(errorMsg)
+                    speakWithResourceManagement("语音识别启动失败: $errorMsg", VoiceType.SYSTEM_STATUS)
                     return@launch
                 }
 
