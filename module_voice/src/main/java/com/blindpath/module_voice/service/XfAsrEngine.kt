@@ -413,12 +413,12 @@ class XfAsrEngine(
             Timber.i("$TAG: ★ ESR session STARTED!")
             startAudioRecord()
             onReady?.invoke()
-            true
+            return true
         } catch (e: Throwable) {
             Timber.e(e, "$TAG: Failed to start ESR")
             isListening.set(false)
             onError?.invoke(ERROR_SDK, "ESR启动失败: ${e.message}")
-            false
+            return false
         }
     }
 
