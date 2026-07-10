@@ -127,9 +127,11 @@ class XfWakeWordDetector(
         if (sdkAvailable == null) {
             sdkAvailable = try {
                 Class.forName(CLS_AI_HELPER)
+                Class.forName("com.iflytek.aikit.core.BaseLibrary$Params")
+                Class.forName("com.iflytek.aikit.core.BaseLibrary$Params$Builder")
                 true
             } catch (e: ClassNotFoundException) {
-                Timber.w("$TAG: AIKit SDK not found")
+                Timber.w("$TAG: AIKit SDK not found (missing: ${e.message})")
                 false
             }
         }
@@ -380,7 +382,8 @@ class XfWakeWordDetector(
             val aiHelperClass = Class.forName(CLS_AI_HELPER)
             val aiRequestClass = Class.forName(CLS_AI_REQUEST)
             val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
-            val builder = builderClass.getMethod("builder").invoke(null)
+            // ★ v3.0修复: builder() 是 AiRequest 的静态方法
+            val builder = aiRequestClass.getMethod("builder").invoke(null)
 
             // 官方文档: loadData 加载唤醒词 txt 配置文件
             builderClass.getMethod("customText", String::class.java, String::class.java, Int::class.javaPrimitiveType)
@@ -470,13 +473,19 @@ class XfWakeWordDetector(
             // 4. start: 创建会话
             val aiRequestClass = Class.forName(CLS_AI_REQUEST)
             val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
-            val builder = builderClass.getMethod("builder").invoke(null)
+            // ★ v3.0修复: builder() 是 AiRequest 的静态方法，不是 AiRequest$Builder 的
+            val builder = aiRequestClass.getMethod("builder").invoke(null)
 
             // KEEP_ALIVE=1 持续唤醒 + 门限参数
-            builderClass.getMethod("param", String::class.java, Any::class.java)
-                .invoke(builder, "KEEP_ALIVE", "1")
-            builderClass.getMethod("param", String::class.java, Any::class.java)
-                .invoke(builder, "wdec_param_nCmThreshold", "0 0:$threshold")
+            // ★ v3.0修复: SDK 无 param(String, Object)，只有 param(String, String)
+            try {
+                builderClass.getMethod("param", String::class.java, String::class.java)
+                    .invoke(builder, "KEEP_ALIVE", "1")
+                builderClass.getMethod("param", String::class.java, String::class.java)
+                    .invoke(builder, "wdec_param_nCmThreshold", "0 0:$threshold")
+            } catch (e: Exception) {
+                Timber.w("$TAG: Failed to set params: ${e.message}")
+            }
 
             val request = builderClass.getMethod("build").invoke(builder)
 
@@ -513,41 +522,36 @@ class XfWakeWordDetector(
             Timber.i("$TAG: ★ Audio write thread started")
             try {
                 val aiHelperClass = Class.forName(CLS_AI_HELPER)
-                val aiAudioClass = Class.forName(CLS_AI_AUDIO)
-                val aiStatusClass = Class.forName(CLS_AI_STATUS)
                 val aiRequestClass = Class.forName(CLS_AI_REQUEST)
                 val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
+                val aiStatusClass = Class.forName(CLS_AI_STATUS)
+                val aiHandleClass = Class.forName(CLS_AI_HANDLE)
 
-                val encodingConst = aiAudioClass.getDeclaredField("ENCODING_DEFAULT").let {
-                    it.isAccessible = true
-                    it.get(null)
-                }
-                val beginStatus = aiStatusClass.getField("BEGIN").get(null)
-                val continueStatus = aiStatusClass.getField("CONTINUE").get(null)
+                // ★ v3.0修复: 预获取方法引用，避免循环内重复反射
+                // builder() 是 AiRequest 的静态方法
+                val builderFactoryMethod = aiRequestClass.getMethod("builder")
+                // ★ v3.0修复: 用 builder.audio(String, byte[]) 直接构建音频载荷
+                // 替代原 AiAudio.get() → encoding → data → status → valid → payload 的错误链路
+                val audioMethod = builderClass.getMethod("audio", String::class.java, ByteArray::class.java)
+                val statusMethod = builderClass.getMethod("status", aiStatusClass)
+                val buildMethod = builderClass.getMethod("build")
+                // ★ v3.0修复: write(AiRequest, AiHandle) — 原代码用 Any 找不到方法
+                val writeMethod = aiHelperClass.getMethod("write", aiRequestClass, aiHandleClass)
+
+                val statusBegin = aiStatusClass.getField("BEGIN").get(null)
+                val statusContinue = aiStatusClass.getField("CONTINUE").get(null)
 
                 var frameIndex = 0
                 while (isListening.get() && !Thread.currentThread().isInterrupted) {
-                    // ★★★ v3.2: 从队列 poll，非阻塞
                     val audioData = audioQueue.poll()
                     if (audioData != null && aiHandle != null) {
                         try {
-                            val dataBuilder = builderClass.getMethod("builder").invoke(null)
-
-                            val holder = aiAudioClass.getMethod("get", String::class.java)
-                                .invoke(null, "wav")
-                            aiAudioClass.getMethod("encoding", Any::class.java).invoke(holder, encodingConst)
-                            aiAudioClass.getMethod("data", ByteArray::class.java).invoke(holder, audioData)
-
-                            val status = if (frameIndex == 0) beginStatus else continueStatus
-                            aiAudioClass.getMethod("status", Any::class.java).invoke(holder, status)
-
-                            val validPayload = aiAudioClass.getMethod("valid").invoke(holder)
-                            aiRequestClass.getMethod("payload", Any::class.java).invoke(dataBuilder, validPayload)
-
-                            val writeRequest = builderClass.getMethod("build").invoke(dataBuilder)
-                            val ret = aiHelperClass.getMethod("write", aiRequestClass, Any::class.java)
-                                .invoke(aiHelper, writeRequest, aiHandle) as? Int ?: -1
-
+                            val dataBuilder = builderFactoryMethod.invoke(null)
+                            audioMethod.invoke(dataBuilder, "wav", audioData)
+                            val status = if (frameIndex == 0) statusBegin else statusContinue
+                            statusMethod.invoke(dataBuilder, status)
+                            val writeRequest = buildMethod.invoke(dataBuilder)
+                            val ret = writeMethod.invoke(aiHelper, writeRequest, aiHandle) as? Int ?: -1
                             if (ret != 0 && frameIndex % 100 == 0) {
                                 Timber.w("$TAG: Write returned ${getErrorMessage(ret)} at frame $frameIndex")
                             }
@@ -558,7 +562,6 @@ class XfWakeWordDetector(
                             }
                         }
                     } else {
-                        // ★ 正确处理中断
                         try {
                             Thread.sleep(20)
                         } catch (e: InterruptedException) {
@@ -616,7 +619,9 @@ class XfWakeWordDetector(
         try {
             val aiHelperClass = Class.forName(CLS_AI_HELPER)
             if (aiHandle != null) {
-                val ret = aiHelperClass.getMethod("end", Any::class.java)
+                // ★ v3.0修复: end(AiHandle) — 原代码用 Any 找不到方法
+                val aiHandleClass = Class.forName(CLS_AI_HANDLE)
+                val ret = aiHelperClass.getMethod("end", aiHandleClass)
                     .invoke(aiHelper, aiHandle) as? Int ?: -1
                 if (ret != 0) {
                     Timber.w("$TAG: End session: ${getErrorMessage(ret)}")
