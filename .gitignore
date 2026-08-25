@@ -75,3 +75,15 @@ secrets.properties
 # OS files
 Thumbs.db
 apk/*.zip
+
+# Native libraries (.so) — 大文件，建议用 Git LFS 管理
+*.so
+
+# AI/ML 模型文件 — 大文件，建议用 Git LFS 或外部存储
+*.tflite
+*.pcm
+*.bin
+
+# SDK 二进制 — 已在 *.aar 中覆盖，此处保留以防遗漏
+module_voice/libs/*.aar
+app/libs/*.aar
