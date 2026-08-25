@@ -127,8 +127,8 @@ class XfWakeWordDetector(
         if (sdkAvailable == null) {
             sdkAvailable = try {
                 Class.forName(CLS_AI_HELPER)
-                Class.forName("com.iflytek.aikit.core.BaseLibrary$Params")
-                Class.forName("com.iflytek.aikit.core.BaseLibrary$Params$Builder")
+                Class.forName("com.iflytek.aikit.core.BaseLibrary\$Params")
+                Class.forName("com.iflytek.aikit.core.BaseLibrary\$Params\$Builder")
                 true
             } catch (e: ClassNotFoundException) {
                 Timber.w("$TAG: AIKit SDK not found (missing: ${e.message})")
