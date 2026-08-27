@@ -8,25 +8,26 @@ import timber.log.Timber
 import java.io.File
 import java.lang.reflect.Proxy
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * 科大讯飞 AIKit 语音唤醒检测器（反射实现）
  *
- * 基于讯飞 AIKit SDK 官方文档实现。
- * 能力ID: e867a88f2 (语音唤醒)
+ * 基于讯飞 AIKit SDK 官方文档实现。能力ID: e867a88f2 (语音唤醒)
  *
- * 官方调用链路:
- *   initEntry → registerListener → loadData → preProcess → specifyDataSet
- *   → start → write(持续送音频) → 回调唤醒结果 → end → unInit
- *
- * ★★★ v3.2 修复（2026-06-29）：
- * 1. ConcurrentLinkedQueue 替代 AtomicReference，避免音频帧丢失
- * 2. 唤醒词文件路径统一为 workDir 下
- * 3. 添加 preProcess 预处理调用
- * 4. 线程中断正确处理 InterruptedException
- * 5. 唤醒词文件添加 nSubCM 字门限，降低相似唤醒词串扰
- * 6. SDK 错误码映射为可读信息
+ * ★★★ v4.0 唤醒可靠性专项优化（2026-08-25）：
+ * D2  新增 EngineState 状态机，startListening 前强制 end 旧会话，避免 18310 会话重复开启
+ * D3  放宽授权成功判定：除 AUTH+code=0 外，AUTH_TIPS/SUCCESS 等非 FAIL 状态也视为授权完成
+ *       并通过 authLatch 让调用方可阻塞等待授权结果
+ * D4  使用 ReentrantLock 串行化 startListening，启动前先 interrupt 旧 writeThread
+ *       防止"多线程抢写同一 handle"
+ * D9  音频写入线程启动后再置 isListening=true，feedAudioData 按 isListening 正确丢弃早期帧
+ * A+  新增诊断统计：累计送入帧数、写入错误、会话启动失败次数，供诊断接口读取
+ * A+  授权失败时通过 authFailedReason / lastAuthCode 保留失败原因，不再只回调 onError
  */
 class XfWakeWordDetector(
     private val context: Context,
@@ -46,6 +47,7 @@ class XfWakeWordDetector(
         private const val TAG = "XfWakeWordDetector"
         private const val IVW_ID = "e867a88f2"
         private const val AUTH_INTERVAL = 333
+        private const val AUTH_WAIT_SECONDS = 45L // 允许 authLatch 最长等待
 
         // 反射类名
         private const val CLS_AI_HELPER = "com.iflytek.aikit.core.AiHelper"
@@ -59,12 +61,11 @@ class XfWakeWordDetector(
         private const val CLS_AI_AUDIO = "com.iflytek.aikit.core.AiAudio"
         private const val CLS_AI_STATUS = "com.iflytek.aikit.core.AiStatus"
 
-        // 队列最大容量，防止 OOM
         private const val MAX_QUEUE_SIZE = 10
 
+        @Volatile
         private var sdkAvailable: Boolean? = null
 
-        /** SDK 错误码 → 可读描述 */
         private val errorCodeMap: Map<Int, String> = mapOf(
             18000 to "授权失败(通用)",
             18001 to "appId错误",
@@ -88,24 +89,50 @@ class XfWakeWordDetector(
             errorCodeMap[code] ?: "未知错误($code)"
     }
 
-    private var isInitialized = false
-    private val isListening = AtomicBoolean(false)
+    // ★ 引擎状态机（v4.0 新增，防会话重复/泄漏）
+    enum class EngineState {
+        IDLE,           // 已初始化 SDK，授权未完成，无会话
+        AUTH_PENDING,   // 授权进行中
+        AUTH_DONE,      // 授权完成（可以启动会话）
+        SESSION_INIT,   // engineInit 成功
+        SESSION_LOADED, // loadData / specifyDataSet 成功
+        LISTENING,      // start 成功 + 写线程运行
+        AUTH_FAILED,    // 授权已失败
+        RELEASED        // 已释放
+    }
+
+    // ★ 串行化所有会修改会话的操作（D2/D4 修复）
+    private val sessionLock = ReentrantLock()
+
+    @Volatile private var isInitialized = false
+    @Volatile private var engineState = EngineState.IDLE
+    private val isListeningFlag = AtomicBoolean(false)
     private var aiHelper: Any? = null
     private var aiHandle: Any? = null
     private var callback: WakeWordDetector.Callback? = null
 
-    // ★★★ v3.2: ConcurrentLinkedQueue 替代 AtomicReference，避免丢帧
+    // v3.2: ConcurrentLinkedQueue 替代 AtomicReference，避免丢帧
     private val audioQueue = ConcurrentLinkedQueue<ByteArray>()
-    private var writeThread: Thread? = null
+    @Volatile private var writeThread: Thread? = null
 
+    // ★ v4.0: 授权锁（D3 修复，调用方也能感知）
+    private val authLatch = CountDownLatch(1)
     @Volatile private var isAuthComplete = false
     @Volatile private var isAuthFailed = false
+    @Volatile private var lastAuthCode = -1
+    @Volatile private var authFailedReason: String? = null
 
     var onAuthSuccess: (() -> Unit)? = null
     var onAuthFailed: (() -> Unit)? = null
 
-    /** 工作目录路径，供外部查询 */
     private var workDirPath: String = ""
+
+    // ★ v4.0 诊断统计
+    @Volatile var statsFeedFrames: Long = 0L; private set
+    @Volatile var statsWriteErrors: Long = 0L; private set
+    @Volatile var statsStartFailures: Long = 0L; private set
+    @Volatile var statsWakeCount: Long = 0L; private set
+    @Volatile var statsLastWakeMs: Long = 0L; private set
 
     init {
         try {
@@ -116,7 +143,7 @@ class XfWakeWordDetector(
     }
 
     // ──────────────────────────────────────────────
-    // 初始化
+    // 初始化 + SDK 反射
     // ──────────────────────────────────────────────
 
     private fun initialize() {
@@ -137,33 +164,26 @@ class XfWakeWordDetector(
         }
 
         if (sdkAvailable != true) {
+            engineState = EngineState.RELEASED
             throw IllegalStateException("iFlytek AIKit SDK not available")
         }
 
-        // ★ 官方文档 6.3 节: workDir 用于存放资源文件和 license 缓存
         val workDir = File(context.getExternalFilesDir(null), "iflytek/aikit")
         if (!workDir.exists()) {
             workDir.mkdirs()
         }
         workDirPath = workDir.absolutePath
 
-        // 从 assets 复制唤醒资源文件到 workDir
         copyResourceFiles(workDir)
-
-        // SDK 全局初始化（仅一次）
         initSdkByReflection(workDirPath)
         isInitialized = true
-        Timber.i("$TAG: AIKit SDK initialized, workDir=$workDirPath, waiting for auth...")
+        engineState = EngineState.AUTH_PENDING
+        Timber.i("$TAG: AIKit SDK initialized, workDir=$workDirPath, waiting for auth (latch)...")
     }
 
-    /**
-     * 官方文档 6.3 节：复制 resource 资源到 SDK 工作目录
-     */
     private fun copyResourceFiles(workDir: File) {
         try {
             val assetManager = context.assets
-
-            // 优先尝试官方推荐路径: assets/aikit_resources/
             val aikitAssets = assetManager.list("aikit_resources")
             if (!aikitAssets.isNullOrEmpty()) {
                 aikitAssets.forEach { fileName ->
@@ -172,8 +192,6 @@ class XfWakeWordDetector(
                 Timber.i("$TAG: Copied ${aikitAssets.size} items from aikit_resources/ to ${workDir.absolutePath}")
                 return
             }
-
-            // 兼容旧路径: assets/iflytek/ivw/
             val ivwAssets = assetManager.list("iflytek/ivw")
             if (!ivwAssets.isNullOrEmpty()) {
                 ivwAssets.forEach { fileName ->
@@ -182,8 +200,7 @@ class XfWakeWordDetector(
                 Timber.i("$TAG: Copied ${ivwAssets.size} items from iflytek/ivw/ to ${workDir.absolutePath}")
                 return
             }
-
-            Timber.w("$TAG: No resource files found in assets/")
+            Timber.w("$TAG: No resource files found in assets/ (this may cause 18100 loadData failures)")
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Error copying resource files")
         }
@@ -207,22 +224,20 @@ class XfWakeWordDetector(
         }
     }
 
-    // ──────────────────────────────────────────────
-    // SDK 初始化 (反射)
-    // ──────────────────────────────────────────────
-
+    /**
+     * v4.0 优化：
+     * - D3 修复：authStateChange 的成功判定放宽到包含 AUTH_TIPS/SUCCESS/SMS_SUCCESS/KXV_SUCCESS
+     *   等非 FAIL 状态（这些状态讯飞也视为授权 OK）；失败时记录 authFailedReason
+     * - 任何 code != 0 都打印完整错误映射，便于诊断
+     */
     private fun initSdkByReflection(workDirPath: String) {
         try {
             val aiHelperClass = Class.forName(CLS_AI_HELPER)
-            val getInstMethod = aiHelperClass.getMethod("getInst")
-            aiHelper = getInstMethod.invoke(null)
+            aiHelper = aiHelperClass.getMethod("getInst").invoke(null)
 
-            // 构建 Params
-            // ★ v3.3 修复：Params 是 BaseLibrary 的内部类，不是 AiHelper 的
             val paramsClass = Class.forName("com.iflytek.aikit.core.BaseLibrary\$Params")
             val builderClass = Class.forName("com.iflytek.aikit.core.BaseLibrary\$Params\$Builder")
             val builder = builderClass.getConstructor().newInstance()
-
             builderClass.getMethod("appId", String::class.java).invoke(builder, appId)
             builderClass.getMethod("apiKey", String::class.java).invoke(builder, apiKey)
             builderClass.getMethod("apiSecret", String::class.java).invoke(builder, apiSecret)
@@ -230,20 +245,16 @@ class XfWakeWordDetector(
             builderClass.getMethod("ability", String::class.java).invoke(builder, IVW_ID)
             builderClass.getMethod("authInterval", Int::class.javaPrimitiveType).invoke(builder, AUTH_INTERVAL)
             builderClass.getMethod("iLogMaxCount", Int::class.javaPrimitiveType).invoke(builder, 1)
-
             val params = builderClass.getMethod("build").invoke(builder)
 
-            // 官方文档: initEntry (这里反射调用 init)
             aiHelperClass.getMethod("init", Context::class.java, paramsClass)
                 .invoke(aiHelper, context, params)
 
-            // 日志级别: DEBUG (方便调试，发布可改为 ERROR)
             val logLvlClass = Class.forName(CLS_LOG_LVL)
             val debugLevel = logLvlClass.getField("DEBUG").get(null)
             aiHelperClass.getMethod("setLogLevel", logLvlClass).invoke(aiHelper, debugLevel)
 
-            // ★★★ 官方文档: 先注册监听器，再 init 会触发授权流程
-            // AuthListener 注册
+            // ── AuthListener ──────────────────────────
             val authListenerClass = Class.forName(CLS_AUTH_LISTENER)
             val authListener = Proxy.newProxyInstance(
                 authListenerClass.classLoader,
@@ -252,29 +263,56 @@ class XfWakeWordDetector(
                 if (method.name == "onAuthStateChange") {
                     val type = args?.get(0)
                     val code = args?.get(1) as? Int ?: -1
+                    lastAuthCode = code
                     val typeName = type?.toString() ?: ""
-                    Timber.i("$TAG: Auth state change: type=$typeName, code=$code")
-                    if (typeName.contains("AUTH") && code == 0) {
-                        Timber.i("$TAG: ★★★ SDK authorized! Starting engine...")
-                        isAuthComplete = true
-                        onAuthSuccess?.invoke()
-                        onAuthSuccessCb?.invoke()
-                        // 异步启动引擎（不阻塞回调线程）
-                        Thread {
-                            try {
-                                Thread.sleep(100)
-                                startListening()
-                            } catch (e: Exception) {
-                                Timber.e(e, "$TAG: Auto-start after auth failed")
-                            }
-                        }.start()
-                    } else if (typeName.contains("FAIL") || code != 0) {
-                        val errMsg = getErrorMessage(code)
-                        Timber.e("$TAG: ✗ SDK auth FAILED: $errMsg (code=$code)")
-                        isAuthFailed = true
-                        callback?.onError(WakeWordDetector.ERROR_UNKNOWN, "认证失败: $errMsg")
-                        onAuthFailed?.invoke()
-                        onAuthFailedCb?.invoke()
+                    Timber.i("$TAG: Auth state change: type=$typeName, code=$code (${getErrorMessage(code)})")
+
+                    // D3 修复：放宽授权成功判定
+                    // 讯飞授权回调常见 type: AUTH / AUTH_TIPS / AUTH_SUCCESS / KXV_SUCCESS / SMS_SUCCESS
+                    // FAIL / AUTH_FAIL 才是真失败
+                    val typeUpper = typeName.uppercase()
+                    val isFail = (typeUpper.contains("FAIL")) || (code != 0 && code in listOf(18000, 18001, 18002, 18003, 18004, 18005, 18700, 18714))
+                    val isSuccess = code == 0 || (!isFail && (
+                            typeUpper.contains("AUTH") ||
+                            typeUpper.contains("SUCCESS") ||
+                            typeUpper.contains("TIPS")   // AUTH_TIPS 也是授权 OK 的提示
+                    ))
+
+                    when {
+                        isSuccess && !isAuthComplete -> {
+                            Timber.i("$TAG: ★★★ SDK authorized (type=$typeName, code=$code). Starting engine...")
+                            isAuthComplete = true
+                            isAuthFailed = false
+                            authFailedReason = null
+                            engineState = EngineState.AUTH_DONE
+                            authLatch.countDown()
+                            onAuthSuccess?.invoke()
+                            onAuthSuccessCb?.invoke()
+                            // v4.0: 用异步线程 startListening，且由 sessionLock 保护（D2/D4）
+                            Thread({
+                                try {
+                                    Thread.sleep(150)
+                                    startListening()
+                                } catch (e: Exception) {
+                                    Timber.e(e, "$TAG: Auto-start after auth failed")
+                                }
+                            }, "$TAG-auth-autoStart").apply { isDaemon = true }.start()
+                        }
+                        isFail && !isAuthFailed -> {
+                            val errMsg = getErrorMessage(code)
+                            authFailedReason = errMsg
+                            Timber.e("$TAG: ✗ SDK auth FAILED: type=$typeName code=$code msg=$errMsg")
+                            isAuthFailed = true
+                            isAuthComplete = false
+                            engineState = EngineState.AUTH_FAILED
+                            authLatch.countDown()
+                            callback?.onError(WakeWordDetector.ERROR_UNKNOWN, "认证失败: $errMsg (code=$code)")
+                            onAuthFailed?.invoke()
+                            onAuthFailedCb?.invoke()
+                        }
+                        else -> {
+                            Timber.d("$TAG: Auth intermediate event ignored: type=$typeName code=$code")
+                        }
                     }
                 }
                 null
@@ -282,7 +320,7 @@ class XfWakeWordDetector(
             aiHelperClass.getMethod("registerListener", authListenerClass)
                 .invoke(aiHelper, authListener)
 
-            // AiListener 注册
+            // ── AiListener ──────────────────────────
             val aiListenerClass = Class.forName(CLS_AI_LISTENER)
             val aiListener = Proxy.newProxyInstance(
                 aiListenerClass.classLoader,
@@ -316,7 +354,8 @@ class XfWakeWordDetector(
                         val msg = args?.get(2) as? String
                         val errMsg = getErrorMessage(err)
                         Timber.e("$TAG: onError $errMsg (code=$err) msg=$msg")
-                        callback?.onError(WakeWordDetector.ERROR_UNKNOWN, errMsg)
+                        statsStartFailures++
+                        callback?.onError(WakeWordDetector.ERROR_UNKNOWN, "$errMsg (code=$err)")
                         null
                     }
                     else -> null
@@ -331,10 +370,6 @@ class XfWakeWordDetector(
         }
     }
 
-    // ──────────────────────────────────────────────
-    // 唤醒结果解析
-    // ──────────────────────────────────────────────
-
     private fun parseWakeUpResult(json: String) {
         try {
             val root = JSONObject(json)
@@ -345,76 +380,22 @@ class XfWakeWordDetector(
                 val score = result.optInt("score", 0)
                 val bTime = result.optInt("beginTime", 0)
                 val eTime = result.optInt("endTime", 0)
-                Timber.i("$TAG: ★★★ Wake word: '$keyword' score=$score time=[$bTime,$eTime]")
+                statsWakeCount++
+                statsLastWakeMs = System.currentTimeMillis()
+                Timber.i("$TAG: ★★★ Wake word: '$keyword' score=$score time=[$bTime,$eTime] (total=$statsWakeCount)")
                 onWakeWordDetected.invoke(wakeWord)
                 callback?.onWakeWordDetected(wakeWord, 0.9f)
             }
         } catch (e: Exception) {
             Timber.e(e, "$TAG: Failed to parse wake result, triggering anyway")
+            statsWakeCount++
             onWakeWordDetected.invoke(wakeWord)
             callback?.onWakeWordDetected(wakeWord, 0.9f)
         }
     }
 
     // ──────────────────────────────────────────────
-    // 唤醒词加载 (loadData → preProcess → specifyDataSet)
-    // ──────────────────────────────────────────────
-
-    /**
-     * ★★★ v3.2: 唤醒词文件写入 workDir 下（与资源文件同目录）
-     * 格式: 唤醒词;nCM:词门限;nSubCM:字门限
-     */
-    private fun loadWakeUpWords() {
-        try {
-            // ★ 修复: 写入 workDir 下，而非独立的 iflytek/ 目录
-            val keywordFile = File(workDirPath, "keyword.txt")
-            if (!keywordFile.exists()) {
-                keywordFile.parentFile?.mkdirs()
-                // 官方文档: 唤醒词;nCM:词门限;nSubCM:字门限
-                // nSubCM 字门限可大幅降低相似唤醒词串扰
-                val subCmThreshold = (threshold * 0.6).toInt()
-                keywordFile.writeText("$wakeWord;nCM:$threshold;nSubCM:$subCmThreshold;\n")
-                Timber.i("$TAG: Created keyword file: $wakeWord nCM=$threshold nSubCM=$subCmThreshold")
-            } else {
-                Timber.d("$TAG: Keyword file already exists at ${keywordFile.absolutePath}")
-            }
-
-            val aiHelperClass = Class.forName(CLS_AI_HELPER)
-            val aiRequestClass = Class.forName(CLS_AI_REQUEST)
-            val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
-            // ★ v3.0修复: builder() 是 AiRequest 的静态方法
-            val builder = aiRequestClass.getMethod("builder").invoke(null)
-
-            // 官方文档: loadData 加载唤醒词 txt 配置文件
-            builderClass.getMethod("customText", String::class.java, String::class.java, Int::class.javaPrimitiveType)
-                .invoke(builder, "key_word", keywordFile.absolutePath, 0)
-
-            val request = builderClass.getMethod("build").invoke(builder)
-            val ret = aiHelperClass.getMethod("loadData", String::class.java, aiRequestClass)
-                .invoke(aiHelper, IVW_ID, request) as? Int ?: -1
-
-            if (ret != 0) {
-                Timber.e("$TAG: Load wake words failed: ${getErrorMessage(ret)}")
-                return
-            }
-            Timber.i("$TAG: ★ Wake words loaded: $wakeWord")
-
-            // ★★★ 官方文档: preProcess 预处理资源，优化加载速度
-            val preRet = aiHelperClass.getMethod("preProcess", String::class.java, aiRequestClass)
-                .invoke(aiHelper, IVW_ID, request) as? Int ?: -1
-            if (preRet != 0) {
-                Timber.w("$TAG: preProcess failed: ${getErrorMessage(preRet)} (non-fatal)")
-            } else {
-                Timber.i("$TAG: ★ preProcess completed")
-            }
-
-        } catch (e: Exception) {
-            Timber.e(e, "$TAG: Error loading wake words")
-        }
-    }
-
-    // ──────────────────────────────────────────────
-    // 会话管理 (start → write → end)
+    // 会话管理：start → write → end
     // ──────────────────────────────────────────────
 
     override fun start(): Boolean {
@@ -423,102 +404,170 @@ class XfWakeWordDetector(
     }
 
     /**
-     * 启动唤醒引擎
-     * 官方文档调用链: engineInit → loadData → preProcess → specifyDataSet → start
+     * ★★★ v4.0: sessionLock 串行化，防会话重复 + 线程泄漏
+     * 调用链：end旧会话 → engineInit → loadData → specifyDataSet → start → 写线程
      */
     fun startListening() {
-        if (!isInitialized || aiHelper == null) {
-            Timber.w("$TAG: Not initialized")
-            return
-        }
-        if (isListening.get()) {
-            Timber.d("$TAG: Already listening")
-            return
-        }
-        if (!isAuthComplete) {
-            if (isAuthFailed) {
-                Timber.e("$TAG: Auth already failed, cannot start")
+        sessionLock.withLock {
+            if (engineState == EngineState.RELEASED) {
+                Timber.w("$TAG: startListening: already released")
                 return
             }
-            Timber.w("$TAG: Auth not complete yet, waiting...")
-            return
-        }
-
-        try {
-            Timber.i("$TAG: ★ Starting wake-up engine...")
-            val aiHelperClass = Class.forName(CLS_AI_HELPER)
-
-            // 1. engineInit
-            val engineInitRet = aiHelperClass.getMethod("engineInit", String::class.java)
-                .invoke(aiHelper, IVW_ID) as? Int ?: -1
-            if (engineInitRet != 0) {
-                Timber.e("$TAG: Engine init failed: ${getErrorMessage(engineInitRet)}")
-                callback?.onError(WakeWordDetector.ERROR_MODEL_LOAD, getErrorMessage(engineInitRet))
+            if (engineState == EngineState.AUTH_FAILED) {
+                Timber.e("$TAG: startListening: auth already failed (reason=$authFailedReason)")
                 return
             }
-            Timber.i("$TAG: ★ Engine initialized")
-
-            // 2. loadData → preProcess → specifyDataSet
-            loadWakeUpWords()
-
-            // 3. specifyDataSet: 指定生效的唤醒词索引
-            val indexs = intArrayOf(0)
-            val specifyRet = aiHelperClass.getMethod(
-                "specifyDataSet", String::class.java, String::class.java, IntArray::class.java
-            ).invoke(aiHelper, IVW_ID, "key_word", indexs) as? Int ?: -1
-            if (specifyRet != 0) {
-                Timber.w("$TAG: specifyDataSet failed: ${getErrorMessage(specifyRet)} (non-fatal)")
+            if (!isAuthComplete) {
+                if (engineState == EngineState.AUTH_PENDING) {
+                    Timber.d("$TAG: startListening: auth still pending, waiting on latch...")
+                    val got = try {
+                        authLatch.await(AUTH_WAIT_SECONDS, TimeUnit.SECONDS)
+                    } catch (ie: InterruptedException) {
+                        Thread.currentThread().interrupt()
+                        false
+                    }
+                    if (!got || !isAuthComplete) {
+                        Timber.w("$TAG: startListening: auth wait timed out, aborting start")
+                        return
+                    }
+                } else {
+                    Timber.w("$TAG: startListening: auth not complete yet (state=$engineState)")
+                    return
+                }
             }
 
-            // 4. start: 创建会话
-            val aiRequestClass = Class.forName(CLS_AI_REQUEST)
-            val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
-            // ★ v3.0修复: builder() 是 AiRequest 的静态方法，不是 AiRequest$Builder 的
-            val builder = aiRequestClass.getMethod("builder").invoke(null)
+            // D2 修复：先 end 旧会话，保证没有残留
+            if (engineState >= EngineState.SESSION_INIT && engineState <= EngineState.LISTENING) {
+                Timber.i("$TAG: startListening: closing previous session first (state=$engineState)")
+                endSessionInternal("startListening-force-close")
+            }
 
-            // KEEP_ALIVE=1 持续唤醒 + 门限参数
-            // ★ v3.0修复: SDK 无 param(String, Object)，只有 param(String, String)
+            if (isListeningFlag.get()) {
+                Timber.d("$TAG: Already listening, short-circuit")
+                return
+            }
+
             try {
-                builderClass.getMethod("param", String::class.java, String::class.java)
-                    .invoke(builder, "KEEP_ALIVE", "1")
-                builderClass.getMethod("param", String::class.java, String::class.java)
-                    .invoke(builder, "wdec_param_nCmThreshold", "0 0:$threshold")
+                Timber.i("$TAG: ★ Starting wake-up engine...")
+                val aiHelperClass = Class.forName(CLS_AI_HELPER)
+
+                // 1. engineInit
+                val engineInitRet = aiHelperClass.getMethod("engineInit", String::class.java)
+                    .invoke(aiHelper, IVW_ID) as? Int ?: -1
+                if (engineInitRet != 0) {
+                    statsStartFailures++
+                    val msg = getErrorMessage(engineInitRet)
+                    Timber.e("$TAG: Engine init failed: $msg (code=$engineInitRet)")
+                    callback?.onError(WakeWordDetector.ERROR_MODEL_LOAD, "$msg (code=$engineInitRet)")
+                    return
+                }
+                engineState = EngineState.SESSION_INIT
+                Timber.i("$TAG: ★ Engine initialized (SESSION_INIT)")
+
+                // 2. loadData + preProcess
+                loadWakeUpWords()
+                engineState = EngineState.SESSION_LOADED
+
+                // 3. specifyDataSet
+                val specifyRet = aiHelperClass.getMethod(
+                    "specifyDataSet", String::class.java, String::class.java, IntArray::class.java
+                ).invoke(aiHelper, IVW_ID, "key_word", intArrayOf(0)) as? Int ?: -1
+                if (specifyRet != 0) {
+                    Timber.w("$TAG: specifyDataSet failed: ${getErrorMessage(specifyRet)} (code=$specifyRet) — continuing")
+                }
+
+                // 4. start
+                val aiRequestClass = Class.forName(CLS_AI_REQUEST)
+                val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
+                val builder = aiRequestClass.getMethod("builder").invoke(null)
+                try {
+                    builderClass.getMethod("param", String::class.java, String::class.java)
+                        .invoke(builder, "KEEP_ALIVE", "1")
+                    builderClass.getMethod("param", String::class.java, String::class.java)
+                        .invoke(builder, "wdec_param_nCmThreshold", "0 0:$threshold")
+                } catch (e: Exception) {
+                    Timber.w("$TAG: Failed to set KEEP_ALIVE params: ${e.message}")
+                }
+                val request = builderClass.getMethod("build").invoke(builder)
+
+                aiHandle = aiHelperClass.getMethod("start", String::class.java, aiRequestClass, Any::class.java)
+                    .invoke(aiHelper, IVW_ID, request, null)
+
+                val isSuccess = aiHandle?.javaClass?.getMethod("isSuccess")?.invoke(aiHandle) as? Boolean ?: false
+                if (!isSuccess) {
+                    statsStartFailures++
+                    val code = aiHandle?.javaClass?.getMethod("getCode")?.invoke(aiHandle) as? Int ?: -1
+                    Timber.e("$TAG: Start session failed: ${getErrorMessage(code)} (code=$code)")
+                    callback?.onError(WakeWordDetector.ERROR_UNKNOWN, getErrorMessage(code))
+                    aiHandle = null
+                    return
+                }
+
+                // D9 修复：先启动写线程，再置 isListening=true
+                // （写线程启动前的 feedAudioData 会被丢弃，避免在 handle 就绪前丢帧还不报错）
+                startAudioWriteThread()
+                // 写线程启动之后再接受音频数据
+                isListeningFlag.set(true)
+                engineState = EngineState.LISTENING
+                Timber.i("$TAG: ★★★ Wake-up session STARTED! '$wakeWord' (threshold=$threshold)")
+
             } catch (e: Exception) {
-                Timber.w("$TAG: Failed to set params: ${e.message}")
+                statsStartFailures++
+                Timber.e(e, "$TAG: Failed to start listening")
+                isListeningFlag.set(false)
+                endSessionInternal("startListening-catch")
             }
-
-            val request = builderClass.getMethod("build").invoke(builder)
-
-            aiHandle = aiHelperClass.getMethod("start", String::class.java, aiRequestClass, Any::class.java)
-                .invoke(aiHelper, IVW_ID, request, null)
-
-            val isSuccess = aiHandle?.javaClass?.getMethod("isSuccess")?.invoke(aiHandle) as? Boolean ?: false
-            if (!isSuccess) {
-                val code = aiHandle?.javaClass?.getMethod("getCode")?.invoke(aiHandle) as? Int ?: -1
-                Timber.e("$TAG: Start session failed: ${getErrorMessage(code)}")
-                callback?.onError(WakeWordDetector.ERROR_UNKNOWN, getErrorMessage(code))
-                aiHandle = null
-                return
-            }
-
-            isListening.set(true)
-            Timber.i("$TAG: ★★★ Wake-up session STARTED! '$wakeWord' (threshold=$threshold)")
-
-            // 5. 启动音频写入线程
-            startAudioWriteThread()
-
-        } catch (e: Exception) {
-            Timber.e(e, "$TAG: Failed to start listening")
-            isListening.set(false)
         }
     }
 
-    /**
-     * 持续向 SDK 写入音频帧 (官方文档: write 接口)
-     * 由 WakeWordServiceEnhanced 的 AudioRecorder 通过 feedAudioData() 喂入音频
-     */
+    private fun loadWakeUpWords() {
+        try {
+            val keywordFile = File(workDirPath, "keyword.txt")
+            if (!keywordFile.exists()) {
+                keywordFile.parentFile?.mkdirs()
+                val subCmThreshold = (threshold * 0.6).toInt()
+                keywordFile.writeText("$wakeWord;nCM:$threshold;nSubCM:$subCmThreshold;\n")
+                Timber.i("$TAG: Created keyword file: $wakeWord nCM=$threshold nSubCM=$subCmThreshold")
+            }
+
+            val aiHelperClass = Class.forName(CLS_AI_HELPER)
+            val aiRequestClass = Class.forName(CLS_AI_REQUEST)
+            val builderClass = Class.forName("$CLS_AI_REQUEST\$Builder")
+            val builder = aiRequestClass.getMethod("builder").invoke(null)
+            builderClass.getMethod("customText", String::class.java, String::class.java, Int::class.javaPrimitiveType)
+                .invoke(builder, "key_word", keywordFile.absolutePath, 0)
+            val request = builderClass.getMethod("build").invoke(builder)
+            val ret = aiHelperClass.getMethod("loadData", String::class.java, aiRequestClass)
+                .invoke(aiHelper, IVW_ID, request) as? Int ?: -1
+            if (ret != 0) {
+                Timber.e("$TAG: Load wake words failed: ${getErrorMessage(ret)}")
+                return
+            }
+            Timber.i("$TAG: ★ Wake words loaded: $wakeWord")
+
+            val preRet = aiHelperClass.getMethod("preProcess", String::class.java, aiRequestClass)
+                .invoke(aiHelper, IVW_ID, request) as? Int ?: -1
+            if (preRet != 0) {
+                Timber.w("$TAG: preProcess failed: ${getErrorMessage(preRet)} (non-fatal)")
+            } else {
+                Timber.i("$TAG: ★ preProcess completed")
+            }
+        } catch (e: Exception) {
+            Timber.e(e, "$TAG: Error loading wake words")
+        }
+    }
+
     private fun startAudioWriteThread() {
-        writeThread = Thread({
+        // D4 修复：先中断旧线程，确保只有一个写线程
+        writeThread?.let { old ->
+            if (old.isAlive) {
+                Timber.w("$TAG: startAudioWriteThread: interrupting stale writer thread")
+                old.interrupt()
+            }
+        }
+        writeThread = null
+
+        val t = Thread({
             Timber.i("$TAG: ★ Audio write thread started")
             try {
                 val aiHelperClass = Class.forName(CLS_AI_HELPER)
@@ -527,22 +576,17 @@ class XfWakeWordDetector(
                 val aiStatusClass = Class.forName(CLS_AI_STATUS)
                 val aiHandleClass = Class.forName(CLS_AI_HANDLE)
 
-                // ★ v3.0修复: 预获取方法引用，避免循环内重复反射
-                // builder() 是 AiRequest 的静态方法
                 val builderFactoryMethod = aiRequestClass.getMethod("builder")
-                // ★ v3.0修复: 用 builder.audio(String, byte[]) 直接构建音频载荷
-                // 替代原 AiAudio.get() → encoding → data → status → valid → payload 的错误链路
                 val audioMethod = builderClass.getMethod("audio", String::class.java, ByteArray::class.java)
                 val statusMethod = builderClass.getMethod("status", aiStatusClass)
                 val buildMethod = builderClass.getMethod("build")
-                // ★ v3.0修复: write(AiRequest, AiHandle) — 原代码用 Any 找不到方法
                 val writeMethod = aiHelperClass.getMethod("write", aiRequestClass, aiHandleClass)
 
                 val statusBegin = aiStatusClass.getField("BEGIN").get(null)
                 val statusContinue = aiStatusClass.getField("CONTINUE").get(null)
 
                 var frameIndex = 0
-                while (isListening.get() && !Thread.currentThread().isInterrupted) {
+                while (isListeningFlag.get() && !Thread.currentThread().isInterrupted) {
                     val audioData = audioQueue.poll()
                     if (audioData != null && aiHandle != null) {
                         try {
@@ -552,12 +596,16 @@ class XfWakeWordDetector(
                             statusMethod.invoke(dataBuilder, status)
                             val writeRequest = buildMethod.invoke(dataBuilder)
                             val ret = writeMethod.invoke(aiHelper, writeRequest, aiHandle) as? Int ?: -1
-                            if (ret != 0 && frameIndex % 100 == 0) {
-                                Timber.w("$TAG: Write returned ${getErrorMessage(ret)} at frame $frameIndex")
+                            if (ret != 0) {
+                                statsWriteErrors++
+                                if (frameIndex % 100 == 0) {
+                                    Timber.w("$TAG: Write returned ${getErrorMessage(ret)} at frame $frameIndex (totalErr=$statsWriteErrors)")
+                                }
                             }
                             frameIndex++
                         } catch (e: Exception) {
-                            if (isListening.get() && frameIndex % 50 == 0) {
+                            statsWriteErrors++
+                            if (frameIndex % 50 == 0) {
                                 Timber.e(e, "$TAG: Error writing audio frame $frameIndex")
                             }
                         }
@@ -581,16 +629,17 @@ class XfWakeWordDetector(
             isDaemon = true
             priority = Thread.MAX_PRIORITY
         }
-        writeThread?.start()
+        t.start()
+        writeThread = t
     }
 
     /**
      * 供外部调用：送入音频帧数据
-     * ★★★ v3.2: 使用 ConcurrentLinkedQueue，offer 入队，丢弃旧帧防 OOM
+     * v4.0: 严格按 isListeningFlag + LISTENING 状态丢弃，写入前不累计音频（D9 修复）
      */
     fun feedAudioData(data: ByteArray) {
-        if (!isListening.get()) return
-        // 队列满时丢弃最旧帧，防止内存堆积
+        if (!isListeningFlag.get() || engineState != EngineState.LISTENING) return
+        statsFeedFrames++
         while (audioQueue.size >= MAX_QUEUE_SIZE) {
             audioQueue.poll()
         }
@@ -606,57 +655,82 @@ class XfWakeWordDetector(
     }
 
     fun stopListening() {
-        if (!isListening.getAndSet(false)) return
+        sessionLock.withLock {
+            if (!isListeningFlag.getAndSet(false) && engineState != EngineState.LISTENING) return
+            Timber.i("$TAG: stopListening (state=$engineState)")
 
-        // 停止写入线程
-        writeThread?.interrupt()
-        writeThread = null
+            writeThread?.interrupt()
+            writeThread = null
+            audioQueue.clear()
 
-        // 清空队列
-        audioQueue.clear()
+            endSessionInternal("stopListening")
 
-        // 官方文档: end 结束当前会话
+            engineState = EngineState.AUTH_DONE
+            Timber.i("$TAG: Stopped listening")
+        }
+    }
+
+    /** 内部结束会话；调用方必须持有 sessionLock */
+    private fun endSessionInternal(reason: String) {
         try {
             val aiHelperClass = Class.forName(CLS_AI_HELPER)
             if (aiHandle != null) {
-                // ★ v3.0修复: end(AiHandle) — 原代码用 Any 找不到方法
                 val aiHandleClass = Class.forName(CLS_AI_HANDLE)
                 val ret = aiHelperClass.getMethod("end", aiHandleClass)
                     .invoke(aiHelper, aiHandle) as? Int ?: -1
                 if (ret != 0) {
-                    Timber.w("$TAG: End session: ${getErrorMessage(ret)}")
+                    Timber.w("$TAG: End session ($reason): ${getErrorMessage(ret)}")
+                } else {
+                    Timber.i("$TAG: Session ended ok (reason=$reason)")
                 }
             }
         } catch (e: Exception) {
-            Timber.e(e, "$TAG: Error ending session")
+            Timber.e(e, "$TAG: Error ending session (reason=$reason)")
         }
-
         aiHandle = null
-        Timber.i("$TAG: Stopped listening")
     }
 
     override fun release() {
-        stopListening()
-        try {
-            // 官方文档: unInit 释放引擎资源
-            val aiHelperClass = Class.forName(CLS_AI_HELPER)
-            aiHelperClass.getMethod("unInit").invoke(aiHelper)
-        } catch (e: Exception) {
-            Timber.e(e, "$TAG: Error during release")
+        sessionLock.withLock {
+            stopListening()
+            try {
+                val aiHelperClass = Class.forName(CLS_AI_HELPER)
+                aiHelperClass.getMethod("unInit").invoke(aiHelper)
+            } catch (e: Exception) {
+                Timber.e(e, "$TAG: Error during release")
+            }
+            isInitialized = false
+            isAuthComplete = false
+            engineState = EngineState.RELEASED
+            Timber.i("$TAG: Released (final feed=$statsFeedFrames, writeErr=$statsWriteErrors, wake=$statsWakeCount, startFail=$statsStartFailures)")
         }
-        isInitialized = false
-        isAuthComplete = false
-        Timber.i("$TAG: Released")
     }
 
     // ──────────────────────────────────────────────
-    // 公共属性
+    // 公共属性 + 诊断接口 (v4.0)
     // ──────────────────────────────────────────────
 
-    fun getFrameLength(): Int = 320  // 官方文档: 16k采样率下 frame_size 固定 320
+    fun getFrameLength(): Int = 320
     fun getSampleRate(): Int = 16000
-    fun isListening(): Boolean = isListening.get()
+    fun isListening(): Boolean = isListeningFlag.get() && engineState == EngineState.LISTENING
     fun isAuthComplete(): Boolean = isAuthComplete
+    fun isAuthFailed(): Boolean = isAuthFailed
+    fun getAuthStateCode(): Int = lastAuthCode
+    fun getAuthFailedReason(): String? = authFailedReason
+    fun getEngineState(): EngineState = engineState
+    fun getQueueSize(): Int = audioQueue.size
+    fun getWorkDirPath(): String = workDirPath
+
+    /** 阻塞等待授权完成，最多 AUTH_WAIT_SECONDS */
+    fun waitForAuth(timeoutSec: Long = AUTH_WAIT_SECONDS): Boolean {
+        if (isAuthComplete) return true
+        if (isAuthFailed) return false
+        return try {
+            authLatch.await(timeoutSec, TimeUnit.SECONDS) && isAuthComplete
+        } catch (_: InterruptedException) {
+            false
+        }
+    }
 
     override fun setCallback(callback: WakeWordDetector.Callback) {
         this.callback = callback

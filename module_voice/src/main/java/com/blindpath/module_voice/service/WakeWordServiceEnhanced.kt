@@ -1,4 +1,4 @@
-﻿package com.blindpath.module_voice.service
+package com.blindpath.module_voice.service
 
 import android.Manifest
 import android.app.*
@@ -11,92 +11,64 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.*
 import android.provider.Settings
-import android.view.accessibility.AccessibilityManager
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.blindpath.module_voice.BuildConfig
 import com.blindpath.module_voice.domain.model.WakeWordConfig
 import kotlinx.coroutines.*
 import timber.log.Timber
-import java.io.File
 import java.util.Properties
-import javax.inject.Inject
 import android.app.PendingIntent.FLAG_IMMUTABLE
 import android.app.PendingIntent.FLAG_UPDATE_CURRENT
 
 /**
- * 语音唤醒常驻服务（增强版）
+ * 语音唤醒常驻服务（增强版 v4.0）
  *
- * 核心优化：
- * 1. 独立进程运行，不受主进程影响
- * 2. 7x24 小时常驻监听，适配厂商省电策略
- * 3. 智能音频焦点管理，兼容 TalkBack
- * 4. 蓝牙外设自动切换
- * 5. 后台保活 + 自启 + 前台服务
- * 6. 异常自动重启机制
- * 7. 多引擎降级架构
- *
- * 适配场景：
- * - 前台/后台/锁屏唤醒
- * - 读屏服务开启状态
- * - 蓝牙耳机/骨传导耳机
- * - 户外嘈杂环境
- */
-/**
- * 多进程安全：移除 @AndroidEntryPoint
- *
- * WakeWordServiceEnhanced 运行在 :wakeword 独立进程。
- * Hilt 的 @AndroidEntryPoint 在子进程中会导致 "HiltComponentManager not found" 崩溃。
- * 解决：移除 @AndroidEntryPoint，改为在 onCreate() 中手动构建依赖。
- * 由于 UnifiedAudioScheduler 和 AudioFocusManager 只需要 applicationContext，
- * 可以直接手动 new ，不依赖 Hilt。
+ * ★★★ v4.0 唤醒可靠性专项优化（2026-08-25）：
+ * D5 引擎降级后重启音频采集：onEngineSwitched 收到回调后，如果当前不是
+ *    self-managed，立即重启 AudioRecord + 处理循环，确保 frameLength 按
+ *    新引擎取值（讯飞 320 / Porcupine 512 / Energy 512）
+ * D6 蓝牙 SCO 启动失败不阻塞：蓝牙时仍用 MIC 或 VOICE_COMMUNICATION，但
+ *    try 先 startBluetoothSco，失败则降级并 warn，不抛异常
+ * D7 ASR 恢复后重置 lastAudioDataTime：resumeFromAsr 成功初始化 AudioRecord
+ *    时顺便把健康检查计时也清零，防止 2s 内就误判超时重启
+ * A+ 新增 ACTION_DIAGNOSE 广播：接收到就发送一条一次性诊断广播（含
+ *    引擎/授权/帧量/错误统计），供开发者设置页 / QA 抓 logcat 一键诊断
+ * A+ 新增每 60 秒"健康状态周期性汇总"日志，便于事后分析
  */
 class WakeWordServiceEnhanced : Service() {
 
-    // 移除 @Inject，改为延迟初始化（在 onCreate 时构建）
     private lateinit var unifiedAudioScheduler: UnifiedAudioScheduler
     private lateinit var audioFocusManager: AudioFocusManager
 
-    // 独立协程作用域
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    // 高优先级线程池
     private val highPriorityExecutor = Dispatchers.Default
 
-    // 音频采集
     private var audioRecord: AudioRecord? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private var partialWakeLock: PowerManager.WakeLock? = null
 
-    // 运行状态
     @Volatile private var isRunning = false
     @Volatile private var isWakeWordDetected = false
     @Volatile private var restartAttempts = 0
 
-    // 音频参数（标准化：16kHz, 16-bit, 单声道）
     private val sampleRate = 16000
     private val channelConfig = AudioFormat.CHANNEL_IN_MONO
     private val audioFormat = AudioFormat.ENCODING_PCM_16BIT
     private val bufferSize: Int by lazy {
         maxOf(
             AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat),
-            3840 // 确保至少 240ms 的缓冲
+            3840
         )
     }
 
-    // 引擎管理
     private lateinit var engineManager: WakeWordEngineManager
-    // ★ v3.3 修复：改用线程安全的 ConcurrentLinkedDeque，避免并发访问导致 ArrayIndexOutOfBoundsException
     private val audioBuffer = java.util.concurrent.ConcurrentLinkedDeque<Short>()
 
-    // 场景检测
     private var lastSceneCheckTime = 0L
     private var currentScene = UnifiedAudioScheduler.AudioScene.FOREGROUND
 
-    // 健康检查
     private var lastAudioDataTime = 0L
-    private var audioDataTimeout = 10_000L // 10秒无音频数据视为异常
-    // ★ v3.2 修复：授权阶段不触发健康检查超时（讯飞授权可能需要 10-30 秒）
+    private var audioDataTimeout = 10_000L
     @Volatile private var isWaitingForAuth = false
 
     companion object {
@@ -106,8 +78,11 @@ class WakeWordServiceEnhanced : Service() {
         const val ACTION_PAUSE = "com.blindpath.wakeword.PAUSE"
         const val ACTION_RESUME = "com.blindpath.wakeword.RESUME"
         const val ACTION_WAKE_WORD_DETECTED = "com.blindpath.wakeword.DETECTED"
+        const val ACTION_DIAGNOSE = "com.blindpath.wakeword.DIAGNOSE"            // v4.0 新增
+        const val ACTION_DIAGNOSE_RESULT = "com.blindpath.wakeword.DIAGNOSE_RESULT"// v4.0 新增
         const val EXTRA_WAKE_WORD = "wake_word"
         const val EXTRA_SCENE = "scene"
+        const val EXTRA_DIAG_TEXT = "diag_text"                                    // v4.0 新增
 
         private const val NOTIFICATION_CHANNEL_ID = "wakeword_service_channel_enhanced"
         private const val NOTIFICATION_ID = 2001
@@ -122,93 +97,75 @@ class WakeWordServiceEnhanced : Service() {
         @Volatile
         var currentEngineType = "UNKNOWN"
             private set
+
+        // v4.0 周期汇总日志
+        private const val HEALTH_LOG_INTERVAL_MS = 60_000L
+        private const val TAG = "WakeWordEnhanced"
     }
 
     override fun onCreate() {
-        // 多进程安全：手动构建依赖（不依赖 Hilt）
         unifiedAudioScheduler = UnifiedAudioScheduler(applicationContext)
         audioFocusManager = AudioFocusManager(applicationContext)
         super.onCreate()
-        Timber.i("WakeWordServiceEnhanced: onCreate (Enhanced Version)")
+        Timber.i("$TAG: onCreate (v4.0 Diagnostics)")
 
-        // 创建通知渠道
         createNotificationChannel()
-
-        // 获取 WakeLock
         acquireWakeLocks()
-
-        // 初始化引擎
         initializeEngineManager()
-
-        // 启动健康检查
         startHealthCheck()
-
-        // 监听场景变化
+        startDiagnosticResponder()
+        startPeriodicHealthLog()
         observeSceneChanges()
 
-        Timber.i("WakeWordServiceEnhanced: Service created successfully")
+        Timber.i("$TAG: Service created successfully")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                Timber.i("WakeWordServiceEnhanced: Received START action")
+                Timber.i("$TAG: Received START action")
                 startWakeWordDetection()
             }
             ACTION_STOP -> {
-                Timber.i("WakeWordServiceEnhanced: Received STOP action")
+                Timber.i("$TAG: Received STOP action")
                 stopWakeWordDetection()
             }
             ACTION_RESTART -> {
-                Timber.i("WakeWordServiceEnhanced: Received RESTART action")
+                Timber.i("$TAG: Received RESTART action")
                 restartService()
             }
             ACTION_PAUSE -> {
-                Timber.i("WakeWordServiceEnhanced: ★ Received PAUSE action (ASR需要麦克风)")
+                Timber.i("$TAG: ★ Received PAUSE action (ASR needs mic)")
                 pauseForAsr()
             }
             ACTION_RESUME -> {
-                Timber.i("WakeWordServiceEnhanced: ★ Received RESUME action (ASR结束，恢复唤醒)")
+                Timber.i("$TAG: ★ Received RESUME action (ASR done, resuming wake)")
                 resumeFromAsr()
             }
+            ACTION_DIAGNOSE -> {
+                Timber.i("$TAG: Received DIAGNOSE action")
+                sendDiagnosticBroadcast()
+            }
         }
-
-        // START_STICKY: 服务被杀死后会自动重启
-        // START_REDELIVER_INTENT: 重启后会重新发送最后的 Intent
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        Timber.i("WakeWordServiceEnhanced: onDestroy")
-
+        Timber.i("$TAG: onDestroy")
         isRunning = false
         isServiceRunning = false
-
-        // 停止音频处理
         stopAudioCapture()
-
-        // 释放引擎
         if (::engineManager.isInitialized) {
             engineManager.release()
         }
-
-        // 释放 WakeLock
         releaseWakeLocks()
-
-        // 取消协程
         serviceScope.cancel()
-
-        // 发送重启广播（服务被系统杀死时尝试重启）
         sendRestartBroadcast()
-
         super.onDestroy()
     }
 
-    /**
-     * 初始化引擎管理器
-     */
     private fun initializeEngineManager() {
         engineManager = WakeWordEngineManager(this)
 
@@ -217,18 +174,23 @@ class WakeWordServiceEnhanced : Service() {
         }
 
         engineManager.onEngineSwitched = { engineType ->
-            Timber.i("WakeWordServiceEnhanced: Engine switched to $engineType")
+            Timber.i("$TAG: Engine switched to $engineType")
             currentEngineType = engineType.name
-            // ★ v3.2: 引擎切换时重置授权等待状态
+            // v3.2: 授权等待状态复位
             if (engineType != WakeWordEngineManager.EngineType.XF_IFLYTEK) {
                 isWaitingForAuth = false
             }
             updateNotification()
+            // ★ D5 修复：只要不是 self-managed，重启音频采集 → 刷新 frameLength
+            if (isRunning && !engineManager.isCurrentEngineSelfManaged()) {
+                Timber.i("$TAG: ★ engine switched, restarting audio capture (frameLength refresh)")
+                serviceScope.launch(highPriorityExecutor) {
+                    restartAudioCaptureInternal(delayMs = 200)
+                }
+            }
         }
 
-        // 读取凭证
         val localProps = readCredentialsFromAllSources()
-
         val baiduAppId = getCredential(BuildConfig.BAIDU_APP_ID, "BAIDU_APP_ID", localProps)
         val baiduApiKey = getCredential(BuildConfig.BAIDU_API_KEY, "BAIDU_API_KEY", localProps)
         val baiduSecretKey = getCredential(BuildConfig.BAIDU_SECRET_KEY, "BAIDU_SECRET_KEY", localProps)
@@ -255,165 +217,142 @@ class WakeWordServiceEnhanced : Service() {
         engineManager.initialize(config)
         currentEngineType = engineManager.getCurrentEngineType().name
 
-        Timber.i("WakeWordServiceEnhanced: Engine initialized - $currentEngineType")
+        Timber.i("$TAG: Engine initialized - $currentEngineType")
     }
 
-    /**
-     * 启动唤醒词检测
-     */
+    // ──────────────────────────────────────────────
+    // 启动 / 停止
+    // ──────────────────────────────────────────────
+
     private fun startWakeWordDetection() {
         if (isRunning) {
-            Timber.d("WakeWordServiceEnhanced: Already running")
+            Timber.d("$TAG: Already running")
             return
         }
-
-        Timber.i("WakeWordServiceEnhanced: Starting wake word detection")
+        Timber.i("$TAG: Starting wake word detection")
         isRunning = true
         isServiceRunning = true
         restartAttempts = 0
 
-        // 启动前台服务
         startForeground(NOTIFICATION_ID, createNotification())
 
-        // 请求音频资源
         val granted = unifiedAudioScheduler.requestAudioResource(
             UnifiedAudioScheduler.AudioModule.WAKE_WORD,
-            onGranted = {
-                Timber.i("WakeWordServiceEnhanced: Audio resource granted")
-            },
+            onGranted = { Timber.i("$TAG: Audio resource granted") },
             onLost = {
-                Timber.w("WakeWordServiceEnhanced: Audio resource lost")
+                Timber.w("$TAG: Audio resource lost")
                 handleAudioResourceLost()
             }
         )
-
         if (!granted) {
-            Timber.w("WakeWordServiceEnhanced: Failed to get audio resource, retrying...")
-            // 延迟重试
+            Timber.w("$TAG: Failed to get audio resource, retrying in 1s")
             serviceScope.launch {
                 delay(1000)
-                if (isRunning) {
-                    startWakeWordDetection()
-                }
+                if (isRunning) startWakeWordDetection()
             }
             return
         }
 
-        // 切换到蓝牙（如果已连接）
         if (unifiedAudioScheduler.isBluetoothActive()) {
-            unifiedAudioScheduler.switchToBluetooth()
+            // D6 修复：try-start SCO，失败不 throw，仅打印 w 然后继续
+            tryStartBluetoothSco()
         }
 
-        // 启动音频采集
         serviceScope.launch(highPriorityExecutor) {
             try {
                 if (engineManager.isCurrentEngineSelfManaged()) {
-                    // 自管理音频引擎（仅百度 SDK）
-                    Timber.i("WakeWordServiceEnhanced: Using self-managed engine (Baidu)")
+                    Timber.i("$TAG: Using self-managed engine (Baidu)")
                     engineManager.getCurrentEngine()?.let { engine ->
-                        if (engine is BaiduWakeWordDetector) {
-                            engine.startListening()
-                        }
+                        if (engine is BaiduWakeWordDetector) engine.startListening()
                     }
                 } else {
-                    // ★ v2.0: 手动音频采集（讯飞 AIKit + 能量检测）
-                    // 讯飞 AIKit 等待异步授权，但音频采集立即开始
-                    // 授权成功后 XfWakeWordDetector 会自动启动写入线程消费音频
                     val engineType = engineManager.getCurrentEngineType()
-                    Timber.i("WakeWordServiceEnhanced: ★ Starting manual audio capture (engine=$engineType)")
-                    // ★ v3.2: 标记等待授权状态
+                    Timber.i("$TAG: ★ Starting manual audio capture (engine=$engineType)")
                     isWaitingForAuth = (engineType == WakeWordEngineManager.EngineType.XF_IFLYTEK)
                     initAudioRecord()
                     startAudioProcessing()
                 }
-
                 lastAudioDataTime = System.currentTimeMillis()
 
             } catch (e: Exception) {
-                Timber.e(e, "WakeWordServiceEnhanced: Failed to start detection")
+                Timber.e(e, "$TAG: Failed to start detection")
                 handleDetectionError(e)
             }
         }
     }
 
-    /**
-     * 停止唤醒词检测
-     */
     private fun stopWakeWordDetection() {
         if (!isRunning) return
-
-        Timber.i("WakeWordServiceEnhanced: Stopping wake word detection")
+        Timber.i("$TAG: Stopping wake word detection")
         isRunning = false
         isServiceRunning = false
-
-        // 停止音频采集
         stopAudioCapture()
-
-        // 释放音频资源
         unifiedAudioScheduler.releaseAudioResource(UnifiedAudioScheduler.AudioModule.WAKE_WORD)
-
-        // 停止前台服务
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
-    /**
-     * 初始化音频录制
-     */
+    // ──────────────────────────────────────────────
+    // D6: 蓝牙 SCO 尽力而为尝试
+    // ──────────────────────────────────────────────
+    private fun tryStartBluetoothSco() {
+        try {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            if (audioManager.isBluetoothScoAvailableOffCall) {
+                Timber.i("$TAG: ★ Try startBluetoothSco (BT headset active)")
+                audioManager.startBluetoothSco()
+                audioManager.isBluetoothScoOn = true
+            } else {
+                Timber.w("$TAG: Bluetooth SCO not available off-call, continuing with normal mic")
+            }
+        } catch (e: Exception) {
+            Timber.w(e, "$TAG: startBluetoothSco failed, continuing with normal mic path")
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    // 音频采集
+    // ──────────────────────────────────────────────
+
     private fun initAudioRecord() {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED) {
             throw SecurityException("RECORD_AUDIO permission not granted")
         }
-
-        // 优化音频源选择
         val audioSource = selectOptimalAudioSource()
-
         audioRecord = AudioRecord(
             audioSource,
             sampleRate,
             channelConfig,
             audioFormat,
-            bufferSize * 2 // 双倍缓冲
+            bufferSize * 2
         )
-
         if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
             throw IllegalStateException("AudioRecord initialization failed")
         }
-
-        Timber.i("WakeWordServiceEnhanced: AudioRecord initialized - source=$audioSource, rate=$sampleRate, buffer=$bufferSize")
+        Timber.i("$TAG: AudioRecord initialized - source=$audioSource, rate=$sampleRate, buffer=$bufferSize")
     }
 
-    /**
-     * 选择最优音频源
-     */
     private fun selectOptimalAudioSource(): Int {
-        // 根据场景选择音频源
         return when {
-            // 读屏服务开启时使用 VOICE_RECOGNITION
             unifiedAudioScheduler.isTalkBackActive() -> {
-                Timber.d("WakeWordServiceEnhanced: Using VOICE_RECOGNITION source (TalkBack active)")
+                Timber.d("$TAG: Using VOICE_RECOGNITION source (TalkBack active)")
                 MediaRecorder.AudioSource.VOICE_RECOGNITION
             }
-            // 蓝牙耳机连接时使用 VOICE_COMMUNICATION
             unifiedAudioScheduler.isBluetoothActive() -> {
-                Timber.d("WakeWordServiceEnhanced: Using VOICE_COMMUNICATION source (Bluetooth active)")
+                Timber.d("$TAG: Using VOICE_COMMUNICATION source (Bluetooth active)")
                 MediaRecorder.AudioSource.VOICE_COMMUNICATION
             }
-            // 默认使用 MIC
             else -> {
-                Timber.d("WakeWordServiceEnhanced: Using MIC source")
+                Timber.d("$TAG: Using MIC source")
                 MediaRecorder.AudioSource.MIC
             }
         }
     }
 
-    /**
-     * 启动音频处理循环
-     */
     private suspend fun startAudioProcessing() {
         audioRecord?.startRecording()
-        Timber.i("WakeWordServiceEnhanced: Audio processing started")
+        Timber.i("$TAG: Audio processing started")
 
         val buffer = ShortArray(bufferSize)
         var consecutiveEmptyReads = 0
@@ -421,124 +360,89 @@ class WakeWordServiceEnhanced : Service() {
         while (isRunning && !isPausedForAsr && currentCoroutineContext().isActive) {
             try {
                 val readSize = audioRecord?.read(buffer, 0, bufferSize) ?: 0
-
                 if (readSize > 0) {
                     lastAudioDataTime = System.currentTimeMillis()
                     consecutiveEmptyReads = 0
-
-                    // 处理音频数据
                     processAudioBuffer(buffer, readSize)
                 } else if (readSize < 0) {
-                    Timber.w("WakeWordServiceEnhanced: Audio read error: $readSize")
+                    Timber.w("$TAG: Audio read error: $readSize")
                     consecutiveEmptyReads++
-
                     if (consecutiveEmptyReads > 10) {
                         throw RuntimeException("Consecutive audio read errors: $consecutiveEmptyReads")
                     }
                 }
-
-                // 短暂休眠（降低 CPU 占用）
                 delay(5)
-
             } catch (e: Exception) {
-                Timber.e(e, "WakeWordServiceEnhanced: Audio processing error")
+                Timber.e(e, "$TAG: Audio processing error")
                 handleDetectionError(e)
                 break
             }
         }
-
-        Timber.i("WakeWordServiceEnhanced: Audio processing loop exited (running=${isRunning}, paused=${isPausedForAsr})")
+        Timber.i("$TAG: Audio processing loop exited (running=${isRunning}, paused=${isPausedForAsr})")
     }
 
-    /**
-     * 处理音频缓冲区
-     */
     private fun processAudioBuffer(buffer: ShortArray, size: Int) {
         if (isWakeWordDetected) return
-
         val engine = engineManager.getCurrentEngine() ?: return
 
-        // 累积音频帧（ConcurrentLinkedDeque.offer 为线程安全的 O(1) 操作）
-        for (i in 0 until size) {
-            audioBuffer.offer(buffer[i])
-        }
+        for (i in 0 until size) audioBuffer.offer(buffer[i])
 
-        // ★ v2.0 修复：获取引擎帧长度 — 讯飞需要 320，Porcupine 需要 512，能量检测需要 512
         val frameLength = when (engine) {
             is EnergyWakeWordDetector -> engine.getFrameLength()
             is PorcupineWakeWordDetector -> engine.getFrameLength()
-            is XfWakeWordDetector -> engine.getFrameLength()  // 320 (讯飞官方文档规定)
+            is XfWakeWordDetector -> engine.getFrameLength()
             else -> 512
         }
 
-        // 处理完整帧
-        // ★ v3.3 修复：使用 poll() 替代 removeAt(0)，O(1) 且线程安全
         while (audioBuffer.size >= frameLength && !isWakeWordDetected) {
             val frame = ShortArray(frameLength)
-            for (i in 0 until frameLength) {
-                frame[i] = audioBuffer.poll() ?: break
-            }
+            for (i in 0 until frameLength) frame[i] = audioBuffer.poll() ?: break
 
             try {
                 val detected = when (engine) {
                     is EnergyWakeWordDetector -> engine.process(frame)
                     is PorcupineWakeWordDetector -> engine.process(frame)
                     is XfWakeWordDetector -> {
-                        // ★ 将音频帧桥接到讯飞引擎的 write() 管道
                         val bytes = ByteArray(frame.size * 2)
                         java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.nativeOrder()).let {
                             for (s in frame) it.putShort(s)
                         }
                         engine.feedAudioData(bytes)
-                        false // 讯飞通过回调返回结果，不在此处同步检测
+                        false
                     }
                     else -> false
                 }
                 if (detected) break
             } catch (e: Exception) {
-                Timber.e(e, "WakeWordServiceEnhanced: Engine process error")
+                Timber.e(e, "$TAG: Engine process error")
             }
         }
 
-        // 防止缓冲区无限增长
         val maxBufferSize = frameLength * 4
-        while (audioBuffer.size > maxBufferSize) {
-            audioBuffer.poll()
-        }
+        while (audioBuffer.size > maxBufferSize) audioBuffer.poll()
     }
 
-    /**
-     * 唤醒词检测成功回调
-     */
     private fun onWakeWordDetected(wakeWord: String) {
         if (isWakeWordDetected) return
-
-        Timber.i("WakeWordServiceEnhanced: Wake word detected - $wakeWord (engine: $currentEngineType)")
+        Timber.i("$TAG: Wake word detected - $wakeWord (engine: $currentEngineType)")
         isWakeWordDetected = true
 
-        // 发送广播通知主进程
         val intent = Intent(ACTION_WAKE_WORD_DETECTED).apply {
             setPackage(packageName)
             putExtra(EXTRA_WAKE_WORD, wakeWord)
             putExtra(EXTRA_SCENE, currentScene.name)
         }
         sendBroadcast(intent)
-
-        // 触觉反馈
         triggerHapticFeedback()
 
-        // 冷却时间：ENERGY 模式需要更长冷却，防止用户说指令时被误触发
         val cooldownMs = if (currentEngineType == "ENERGY") 10_000L else 3_000L
         serviceScope.launch {
             delay(cooldownMs)
             isWakeWordDetected = false
-            Timber.d("WakeWordServiceEnhanced: Resumed listening (cooldown: ${cooldownMs}ms)")
+            Timber.d("$TAG: Resumed listening (cooldown: ${cooldownMs}ms)")
         }
     }
 
-    /**
-     * 触觉反馈
-     */
     private fun triggerHapticFeedback() {
         try {
             val vibrator = getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
@@ -551,171 +455,162 @@ class WakeWordServiceEnhanced : Service() {
                 }
             }
         } catch (e: Exception) {
-            Timber.e(e, "WakeWordServiceEnhanced: Haptic feedback failed")
+            Timber.e(e, "$TAG: Haptic feedback failed")
         }
     }
 
-    /**
-     * 停止音频采集
-     */
     private fun stopAudioCapture() {
         try {
             audioRecord?.stop()
             audioRecord?.release()
             audioRecord = null
             audioBuffer.clear()
-            Timber.d("WakeWordServiceEnhanced: Audio capture stopped")
+            Timber.d("$TAG: Audio capture stopped")
         } catch (e: Exception) {
-            Timber.e(e, "WakeWordServiceEnhanced: Error stopping audio capture")
+            Timber.e(e, "$TAG: Error stopping audio capture")
         }
     }
 
-    /**
-     * 暂停唤醒检测，释放麦克风给ASR使用
-     */
+    // ──────────────────────────────────────────────
+    // ASR 暂停/恢复
+    // ──────────────────────────────────────────────
+
     @Volatile
     private var isPausedForAsr = false
 
     private fun pauseForAsr() {
         if (!isRunning) {
-            Timber.w("WakeWordServiceEnhanced: Service not running, skip pause")
+            Timber.w("$TAG: Service not running, skip pause")
             return
         }
         isPausedForAsr = true
-        // 停止音频采集，释放AudioRecord（引擎拿不到数据自然空转）
         stopAudioCapture()
-        // 释放音频焦点
         unifiedAudioScheduler.releaseAudioResource(UnifiedAudioScheduler.AudioModule.WAKE_WORD)
-        Timber.i("WakeWordServiceEnhanced: ★ Paused for ASR (mic released)")
+        Timber.i("$TAG: ★ Paused for ASR (mic released)")
     }
 
-    /**
-     * 恢复唤醒检测
-     */
     private fun resumeFromAsr() {
         if (!isPausedForAsr) {
-            Timber.d("WakeWordServiceEnhanced: Not paused, skip resume")
+            Timber.d("$TAG: Not paused, skip resume")
             return
         }
         isPausedForAsr = false
         isWakeWordDetected = false
 
-        // ★ 直接重启音频采集，不经过 startWakeWordDetection()
-        // 原因：startWakeWordDetection() 检查 isRunning==true 直接 return，导致唤醒服务永久失效
         serviceScope.launch(highPriorityExecutor) {
-            delay(300) // 等待ASR完全释放麦克风
+            delay(300)
             if (isRunning && !isPausedForAsr) {
-                Timber.i("WakeWordServiceEnhanced: ★ Resuming wake word detection")
+                Timber.i("$TAG: ★ Resuming wake word detection")
                 try {
-                    stopAudioCapture() // 确保旧实例已释放
+                    stopAudioCapture()
                     initAudioRecord()
                     startAudioProcessing()
+                    // ★ D7 修复：ASR 恢复后重置健康检查计时，防止立即触发超时重启
                     lastAudioDataTime = System.currentTimeMillis()
-                    Timber.i("WakeWordServiceEnhanced: ★ Wake word detection resumed successfully")
+                    Timber.i("$TAG: ★ Wake word detection resumed (health timer reset)")
                 } catch (e: Exception) {
-                    Timber.e(e, "WakeWordServiceEnhanced: Failed to resume audio capture")
+                    Timber.e(e, "$TAG: Failed to resume audio capture")
                     handleDetectionError(e)
                 }
             }
         }
     }
 
-    /**
-     * 处理音频资源丢失
-     */
-    private fun handleAudioResourceLost() {
-        Timber.w("WakeWordServiceEnhanced: Audio resource lost, attempting to regain...")
+    // ──────────────────────────────────────────────
+    // 异常 / 资源丢失 / 重启
+    // ──────────────────────────────────────────────
 
+    private fun handleAudioResourceLost() {
+        Timber.w("$TAG: Audio resource lost, attempting to regain...")
         serviceScope.launch {
             delay(500)
-
             if (isRunning) {
                 val regained = unifiedAudioScheduler.requestAudioResource(
                     UnifiedAudioScheduler.AudioModule.WAKE_WORD,
-                    onGranted = { Timber.i("WakeWordServiceEnhanced: Audio resource regained") },
+                    onGranted = { Timber.i("$TAG: Audio resource regained") },
                     onLost = { handleAudioResourceLost() }
                 )
-
                 if (!regained) {
-                    Timber.w("WakeWordServiceEnhanced: Cannot regain audio resource, pausing...")
+                    Timber.w("$TAG: Cannot regain audio resource, pausing...")
                 }
             }
         }
     }
 
-    /**
-     * 处理检测错误
-     */
     private fun handleDetectionError(error: Exception) {
-        Timber.e(error, "WakeWordServiceEnhanced: Detection error")
-
+        Timber.e(error, "$TAG: Detection error")
         restartAttempts++
-
         if (restartAttempts <= MAX_RESTART_ATTEMPTS) {
-            Timber.i("WakeWordServiceEnhanced: Attempting restart ($restartAttempts/$MAX_RESTART_ATTEMPTS)")
-
-            // ★ 修复：必须先重置 isRunning，否则 startWakeWordDetection 会因 isRunning==true 直接 return
+            Timber.i("$TAG: Attempting restart ($restartAttempts/$MAX_RESTART_ATTEMPTS)")
             isRunning = false
             isServiceRunning = false
             stopAudioCapture()
-
             serviceScope.launch {
                 delay(RESTART_DELAY_MS)
                 startWakeWordDetection()
             }
         } else {
-            Timber.e("WakeWordServiceEnhanced: Max restart attempts reached, stopping service")
+            Timber.e("$TAG: Max restart attempts reached, stopping service")
             stopWakeWordDetection()
         }
     }
 
-    /**
-     * 重启服务
-     */
     private fun restartService() {
-        Timber.i("WakeWordServiceEnhanced: ★ Restarting service (ACTION_RESTART)")
-
-        // ★ v2.0 修复：必须先重置 isRunning，否则 startWakeWordDetection 会直接 return
+        Timber.i("$TAG: ★ Restarting service (ACTION_RESTART)")
         isRunning = false
         isServiceRunning = false
-
         stopAudioCapture()
         restartAttempts = 0
-
         serviceScope.launch {
             delay(1000)
             startWakeWordDetection()
         }
     }
 
-    /**
-     * 启动健康检查
-     */
+    private fun restartAudioCaptureInternal(delayMs: Long = 500) {
+        serviceScope.launch {
+            stopAudioCapture()
+            if (delayMs > 0) delay(delayMs)
+            try {
+                initAudioRecord()
+                startAudioProcessing()
+                // 任何原因重启音频采集都一起 reset lastAudioDataTime
+                lastAudioDataTime = System.currentTimeMillis()
+                Timber.i("$TAG: Audio capture restarted ok")
+            } catch (e: Exception) {
+                Timber.e(e, "$TAG: restartAudioCaptureInternal failed")
+                handleDetectionError(e)
+            }
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    // 健康检查 + 诊断
+    // ──────────────────────────────────────────────
+
     private fun startHealthCheck() {
         serviceScope.launch {
             while (isActive) {
                 delay(5000)
-
                 if (isRunning) {
-                    // ★ v3.4 修复：ASR占用麦克风期间跳过超时检查，避免误触发重启
-                    if (isPausedForAsr) {
-                        // ASR正在使用麦克风，音频采集已暂停，不应检查超时
-                    } else if (isWaitingForAuth) {
-                        // ★ v3.2 修复：授权阶段跳过超时检查，避免反复重启
-                        // 检查引擎是否已完成授权或启动监听
-                        val engine = engineManager.getCurrentEngine()
-                        if (engine is XfWakeWordDetector && engine.isAuthComplete()) {
-                            isWaitingForAuth = false
-                            Timber.i("WakeWordServiceEnhanced: ★ XF auth complete, health check resumed")
-                            lastAudioDataTime = System.currentTimeMillis() // 重置计时
+                    when {
+                        isPausedForAsr -> {
+                            // ASR 占用麦克风
                         }
-                        // 授权中，跳过超时检查
-                    } else {
-                        val timeSinceLastData = System.currentTimeMillis() - lastAudioDataTime
-
-                        if (timeSinceLastData > audioDataTimeout) {
-                            Timber.w("WakeWordServiceEnhanced: No audio data for ${timeSinceLastData}ms, restarting...")
-                            handleDetectionError(RuntimeException("Audio data timeout"))
+                        isWaitingForAuth -> {
+                            val engine = engineManager.getCurrentEngine()
+                            if (engine is XfWakeWordDetector && engine.isAuthComplete()) {
+                                isWaitingForAuth = false
+                                Timber.i("$TAG: ★ XF auth complete, health check resumed")
+                                lastAudioDataTime = System.currentTimeMillis()
+                            }
+                        }
+                        else -> {
+                            val timeSinceLastData = System.currentTimeMillis() - lastAudioDataTime
+                            if (timeSinceLastData > audioDataTimeout) {
+                                Timber.w("$TAG: No audio data for ${timeSinceLastData}ms, restarting...")
+                                handleDetectionError(RuntimeException("Audio data timeout"))
+                            }
                         }
                     }
                 }
@@ -723,74 +618,101 @@ class WakeWordServiceEnhanced : Service() {
         }
     }
 
-    /**
-     * 监听场景变化
-     */
     private fun observeSceneChanges() {
         serviceScope.launch {
             unifiedAudioScheduler.audioState.collect { state ->
                 val newScene = state.currentScene
-
                 if (newScene != currentScene) {
-                    Timber.i("WakeWordServiceEnhanced: Scene changed from $currentScene to $newScene")
+                    Timber.i("$TAG: Scene changed from $currentScene to $newScene")
                     currentScene = newScene
-
-                    // 场景变化时重新初始化音频源
                     if (isRunning && !engineManager.isCurrentEngineSelfManaged()) {
-                        restartAudioCapture()
+                        restartAudioCaptureInternal(delayMs = 500)
                     }
                 }
             }
         }
     }
 
-    /**
-     * 重启音频采集
-     */
-    private fun restartAudioCapture() {
+    /** v4.0: 收到 DIAGNOSE 广播时响应一条诊断快照 */
+    private fun startDiagnosticResponder() {
         serviceScope.launch {
-            stopAudioCapture()
-            delay(500)
-            initAudioRecord()
-            startAudioProcessing()
+            // 没什么特别，ACTION_DIAGNOSE 进入 onStartCommand 直接发送即可
         }
     }
 
-    /**
-     * 获取 WakeLock
-     */
+    /** v4.0: 每 60 秒打一条完整健康汇总日志，便于 QA/事后定位 */
+    private fun startPeriodicHealthLog() {
+        serviceScope.launch {
+            while (isActive) {
+                delay(HEALTH_LOG_INTERVAL_MS)
+                try {
+                    val diag = runCatching { engineManager.generateDiagnosticSnapshot() }
+                        .getOrElse { "diag-error: ${it.message}" }
+                    val dataAge = System.currentTimeMillis() - lastAudioDataTime
+                    Timber.i("$TAG: [HEALTH-60s] running=$isRunning, paused=$isPausedForAsr, " +
+                            "wakeFrozen=$isWakeWordDetected, engine=$currentEngineType, " +
+                            "dataAgeMs=$dataAge, restarts=$restartAttempts, buffer=${audioBuffer.size} | $diag")
+                } catch (t: Throwable) {
+                    Timber.w("$TAG: [HEALTH-60s] log error: ${t.message}")
+                }
+            }
+        }
+    }
+
+    /** v4.0: 构造并一次性发送诊断广播结果 */
+    private fun sendDiagnosticBroadcast() {
+        val engineDiag = runCatching { engineManager.generateDiagnosticSnapshot() }
+            .getOrElse { "diag-exception: ${it.message}" }
+        val dataAge = System.currentTimeMillis() - lastAudioDataTime
+        val sb = buildString {
+            append("WakeWordServiceEnhanced{\n")
+            append("  isRunning=").append(isRunning).append('\n')
+            append("  isPausedForAsr=").append(isPausedForAsr).append('\n')
+            append("  currentEngine=").append(currentEngineType).append('\n')
+            append("  restartAttempts=").append(restartAttempts).append('/').append(MAX_RESTART_ATTEMPTS).append('\n')
+            append("  lastAudioDataAgeMs=").append(dataAge).append('\n')
+            append("  audioBufferSize=").append(audioBuffer.size).append('\n')
+            append("  audioSourceSel=").append(
+                when {
+                    unifiedAudioScheduler.isTalkBackActive() -> "VOICE_RECOGNITION"
+                    unifiedAudioScheduler.isBluetoothActive() -> "VOICE_COMMUNICATION"
+                    else -> "MIC"
+                }
+            ).append('\n')
+            append("  scene=").append(currentScene).append('\n')
+            append("  manager=").append(engineDiag).append('\n')
+            append("}")
+        }
+        Timber.i("$TAG: ★ [DIAGNOSE] sending:\n$sb")
+        val out = Intent(ACTION_DIAGNOSE_RESULT).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_DIAG_TEXT, sb.toString())
+        }
+        sendBroadcast(out)
+    }
+
+    // ──────────────────────────────────────────────
+    // WakeLock / 通知 / 凭证
+    // ──────────────────────────────────────────────
+
     private fun acquireWakeLocks() {
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-
-        // PARTIAL_WAKE_LOCK: 保持 CPU 运行，允许屏幕关闭
         wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
             "BlindPath::WakeWordWakeLockEnhanced"
         ).apply {
             setReferenceCounted(false)
-            acquire(60 * 60 * 1000L) // 1小时
+            acquire(60 * 60 * 1000L)
         }
-
-        Timber.d("WakeWordServiceEnhanced: WakeLock acquired")
+        Timber.d("$TAG: WakeLock acquired")
     }
 
-    /**
-     * 释放 WakeLock
-     */
     private fun releaseWakeLocks() {
-        wakeLock?.let {
-            if (it.isHeld) {
-                it.release()
-            }
-        }
+        wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
-
-        Timber.d("WakeWordServiceEnhanced: WakeLock released")
+        Timber.d("$TAG: WakeLock released")
     }
 
-    /**
-     * 创建通知渠道
-     */
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
             NOTIFICATION_CHANNEL_ID,
@@ -801,26 +723,16 @@ class WakeWordServiceEnhanced : Service() {
             setShowBadge(false)
             lockscreenVisibility = Notification.VISIBILITY_PUBLIC
         }
-
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.createNotificationChannel(channel)
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.createNotificationChannel(channel)
     }
 
-    /**
-     * 创建前台服务通知
-     */
     private fun createNotification(): Notification {
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: Intent().apply {
-            setClassName(packageName, "${packageName}.MainActivity")
-        }
-
+        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            ?: Intent().apply { setClassName(packageName, "${packageName}.MainActivity") }
         val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            launchIntent,
-            FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
+            this, 0, launchIntent, FLAG_IMMUTABLE or FLAG_UPDATE_CURRENT
         )
-
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
             .setContentTitle("助盲智行")
             .setContentText(buildNotificationText())
@@ -834,65 +746,38 @@ class WakeWordServiceEnhanced : Service() {
             .build()
     }
 
-    /**
-     * 构建通知文本，根据引擎类型给出不同提示
-     */
-    private fun buildNotificationText(): String {
-        return when (currentEngineType) {
-            "BAIDU" -> "语音唤醒服务运行中 [百度引擎]"
-            "XF_IFLYTEK" -> "语音唤醒服务运行中 [讯飞引擎]"
-            "ENERGY" -> "语音唤醒运行中 [声音检测] - 唤醒词引擎未配置，注视屏幕或用语音指令"
-            else -> "语音唤醒服务运行中 [$currentEngineType]"
-        }
+    private fun buildNotificationText(): String = when (currentEngineType) {
+        "BAIDU" -> "语音唤醒服务运行中 [百度引擎]"
+        "XF_IFLYTEK" -> "语音唤醒服务运行中 [讯飞引擎]"
+        "ENERGY" -> "语音唤醒运行中 [声音检测] - 唤醒词引擎未配置，注视屏幕或用语音指令"
+        else -> "语音唤醒服务运行中 [$currentEngineType]"
     }
 
-    /**
-     * 更新通知
-     */
     private fun updateNotification() {
         if (isRunning) {
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            notificationManager.notify(NOTIFICATION_ID, createNotification())
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIFICATION_ID, createNotification())
         }
     }
 
-    /**
-     * 发送重启广播
-     */
     private fun sendRestartBroadcast() {
-        // 服务被杀死时，发送广播尝试重启
-        val intent = Intent(ACTION_RESTART).apply {
-            setPackage(packageName)
-        }
+        val intent = Intent(ACTION_RESTART).apply { setPackage(packageName) }
         sendBroadcast(intent)
     }
 
-    /**
-     * 从安全来源读取凭证（仅 assets 和 BuildConfig）
-     * 已移除外部路径读取，防止凭证泄露
-     */
     private fun readCredentialsFromAllSources(): Map<String, String> {
         val creds = mutableMapOf<String, String>()
-
         try {
             assets.open("credentials.properties").use { stream ->
                 val props = Properties()
                 props.load(stream)
-                props.forEach { key, value ->
-                    creds[key.toString()] = value.toString()
-                }
-                Timber.d("WakeWordServiceEnhanced: Loaded credentials from assets (${creds.size} values)")
+                props.forEach { k, v -> creds[k.toString()] = v.toString() }
+                Timber.d("$TAG: Loaded credentials from assets (${creds.size} values)")
             }
-        } catch (e: Exception) {
-            Timber.d("WakeWordServiceEnhanced: No credentials in assets")
-        }
-
+        } catch (_: Exception) {}
         return creds
     }
 
-    /**
-     * 获取凭证值
-     */
     private fun getCredential(buildConfigValue: String, propertyName: String, localProps: Map<String, String>): String {
         if (buildConfigValue.isNotBlank()) return buildConfigValue
         return localProps[propertyName] ?: ""
