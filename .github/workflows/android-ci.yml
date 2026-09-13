@@ -44,8 +44,23 @@ jobs:
       - name: Build Debug APK
         run: ./gradlew assembleDebug
 
-      - name: Upload Debug APK
+      - name: Upload Debug APK (all ABIs)
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: app-debug-apks
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Upload to Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v4.0-latest
+          name: BlindPath v4.0 最新构建
+          body: |
+            自动构建，每次 push 到 main 后更新。
+
+            选择对应架构下载：
+            - **arm64-v8a**: 大多数现代手机（推荐）
+            - **armeabi-v7a**: 旧款 32 位设备
+          files: app/build/outputs/apk/debug/app-*.apk
+          prerelease: true
