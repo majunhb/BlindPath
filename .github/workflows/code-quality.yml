@@ -30,7 +30,8 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - uses: android-actions/setup-android@v3
+      # ubuntu-latest runner 已预装 Android SDK，无需 setup-android
+      # （该 action 会安装已被移除的 `tools` 包并导致失败）
 
       - name: Grant execute permission
         run: chmod +x gradlew
