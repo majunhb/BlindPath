@@ -260,6 +260,36 @@ class WakeWordServiceEnhanced : Service() {
 
         serviceScope.launch(highPriorityExecutor) {
             try {
+                // ★ 修复：非自管理引擎需手动采集音频，先等待 RECORD_AUDIO 权限
+                if (!engineManager.isCurrentEngineSelfManaged()) {
+                    if (ActivityCompat.checkSelfPermission(
+                            this@WakeWordServiceEnhanced,
+                            Manifest.permission.RECORD_AUDIO
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        Timber.w("$TAG: RECORD_AUDIO not granted, waiting for permission...")
+                        var waited = 0L
+                        while (ActivityCompat.checkSelfPermission(
+                                this@WakeWordServiceEnhanced,
+                                Manifest.permission.RECORD_AUDIO
+                            ) != PackageManager.PERMISSION_GRANTED && waited < 60000L
+                        ) {
+                            delay(1000)
+                            waited += 1000
+                        }
+                        if (ActivityCompat.checkSelfPermission(
+                                this@WakeWordServiceEnhanced,
+                                Manifest.permission.RECORD_AUDIO
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            Timber.e("$TAG: RECORD_AUDIO still not granted after 60s, aborting")
+                            isRunning = false
+                            return@launch
+                        }
+                        Timber.i("$TAG: RECORD_AUDIO granted after ${waited}ms, proceeding")
+                    }
+                }
+
                 if (engineManager.isCurrentEngineSelfManaged()) {
                     Timber.i("$TAG: Using self-managed engine (Baidu)")
                     engineManager.getCurrentEngine()?.let { engine ->

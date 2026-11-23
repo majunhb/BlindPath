@@ -104,8 +104,13 @@ class BlindPathApp : Application() {
             // 设置高德隐私合规（Android 11+ 必需）
             AMapLocationClient.updatePrivacyShow(this, true, true)
             AMapLocationClient.updatePrivacyAgree(this, true)
-            
-            Timber.d("AMap SDK initialized successfully")
+
+            // ★ 双重保障：除 manifest meta-data 外，显式设置 API Key
+            val amapKey = com.blindpath.app.BuildConfig.AMAP_API_KEY
+                .takeIf { it.isNotBlank() && it != "YOUR_AMAP_API_KEY" }
+                ?: "02d60524af990e3835f0b835ab5403e9"
+            AMapLocationClient.setApiKey(amapKey)
+            Timber.d("AMap SDK initialized successfully, key length=${amapKey.length}")
         } catch (e: Exception) {
             Timber.e(e, "Failed to initialize AMap SDK")
         }

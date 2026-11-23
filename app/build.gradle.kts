@@ -58,6 +58,9 @@ android {
 
         manifestPlaceholders["AMAP_API_KEY"] = project.findProperty("AMAP_API_KEY") as String? ?: "YOUR_AMAP_API_KEY"
 
+        // 高德地图 Key 同时注入 BuildConfig，供运行时 setApiKey 调用
+        buildConfigField("String", "AMAP_API_KEY", "\"${project.findProperty("AMAP_API_KEY") ?: ""}\"")
+
     }
 
 

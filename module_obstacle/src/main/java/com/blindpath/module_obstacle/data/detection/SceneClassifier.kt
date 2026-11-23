@@ -30,11 +30,11 @@ import kotlin.math.min
 class SceneClassifier @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
-    // 场景识别置信度阈值
-    private val sceneConfidenceThreshold = 0.6f
+    // 场景识别置信度阈值（降低以提升识别率，避免长时间无结果）
+    private val sceneConfidenceThreshold = 0.35f
 
-    // 连续帧数要求（避免抖动）
-    private val frameRequirement = 3
+    // 连续帧数要求（降低以加快响应）
+    private val frameRequirement = 2
     private var frameCounter = mutableMapOf<SceneType, Int>()
 
     // 上次识别的场景
@@ -101,7 +101,21 @@ class SceneClassifier @Inject constructor(
             }
         }
 
-        return null
+        // ★ 修复：无明确场景时也返回结果，避免 UI 长时间卡在"正在分析"
+        // 如果有最高置信度的候选（即使低于阈值），返回它让 UI 展示
+        val bestCandidate = results.maxByOrNull { it.second }
+        if (bestCandidate != null && bestCandidate.second >= 0.15f) {
+            return SceneRecognitionResult(
+                sceneType = bestCandidate.first,
+                confidence = bestCandidate.second
+            )
+        }
+
+        // 完全无结果时返回 UNKNOWN，UI 可根据 obstacles 显示检测到的物体
+        return SceneRecognitionResult(
+            sceneType = SceneType.UNKNOWN,
+            confidence = 0.1f
+        )
     }
 
     /**

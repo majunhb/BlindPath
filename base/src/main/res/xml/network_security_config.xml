@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- P0-4 修复：禁用明文传输，所有网络请求必须使用 HTTPS -->
-    <base-config cleartextTrafficPermitted="false">
+    <!-- 允许明文传输：高德定位SDK、讯飞AIKit SDK内部使用HTTP接口 -->
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
         </trust-anchors>

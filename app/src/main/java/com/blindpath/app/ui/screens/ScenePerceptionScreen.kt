@@ -157,33 +157,28 @@ fun ScenePerceptionScreen(
                 }
 
                 // 2. 场景识别（通过SceneClassifier视觉算法）
-                val sceneResult: SceneRecognitionResult? = sceneClassifier.recognizeScene(bitmap, obstacles)
+                val sceneResult: SceneRecognitionResult = sceneClassifier.recognizeScene(bitmap, obstacles)
+                    ?: SceneRecognitionResult(SceneType.UNKNOWN, 0f)
 
-                // 3. 转换为UI显示数据
-                if (sceneResult != null) {
-                    environmentType = sceneResult.sceneType.chineseName
-                    currentSceneDescription = buildSceneDescription(sceneResult, obstacles, currentMode)
+                // 3. 转换为UI显示数据（recognizeScene 现在始终返回结果，不再返回 null）
+                environmentType = sceneResult.sceneType.chineseName
+                currentSceneDescription = buildSceneDescription(sceneResult, obstacles, currentMode)
 
-                    // 更新检测物体列表
-                    detectedObjects = buildDetectedObjectsList(sceneResult, obstacles)
+                // 更新检测物体列表
+                detectedObjects = buildDetectedObjectsList(sceneResult, obstacles)
 
-                    // 人物检测
-                    detectedPeople = obstacles.count { it.type.name.contains("person", ignoreCase = true) }
+                // 人物检测
+                detectedPeople = obstacles.count { it.type.name.contains("person", ignoreCase = true) }
 
-                    // 语音播报（8秒冷却）
-                    val now = System.currentTimeMillis()
-                    if (now - lastAnnounceTime > 8000L) {
-                        lastAnnounceTime = now
-                        val announcement = buildSceneAnnouncement(sceneResult, obstacles, currentMode)
-                        if (announcement.isNotEmpty()) {
-                            lastAnnouncement = announcement
-                            viewModel.speak(announcement)
-                        }
+                // 语音播报（8秒冷却，仅在场景非UNKNOWN时播报）
+                val now = System.currentTimeMillis()
+                if (sceneResult.sceneType != SceneType.UNKNOWN && now - lastAnnounceTime > 8000L) {
+                    lastAnnounceTime = now
+                    val announcement = buildSceneAnnouncement(sceneResult, obstacles, currentMode)
+                    if (announcement.isNotEmpty()) {
+                        lastAnnouncement = announcement
+                        viewModel.speak(announcement)
                     }
-                } else {
-                    // 无场景识别结果时的兜底
-                    environmentType = "未知环境"
-                    currentSceneDescription = "正在分析场景中..."
                 }
 
                 bitmap.recycle()
